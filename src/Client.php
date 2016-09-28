@@ -248,12 +248,12 @@ class Client
     /**
      * @var LoggerInterface
      */
-    public $logger;
+    private $logger;
 
     /**
      * @var StatsInterface
      */
-    public $stats;
+    private $stats;
 
     /**
      * Create and connect a socket (with failover).

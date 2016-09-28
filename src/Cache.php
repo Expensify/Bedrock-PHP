@@ -5,14 +5,14 @@ namespace Expensify\Bedrock;
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
 
 /**
- * Encapsulates the bulit-in Cache plugin to Bedrock.
+ * Encapsulates the built-in Cache plugin to Bedrock.
  *
- * @see https://github.com/Expensify/Server-Expensify/blob/master/bedrock/plugins/Cache.md
+ * @see https://github.com/Expensify/Bedrock/blob/master/plugins/Cache.md
  */
 class Cache extends Plugin
 {
     /**
-     * Sotre if the cache is available and functional.
+     * Store if the cache is available and functional.
      *
      * @var bool
      */

@@ -10,9 +10,9 @@ use Expensify\Bedrock\Exceptions\Jobs\MalformedAttribute;
 use Expensify\Bedrock\Exceptions\Jobs\SqlFailed;
 
 /**
- * Encapsulates the bulit-in Jobs plugin to Bedrock.
+ * Encapsulates the built-in Jobs plugin to Bedrock.
  *
- * @see https://github.com/Expensify/Server-Expensify/blob/master/bedrock/plugins/Jobs.md
+ * @see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md
  */
 class Jobs extends Plugin
 {
@@ -38,6 +38,12 @@ class Jobs extends Plugin
     const STATE_QUEUED = "QUEUED";
 
     /**
+     * Calls the Jobs plugin.
+     *
+     * @param string $method  Method to call
+     * @param array  $headers Headers to send
+     * @param string $body    Body of the request
+     *
      * @throws DoesNotExist
      * @throws IllegalAction
      * @throws MalformedAttribute
@@ -86,7 +92,7 @@ class Jobs extends Plugin
      * @param string $name
      * @param array  $data     (optional)
      * @param string $firstRun (optional)
-     * @param string $repeat   (optional) see https://github.com/Expensify/Server-Expensify/blob/master/bedrock/plugins/Jobs.md#repeat-syntax
+     * @param string $repeat   (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
      * @param bool   $unique   Do we want only one job with this name to exist?
      * @param int    $priority (optional) Specifiy a job priority. Jobs with higher priorities will be run first.
      *
@@ -258,7 +264,7 @@ class Jobs extends Plugin
      * @param string $name
      * @param array  $data     (optional)
      * @param string $firstRun (optional)
-     * @param string $repeat   (optional) see https://github.com/Expensify/Server-Expensify/blob/master/bedrock/plugins/Jobs.md#repeat-syntax
+     * @param string $repeat   (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
      * @param bool   $unique   Do we want only one job with this name to exist?
      * @param int    $priority (optional) Specifiy a job priority. Jobs with higher priorities will be run first.
      *

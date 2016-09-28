@@ -9,8 +9,4 @@ use Expensify\Bedrock\Exceptions\BedrockError;
  */
 class IllegalAction extends BedrockError
 {
-    protected function defineUserFriendlyMessage()
-    {
-        return "Cannot perform `{$this->data['action']}` on a job in a running state";
-    }
 }

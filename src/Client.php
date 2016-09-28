@@ -159,8 +159,8 @@ class Client
         // Do the request.  This is split up into separate functions so we can
         // profile them independently -- useful when diagnosing various network
         // conditions.
-        $this->_sendRawRequest($rawRequest);
-        $response = $this->_receiveRawResponse();
+        $this->sendRawRequest($rawRequest);
+        $response = $this->receiveRawResponse();
 
         // Log how long this particular call took
         $processingTime = isset($response['headers']['processingTime']) ? $response['headers']['processingTime'] : 0;
@@ -258,7 +258,7 @@ class Client
     /**
      * Create and connect a socket (with failover).
      */
-    private function _reconnect()
+    private function reconnect()
     {
         // If we already have a socket and our PID hasn't changed (eg, we haven't forked), use that
         if ($this->socket && $this->socketPID == posix_getpid()) {
@@ -301,13 +301,13 @@ class Client
      *
      * @throws BedrockError
      */
-    private function _sendRawRequest($rawRequest)
+    private function sendRawRequest($rawRequest)
     {
         // Try up to 3 times, reconnecting each time
         $attempts = 0;
         while (++$attempts < 3) {
             // Reconnect (if necessary) and send
-            $this->_reconnect();
+            $this->reconnect();
             $bytesSent = socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
             if ($bytesSent === false) {
                 // Failed to send anything, let's try again (if we haven't exceeded our retry limit)
@@ -346,7 +346,7 @@ class Client
      *
      * @throws ConnectionFailure
      */
-    private function _recv()
+    private function recv()
     {
         // Get more data from the socket
         $buf = null;
@@ -367,7 +367,7 @@ class Client
      *
      * @return array Response object including 'code', 'codeLine', 'headers', and 'body'
      */
-    private function _receiveRawResponse()
+    private function receiveRawResponse()
     {
         // We'll populate this object with the results
         $response = [];
@@ -376,7 +376,7 @@ class Client
         $rawResponse = '';
         do {
             // Get a little more
-            $rawResponse .= $this->_recv();
+            $rawResponse .= $this->recv();
             $headerEnd = strpos($rawResponse, "\r\n\r\n");
         } while ($headerEnd === false);
 
@@ -407,7 +407,7 @@ class Client
         $contentLength = isset($response['headers']['Content-Length']) ? $response['headers']['Content-Length'] : 0;
         $this->getLogger()->debug("Received '$response[codeLine]', waiting for $contentLength bytes");
         while (strlen($rawResponseBody) < $contentLength) {
-            $rawResponseBody .= $this->_recv();
+            $rawResponseBody .= $this->recv();
         }
         if (strlen($rawResponseBody) != $contentLength) {
             $this->getLogger()->warning('Server sent more content than expected, ignoring.',
@@ -423,6 +423,12 @@ class Client
         return $response;
     }
 
+    /**
+     * Converts a string to UTF8.
+     *
+     * @param string $str
+     * @return string
+     */
     private static function toUTF8($str)
     {
         // Get the current encoding, default to UTF-8 if we can't tell. Then convert

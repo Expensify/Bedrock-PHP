@@ -75,7 +75,7 @@ try {
     $logger->info('Number of Loop iteration before dying', ['maxLoopIteration' => $maxLoopIteration]);
 
     if (!file_exists('/proc/loadavg')) {
-        throw new Exception('Are you sure /proc is mounted?  If inside a dev environment, try running this command: sudo mount -t proc proc /expensify/staging/www/proc');
+        throw new Exception('Are you sure /proc is mounted?');
     }
 
     $receivedSIGINT = false;
@@ -142,7 +142,7 @@ try {
             // arbitrary/optional/path/to/workerName
             // We look for a file:
             //
-            //                    /scripts/bwm/<workerName>.php
+            //                    <workerPath>/<workerName>.php
             //
             //                If it's there, we include it, and then create
             //                an object and run it like:
@@ -245,5 +245,5 @@ try {
     }
 } catch (Exception $e) {
     $message = $e->getMessage();
-    $logger->alert('script/BedrockWorkerManager.php exited abnormally', ['exception' => $e]);
+    $logger->alert('BedrockWorkerManager.php exited abnormally', ['exception' => $e]);
 }

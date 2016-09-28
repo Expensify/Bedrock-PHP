@@ -9,7 +9,7 @@ use Expensify\Bedrock\DB\Response;
 /**
  * Encapsulates the built-in DB plugin for Bedrock.
  *
- * @see https://github.com/Expensify/Server-Expensify/blob/master/bedrock/README.md
+ * @see https://github.com/Expensify/Bedrock/blob/master/README.md
  */
 class DB extends Plugin
 {

@@ -15,7 +15,7 @@ class RetryableException extends Exception
     private $delay;
 
     /**
-     * Bedrock_RetryableException constructor.
+     * RetryableException constructor.
      *
      * @param int            $message  Message of the exception
      * @param int            $delay    Time (in seconds)  to delay the retry.

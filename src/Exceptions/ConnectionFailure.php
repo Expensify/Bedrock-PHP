@@ -2,8 +2,6 @@
 
 namespace Expensify\Bedrock\Exceptions;
 
-use Exception;
-
 /**
  * Thrown we can't connect to Bedrock.
  */

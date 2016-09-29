@@ -6,15 +6,14 @@ use Expensify\Bedrock\Exceptions\BedrockError;
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
 use Expensify\Bedrock\Stats\NullStats;
 use Expensify\Bedrock\Stats\StatsInterface;
+use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
  * Client for communicating with bedrock.
- *
- * PHP client to streamline access to a cluster of Bedrock nodes
  */
-class Client
+class Client implements LoggerAwareInterface
 {
     /**
      * Sets the default configuration.
@@ -48,7 +47,18 @@ class Client
     }
 
     /**
-     * Returns the stat
+     * Sets a logger instance on the object.
+     *
+     * @param LoggerInterface $logger
+     *
+     * @return null
+     */
+    public function setLogger(LoggerInterface $logger)
+    {
+        self::$config['logger'] = $logger;
+    }
+
+    /**
      * @return StatsInterface
      */
     public static function getStats()
@@ -62,14 +72,15 @@ class Client
 
     /**
      * Creates a reusable Bedrock instance.
+     * All params are optional and values set in `configure` would be used if are not passed here.
      *
-     * @param string          $host              First host we attempt to connect to (default to BEDROCK_HOST, if defined)
-     * @param int             $port              First port we attempt to connect to (default to BEDROCK_PORT, if defined)
-     * @param string          $failoverHost      Host we attempt if the primary fails (default to BEDROCK_FAILOVER_HOST, if defined, else $host)
-     * @param int             $failoverPort      Port we attempt if the primary fails( defaults to BEDROCK_FAILOVER_PORT, if defined, else $port)
+     * @param string          $host              First host we attempt to connect to
+     * @param int             $port              First port we attempt to connect to
+     * @param string          $failoverHost      Host we attempt if the primary fails
+     * @param int             $failoverPort      Port we attempt if the primary fails
      * @param int             $connectionTimeout Timeout to use when connecting
      * @param int             $readTimeout       Timeout to use when reading
-     * @param LoggerInterface $logger            Logger to use
+     * @param LoggerInterface $logger            Class to use for logging
      * @param StatsInterface  $stats             Class to use for statistics tracking
      *
      * @throws BedrockError
@@ -130,9 +141,7 @@ class Client
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
-
-        // Log what we're doing, briefly
-        $this->getLogger()->info("BedrockRequest", ['command' => $method, 'headers' => $headers]);
+        $this->getLogger()->info("Starting a bedrock request", ['command' => $method, 'headers' => $headers]);
 
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
@@ -168,7 +177,7 @@ class Client
         $clientTime     = (int) (microtime(true) - $timeStart) * 1000;
         $networkTime    = $clientTime - $serverTime;
         $waitTime       = $serverTime - $processingTime;
-        $this->getLogger()->info("BedrockRequest", [
+        $this->getLogger()->info("Bedrock request finished", [
             'command' => $method,
             'jsonCode' => isset($response['codeLine']) ? $response['codeLine'] : null,
             'duration' => $clientTime,
@@ -180,10 +189,6 @@ class Client
         // Done!
         return $response;
     }
-
-    //-----------------------------------------------------------------------
-    // PRIVATE
-    //-----------------------------------------------------------------------
 
     /**
      * What is the last commit count of the node we talked to.
@@ -272,7 +277,7 @@ class Client
         $this->socketPID = posix_getpid();
         $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
 
-        // Make sur we succeed to create a socket
+        // Make sure we succeed to create a socket
         if ($this->socket === false) {
             $socketError = socket_strerror(socket_last_error());
             throw new ConnectionFailure("Could not connect to Bedrock primary or failover $socketError");
@@ -287,11 +292,9 @@ class Client
             if (!(@socket_connect($this->socket, $this->failoverHost, $this->failoverPort))) {
                 // Connection to both the main host and the failover failed!
                 $socketError = socket_strerror(socket_last_error($this->socket));
-                throw new ConnectionFailure("Could not connect to Bedrock primary or failover $socketError");
+                throw new ConnectionFailure("Could not connect to Bedrock primary host ({$this->host}) or failover ({$this->failoverHost}): $socketError");
             }
         }
-
-        // Success!
     }
 
     /**
@@ -417,7 +420,7 @@ class Client
 
         // If there is a body, let's parse it
         $response['rawBody'] = $rawResponseBody;
-        $response['body']    = (strlen($rawResponseBody) ? json_decode($rawResponseBody, true) : []);
+        $response['body']    = strlen($rawResponseBody) ? json_decode($rawResponseBody, true) : [];
 
         // Done!
         return $response;

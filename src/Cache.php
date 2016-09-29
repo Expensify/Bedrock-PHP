@@ -23,14 +23,14 @@ class Cache extends Plugin
      * version of that value, if available.
      *
      * @param string $name    Name pattern (using LIKE syntax) to read.
-     * @param string $version (optional) Specific version identifier (eg, a timestamp, counter, name, etc), defaults to the latest
+     * @param string $version (optional) Specific version identifier (ie, a timestamp, counter, name, etc), defaults to the latest
      *
      * @return array Containing "name" (the name matched), "rawBody" (unparsed), and "body" (JSON parsed)
      */
     public function read($name, $version = null)
     {
         $fullName = ($version ? "$name/$version" : "$name/*");
-        $this->parent->getLogger()->info("BedrockCache read", [
+        $this->client->getLogger()->info("BedrockCache read", [
             'key' => $name,
             'version' => $version,
         ]);
@@ -88,15 +88,15 @@ class Cache extends Plugin
     private function call(array $parameters)
     {
         if (self::$hasFailed) {
-            $this->parent->getLogger()->info('Skip Bedrock Cache call because we have failed before');
+            $this->client->getLogger()->info('Skip Bedrock Cache call because we have failed before');
 
             return;
         }
 
         try {
-            return call_user_func_array([$this->parent, 'call'], $parameters);
+            return call_user_func_array([$this->client, 'call'], $parameters);
         } catch (ConnectionFailure $e) {
-            $this->parent->getLogger()->alert('Bedrock Cache read', ['exception' => $e]);
+            $this->client->getLogger()->alert('Bedrock Cache read', ['exception' => $e]);
             self::$hasFailed = true;
 
             return;

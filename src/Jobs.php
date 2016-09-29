@@ -52,16 +52,16 @@ class Jobs extends Plugin
      */
     public function call($method, $headers = [], $body = '')
     {
-        $this->parent->getStats()->counter('bedrockJob.call.'.$method);
-        $response = $this->parent->getStats()->benchmark('bedrock.jobs.'.$method, function () use ($method, $headers, $body) {
-            return $this->parent->call($method, $headers, $body);
+        $this->client->getStats()->counter('bedrockJob.call.'.$method);
+        $response = $this->client->getStats()->benchmark('bedrock.jobs.'.$method, function () use ($method, $headers, $body) {
+            return $this->client->call($method, $headers, $body);
         });
 
         $job = isset($headers['name']) ? $headers['name'] : $headers['jobID'];
         $responseCode = isset($response['code']) ? $response['code'] : null;
         $codeLine = isset($response['codeLine']) ? $response['codeLine'] : null;
 
-        $this->parent->getStats()->counter('bedrockJob.call.response.'.$method.$responseCode);
+        $this->client->getStats()->counter('bedrockJob.call.response.'.$method.$responseCode);
 
         if ($responseCode === 402) {
             throw new MalformedAttribute("Malformed attribute. Job :$job, message: $codeLine");
@@ -100,7 +100,7 @@ class Jobs extends Plugin
      */
     public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = 500)
     {
-        $this->parent->getLogger()->info("Create job", ['name' => $name]);
+        $this->client->getLogger()->info("Create job", ['name' => $name]);
 
         return $this->call(
             'CreateJob',
@@ -167,8 +167,8 @@ class Jobs extends Plugin
         return $this->call(
             "FinishJob",
             [
-                "jobID"    => $jobID,
-                "data"     => $data,
+                "jobID" => $jobID,
+                "data"  => $data,
             ]
         );
     }
@@ -185,7 +185,7 @@ class Jobs extends Plugin
         return $this->call(
             "DeleteJob",
             [
-                "jobID"    => $jobID,
+                "jobID" => $jobID,
             ]
         );
     }
@@ -202,7 +202,7 @@ class Jobs extends Plugin
         return $this->call(
             "FailJob",
             [
-                "jobID"    => $jobID,
+                "jobID" => $jobID,
             ]
         );
     }
@@ -221,9 +221,9 @@ class Jobs extends Plugin
         return $this->call(
             "RetryJob",
             [
-                "jobID"    => $jobID,
-                "delay"    => $delay,
-                "data"     => $data,
+                "jobID" => $jobID,
+                "delay" => $delay,
+                "data"  => $data,
             ]
         );
     }
@@ -250,7 +250,7 @@ class Jobs extends Plugin
         $bedrockResponse = $this->call(
             "QueryJob",
             [
-                "jobID"    => $jobID,
+                "jobID" => $jobID,
             ]
         );
 
@@ -262,11 +262,11 @@ class Jobs extends Plugin
      * Silently fails in case of an exception and logs the error.
      *
      * @param string $name
-     * @param array  $data     (optional)
-     * @param string $firstRun (optional)
-     * @param string $repeat   (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param array  $data
+     * @param string $firstRun
+     * @param string $repeat   see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
      * @param bool   $unique   Do we want only one job with this name to exist?
-     * @param int    $priority (optional) Specifiy a job priority. Jobs with higher priorities will be run first.
+     * @param int    $priority Specifiy a job priority. Jobs with higher priorities will be run first.
      *
      * @return array Containing "jobID"
      */

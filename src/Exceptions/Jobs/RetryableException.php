@@ -3,11 +3,12 @@
 namespace Expensify\Bedrock\Exceptions\Jobs;
 
 use Exception;
+use Expensify\Bedrock\Exceptions\BedrockError;
 
 /**
  * Thrown to signify that a job failed, but it should be retried.
  */
-class RetryableException extends Exception
+class RetryableException extends BedrockError
 {
     /**
      * @var int Time (in seconds) to delay the retry.

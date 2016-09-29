@@ -20,7 +20,6 @@ use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 // We need to handle signals with callbacks
 declare (ticks = 1);
 
-// Let's go!
 // Verify it's being started correctly
 if (php_sapi_name() !== "cli") {
     throw new Exception('This script is cli only');
@@ -29,7 +28,7 @@ if (php_sapi_name() !== "cli") {
 $options = getopt('', ['host::', 'port::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::']);
 $jobName = isset($options['jobName']) ? $options['jobName'] : null;
 $maxLoad = floatval(isset($options['maxLoad']) ? $options['maxLoad'] : 0);
-$maxLoopIteration = (int) isset($options['maxIterations']) ? $options['maxIterations'] : 0;
+$maxLoopIteration = intval(isset($options['maxIterations']) ? $options['maxIterations'] : 0);
 if (!$maxLoopIteration) {
     $maxLoopIteration = 1000;
 }
@@ -72,7 +71,7 @@ $logger = Client::getLogger();
 $stats = Client::getStats();
 
 try {
-    $logger->info('Number of Loop iteration before dying', ['maxLoopIteration' => $maxLoopIteration]);
+    $logger->info('Starting BedrockWorkerManager', ['maxLoopIteration' => $maxLoopIteration]);
 
     if (!file_exists('/proc/loadavg')) {
         throw new Exception('Are you sure /proc is mounted?');
@@ -153,7 +152,6 @@ try {
             // The optional path info allows for jobs to be scheduled selectively. I.e., you may have separate jobs
             // scheduled as production/jobName and staging/jobName, with a WorkerManager in each environment looking for
             // each path.
-            //
             $job = $response['body'];
             $parts = explode('/', $job['name']);
             $jobParts = explode('?', $job['name']);

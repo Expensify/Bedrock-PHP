@@ -12,16 +12,15 @@ class Plugin
      *
      * @var null|Client
      */
-    protected $parent = null;
+    protected $client = null;
 
     /**
      * Constructor.
      *
-     * @param Client $parent
+     * @param Client $client
      */
-    public function __construct(Client $parent)
+    public function __construct(Client $client)
     {
-        // Initialize
-        $this->parent = $parent;
+        $this->client = $client;
     }
 }

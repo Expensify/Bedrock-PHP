@@ -39,7 +39,7 @@ class DB extends Plugin
      */
     public function query($sql)
     {
-        $response = new Response($this->parent->call(
+        $response = new Response($this->client->call(
             "Query",
             [
                 "query"  => $sql,

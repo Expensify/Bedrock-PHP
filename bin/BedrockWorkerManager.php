@@ -74,7 +74,7 @@ try {
     $logger->info('Starting BedrockWorkerManager', ['maxLoopIteration' => $maxLoopIteration]);
 
     if (!file_exists('/proc/loadavg')) {
-        throw new Exception('Are you sure /proc is mounted?');
+        throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
     }
 
     $receivedSIGINT = false;

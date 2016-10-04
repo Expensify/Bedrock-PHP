@@ -90,15 +90,16 @@ class Jobs extends Plugin
      * Schedules a new job, optionally in the future, optionally to repeat.
      *
      * @param string $name
-     * @param array  $data     (optional)
-     * @param string $firstRun (optional)
-     * @param string $repeat   (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
-     * @param bool   $unique   Do we want only one job with this name to exist?
-     * @param int    $priority (optional) Specifiy a job priority. Jobs with higher priorities will be run first.
+     * @param array  $data        (optional)
+     * @param string $firstRun    (optional)
+     * @param string $repeat      (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param bool   $unique      Do we want only one job with this name to exist?
+     * @param int    $priority    (optional) Specifiy a job priority. Jobs with higher priorities will be run first.
+     * @param int    $parentJobID (optional) Specify this job's parent job.
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = 500)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = 500, $parentJobID = null)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
 
@@ -111,6 +112,7 @@ class Jobs extends Plugin
                 'repeat'   => $repeat,
                 'unique'   => $unique,
                 'priority' => $priority,
+                'parentJobID' => $parentJobID,
             ]
         );
     }

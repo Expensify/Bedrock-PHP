@@ -27,8 +27,8 @@ if (php_sapi_name() !== "cli") {
 
 $options = getopt('', ['host::', 'port::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::']);
 $jobName = isset($options['jobName']) ? $options['jobName'] : null;
-$maxLoad = floatval(isset($options['maxLoad']) ? $options['maxLoad'] : 0);
-$maxLoopIteration = intval(isset($options['maxIterations']) ? $options['maxIterations'] : 0);
+$maxLoad = isset($options['maxLoad']) && floatval($options['maxLoad']) ? floatval($options['maxLoad']) : 0;
+$maxLoopIteration = isset($options['maxIterations']) && intval($options['maxIterations']) ? intval($options['maxIterations']) : 0;
 if (!$maxLoopIteration) {
     $maxLoopIteration = 1000;
 }

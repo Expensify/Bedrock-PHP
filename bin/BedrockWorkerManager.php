@@ -13,19 +13,17 @@ use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
  * 3. Spawn a worker for that job
  * 4. Goto 1
  * After N cycle in the loop, we exit
+ * If the versionWatchFile modified time changes, we stop processing new jobs and exit after finishing all running jobs.
  *
- * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration>]`
+ * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --versionWatchFile=<file>]`
  */
-
-// We need to handle signals with callbacks
-declare (ticks = 1);
 
 // Verify it's being started correctly
 if (php_sapi_name() !== "cli") {
     throw new Exception('This script is cli only');
 }
 
-$options = getopt('', ['host::', 'port::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::']);
+$options = getopt('', ['host::', 'port::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::']);
 $jobName = isset($options['jobName']) ? $options['jobName'] : null;
 $maxLoad = isset($options['maxLoad']) && floatval($options['maxLoad']) ? floatval($options['maxLoad']) : 0;
 $maxLoopIteration = isset($options['maxIterations']) && intval($options['maxIterations']) ? intval($options['maxIterations']) : 0;
@@ -57,6 +55,7 @@ if (isset($options['failoverHost'])) {
 if (isset($options['failoverPort'])) {
     $bedrockConfig['failoverPort'] = $options['failoverPort'];
 }
+$versionWatchFile = isset($options['versionWatchFile']) ? isset($options['versionWatchFile']) : null;
 $workerPath = isset($options['workerPath']) ? $options['workerPath'] : null;
 if (!$jobName || !$maxLoad || !$workerPath) {
     throw new Exception('Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration>]');
@@ -69,6 +68,7 @@ Client::configure($bedrockConfig);
 
 $logger = Client::getLogger();
 $stats = Client::getStats();
+$versionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile) ? filemtime($versionWatchFile) : false;
 
 try {
     $logger->info('Starting BedrockWorkerManager', ['maxLoopIteration' => $maxLoopIteration]);
@@ -77,24 +77,12 @@ try {
         throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
     }
 
-    $receivedSIGINT = false;
-    $ret = pcntl_signal(SIGINT, function ($signo) use (&$receivedSIGINT, $logger) {
-        $logger->info('Received SIGINT signal');
-        $receivedSIGINT = true;
-    });
-
     // Connect to Bedrock -- it'll reconnect if necessary
     $bedrock = new Client();
 
     // Begin the infinite loop
     $loopIteration = 0;
     while (true) {
-        if ($receivedSIGINT) {
-            $logger->info('Received SIGINT, sleeping');
-            sleep(5);
-            continue;
-        }
-
         if ($loopIteration === $maxLoopIteration) {
             $logger->info("We did all our loops iteration, shutting down");
             exit(0);
@@ -118,7 +106,13 @@ try {
 
         // Get any job managed by the BedrockWorkerManager
         $response = null;
-        while (!$response && !$receivedSIGINT) {
+        while (!$response) {
+            clearstatcache(true, $versionWatchFile);
+            $newVersionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile) ? filemtime($versionWatchFile) : false;
+            if ($versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp) {
+                $logger->info('Version watch file changed, stop processing new jobs');
+                break 2;
+            }
             try {
                 // Attempt to get a job
                 $response = $bedrock->jobs->getJob($jobName, 60 * 1000); // Wait up to 60s
@@ -241,6 +235,10 @@ try {
             $logger->warning("Failed to get job", ['codeLine' => $job['codeLine']]);
         }
     }
+
+    // We wait for all children to finish before dying.
+    $status = null;
+    pcntl_wait($status);
 } catch (Exception $e) {
     $message = $e->getMessage();
     $logger->alert('BedrockWorkerManager.php exited abnormally', ['exception' => $e]);

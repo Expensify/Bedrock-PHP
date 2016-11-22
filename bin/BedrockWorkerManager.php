@@ -55,7 +55,7 @@ if (isset($options['failoverHost'])) {
 if (isset($options['failoverPort'])) {
     $bedrockConfig['failoverPort'] = $options['failoverPort'];
 }
-$versionWatchFile = isset($options['versionWatchFile']) ? isset($options['versionWatchFile']) : null;
+$versionWatchFile = isset($options['versionWatchFile']) ? $options['versionWatchFile'] : null;
 $workerPath = isset($options['workerPath']) ? $options['workerPath'] : null;
 if (!$jobName || !$maxLoad || !$workerPath) {
     throw new Exception('Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration>]');
@@ -107,10 +107,14 @@ try {
         // Get any job managed by the BedrockWorkerManager
         $response = null;
         while (!$response) {
+            // php's filemtime results are cached, so we need to clear that cache or we'll be getting a stale modified time.
             clearstatcache(true, $versionWatchFile);
             $newVersionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile) ? filemtime($versionWatchFile) : false;
             if ($versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp) {
                 $logger->info('Version watch file changed, stop processing new jobs');
+
+                // We break out of this loop and the outer one too. We don't want to process anything more,
+                // just wait for child processes to finish.
                 break 2;
             }
             try {

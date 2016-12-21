@@ -18,7 +18,7 @@ class RetryableException extends BedrockError
     /**
      * RetryableException constructor.
      *
-     * @param int            $message  Message of the exception
+     * @param string         $message  Message of the exception
      * @param int            $delay    Time (in seconds)  to delay the retry.
      * @param int            $code     Code of the exception
      * @param Exception|null $previous

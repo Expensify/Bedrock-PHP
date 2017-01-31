@@ -38,6 +38,20 @@ class Jobs extends Plugin
     const STATE_QUEUED = "QUEUED";
 
     /**
+     * "Connection" header option to wait for a response.
+     *
+     * @var string
+     */
+    const CONNECTION_WAIT = "wait";
+
+    /**
+     * "Connection" header option to forget and not wait for a response.
+     *
+     * @var string
+     */
+    const CONNECTION_FORGET = "forget";
+
+    /**
      * Calls the Jobs plugin.
      *
      * @param string $method  Method to call
@@ -49,6 +63,8 @@ class Jobs extends Plugin
      * @throws MalformedAttribute
      * @throws SqlFailed
      * @throws GenericError
+     *
+     * @return array
      */
     public function call($method, $headers = [], $body = '')
     {
@@ -79,7 +95,8 @@ class Jobs extends Plugin
             throw new SqlFailed("SQL failed for job $job: {$codeLine}");
         }
 
-        if ($responseCode !== 200) {
+        // 202 code is a successful job creation using the "Connection: forget" header
+        if (!in_array($responseCode, [200, 202])) {
             throw new GenericError("Generic error for job $job");
         }
 
@@ -89,30 +106,32 @@ class Jobs extends Plugin
     /**
      * Schedules a new job, optionally in the future, optionally to repeat.
      *
-     * @param string $name
-     * @param array  $data        (optional)
-     * @param string $firstRun    (optional)
-     * @param string $repeat      (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
-     * @param bool   $unique      Do we want only one job with this name to exist?
-     * @param int    $priority    (optional) Specifiy a job priority. Jobs with higher priorities will be run first.
-     * @param int    $parentJobID (optional) Specify this job's parent job.
+     * @param string      $name
+     * @param array|null  $data        (optional)
+     * @param string|null $firstRun    (optional)
+     * @param string|null $repeat      (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param bool        $unique      Do we want only one job with this name to exist?
+     * @param int         $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
+     * @param int|null    $parentJobID (optional) Specify this job's parent job.
+     * @param string      $connection  (optional) Specify 'Connection' header using constants defined in this class.
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = 500, $parentJobID = null)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = 500, $parentJobID = null, $connection = self::CONNECTION_WAIT)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
 
         return $this->call(
             'CreateJob',
             [
-                'name'     => $name,
-                'data'     => $data,
-                'firstRun' => $firstRun,
-                'repeat'   => $repeat,
-                'unique'   => $unique,
-                'priority' => $priority,
+                'name'        => $name,
+                'data'        => $data,
+                'firstRun'    => $firstRun,
+                'repeat'      => $repeat,
+                'unique'      => $unique,
+                'priority'    => $priority,
                 'parentJobID' => $parentJobID,
+                'Connection'  => $connection,
             ]
         );
     }
@@ -265,22 +284,24 @@ class Jobs extends Plugin
      * Schedules a new job, optionally in the future, optionally to repeat.
      * Silently fails in case of an exception and logs the error.
      *
-     * @param string $name
-     * @param array  $data
-     * @param string $firstRun
-     * @param string $repeat   see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
-     * @param bool   $unique   Do we want only one job with this name to exist?
-     * @param int    $priority Specifiy a job priority. Jobs with higher priorities will be run first.
+     * @param string      $name
+     * @param array|null  $data        (optional)
+     * @param string|null $firstRun    (optional)
+     * @param string|null $repeat      (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param bool        $unique      Do we want only one job with this name to exist?
+     * @param int         $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
+     * @param int|null    $parentJobID (optional) Specify this job's parent job.
+     * @param string      $connection  (optional) Specify 'Connection' header using constants defined in this class.
      *
      * @return array Containing "jobID"
      */
-    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = 500)
+    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = 500, $parentJobID = null, $connection = self::CONNECTION_WAIT)
     {
         try {
             $bedrock = new Client();
             $jobs = new self($bedrock);
 
-            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority);
+            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection);
         } catch (Exception $e) {
             Client::getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
 

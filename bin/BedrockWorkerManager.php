@@ -206,7 +206,7 @@ try {
                                 'extraParams' => $extraParams,
                             ]);
                             $bedrock->jobs->retryJob($job['jobID'], $e->getDelay(), $worker->getData());
-                        } catch (Exception $e) {
+                        } catch (Throwable $e) {
                             $logger->alert("Job failed with errors, exiting.", [
                                 'name' => $job['name'],
                                 'id' => $job['jobID'],

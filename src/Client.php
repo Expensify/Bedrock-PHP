@@ -31,6 +31,7 @@ class Client implements LoggerAwareInterface
             'readTimeout' => 300,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
+            'requestID' => null,
         ], self::$config, $config);
     }
 
@@ -82,10 +83,11 @@ class Client implements LoggerAwareInterface
      * @param int             $readTimeout       Timeout to use when reading
      * @param LoggerInterface $logger            Class to use for logging
      * @param StatsInterface  $stats             Class to use for statistics tracking
+     * @param string          $requestID         RequestID to send to bedrock for consolidated logging
      *
      * @throws BedrockError
      */
-    public function __construct($host = null, $port = null, $failoverHost = null, $failoverPort = null, $connectionTimeout = null, $readTimeout = null, LoggerInterface $logger = null, StatsInterface $stats = null)
+    public function __construct($host = null, $port = null, $failoverHost = null, $failoverPort = null, $connectionTimeout = null, $readTimeout = null, LoggerInterface $logger = null, StatsInterface $stats = null, $requestID = null)
     {
         // Store these for future use
         $this->host         = $host ?: self::$config['host'];
@@ -96,6 +98,7 @@ class Client implements LoggerAwareInterface
         $this->readTimeout  = $readTimeout ?: self::$config['readTimeout'];
         $this->logger       = $logger ?: self::getLogger();
         $this->stats        = $stats ?: self::getStats();
+        $this->requestID    = $requestID ?: self::$config['requestID'];
 
         // If failovers still not defined, just copy primary
         if (!$this->failoverHost) {
@@ -146,6 +149,11 @@ class Client implements LoggerAwareInterface
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
             $headers['commitCount']  = $this->commitCount;
+        }
+
+        // Include the requestID for logging purposes
+        if ($this->requestID) {
+            $headers['requestID'] = $this->requestID;
         }
 
         // Construct the request
@@ -259,6 +267,12 @@ class Client implements LoggerAwareInterface
      * @var StatsInterface
      */
     private $stats;
+
+    /**
+     * @var null|string The requestID to send to bedrock. This can be used to get consolidated logging between the
+     *                  PHP request and the bedrock request.
+     */
+    private $requestID;
 
     /**
      * Create and connect a socket (with failover).

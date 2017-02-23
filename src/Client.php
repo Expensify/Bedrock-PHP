@@ -32,6 +32,7 @@ class Client implements LoggerAwareInterface
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
             'requestID' => null,
+            'writeConsistency' => 'ASYNC',
         ], self::$config, $config);
     }
 
@@ -84,21 +85,23 @@ class Client implements LoggerAwareInterface
      * @param LoggerInterface $logger            Class to use for logging
      * @param StatsInterface  $stats             Class to use for statistics tracking
      * @param string          $requestID         RequestID to send to bedrock for consolidated logging
+     * @param string          $writeConsistency  The bedrock write consistency we want to use
      *
      * @throws BedrockError
      */
-    public function __construct($host = null, $port = null, $failoverHost = null, $failoverPort = null, $connectionTimeout = null, $readTimeout = null, LoggerInterface $logger = null, StatsInterface $stats = null, $requestID = null)
+    public function __construct($host = null, $port = null, $failoverHost = null, $failoverPort = null, $connectionTimeout = null, $readTimeout = null, LoggerInterface $logger = null, StatsInterface $stats = null, $requestID = null, $writeConsistency = null)
     {
         // Store these for future use
-        $this->host         = $host ?: self::$config['host'];
-        $this->port         = $port ?: self::$config['port'];
-        $this->failoverHost = $failoverHost ?: self::$config['failoverHost'];
-        $this->failoverPort = $failoverPort ?: self::$config['failoverPort'];
-        $this->sendTimeout  = $connectionTimeout ?: self::$config['connectionTimeout'];
-        $this->readTimeout  = $readTimeout ?: self::$config['readTimeout'];
-        $this->logger       = $logger ?: self::getLogger();
-        $this->stats        = $stats ?: self::getStats();
-        $this->requestID    = $requestID ?: self::$config['requestID'];
+        $this->host             = $host ?: self::$config['host'];
+        $this->port             = $port ?: self::$config['port'];
+        $this->failoverHost     = $failoverHost ?: self::$config['failoverHost'];
+        $this->failoverPort     = $failoverPort ?: self::$config['failoverPort'];
+        $this->sendTimeout      = $connectionTimeout ?: self::$config['connectionTimeout'];
+        $this->readTimeout      = $readTimeout ?: self::$config['readTimeout'];
+        $this->logger           = $logger ?: self::getLogger();
+        $this->stats            = $stats ?: self::getStats();
+        $this->requestID        = $requestID ?: self::$config['requestID'];
+        $this->writeConsistency = $writeConsistency ?: self::$config['writeConsistency'];
 
         // If failovers still not defined, just copy primary
         if (!$this->failoverHost) {
@@ -154,6 +157,11 @@ class Client implements LoggerAwareInterface
         // Include the requestID for logging purposes
         if ($this->requestID) {
             $headers['requestID'] = $this->requestID;
+        }
+
+        // Set the write consistency
+        if ($this->writeConsistency) {
+            $headers['writeConsistency'] = $this->writeConsistency;
         }
 
         // Construct the request
@@ -273,6 +281,11 @@ class Client implements LoggerAwareInterface
      *                  PHP request and the bedrock request.
      */
     private $requestID;
+
+    /**
+     * @var string The bedrock write consistency we want to use.
+     */
+    private $writeConsistency;
 
     /**
      * Create and connect a socket (with failover).

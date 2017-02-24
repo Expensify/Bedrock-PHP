@@ -52,6 +52,21 @@ class Jobs extends Plugin
     const CONNECTION_FORGET = "forget";
 
     /**
+     * Constant for the high priority.
+     */
+    const PRIORITY_HIGH = 1000;
+
+    /**
+     * Constant for the medium priority.
+     */
+    const PRIORITY_MEDIUM = 500;
+
+    /**
+     * Constant for the low priority.
+     */
+    const PRIORITY_LOW = 0;
+
+    /**
      * Calls the Jobs plugin.
      *
      * @param string $method  Method to call
@@ -117,7 +132,7 @@ class Jobs extends Plugin
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = 500, $parentJobID = null, $connection = self::CONNECTION_WAIT)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
 
@@ -295,7 +310,7 @@ class Jobs extends Plugin
      *
      * @return array Containing "jobID"
      */
-    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = 500, $parentJobID = null, $connection = self::CONNECTION_WAIT)
+    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT)
     {
         try {
             $bedrock = new Client();

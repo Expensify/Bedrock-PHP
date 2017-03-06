@@ -15,7 +15,7 @@ use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
  * After N cycle in the loop, we exit
  * If the versionWatchFile modified time changes, we stop processing new jobs and exit after finishing all running jobs.
  *
- * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --versionWatchFile=<file>]`
+ * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --versionWatchFile=<file>] --writeConsistency=<consistency>`
  */
 
 // Verify it's being started correctly
@@ -23,7 +23,7 @@ if (php_sapi_name() !== "cli") {
     throw new Exception('This script is cli only');
 }
 
-$options = getopt('', ['host::', 'port::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::']);
+$options = getopt('', ['host::', 'port::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::']);
 $jobName = isset($options['jobName']) ? $options['jobName'] : null;
 $maxLoad = isset($options['maxLoad']) && floatval($options['maxLoad']) ? floatval($options['maxLoad']) : 0;
 $maxLoopIteration = isset($options['maxIterations']) && intval($options['maxIterations']) ? intval($options['maxIterations']) : 0;
@@ -55,10 +55,13 @@ if (isset($options['failoverHost'])) {
 if (isset($options['failoverPort'])) {
     $bedrockConfig['failoverPort'] = $options['failoverPort'];
 }
+if (isset($options['writeConsistency'])) {
+    $bedrockConfig['writeConsistency'] = $options['writeConsistency'];
+}
 $versionWatchFile = isset($options['versionWatchFile']) ? $options['versionWatchFile'] : null;
 $workerPath = isset($options['workerPath']) ? $options['workerPath'] : null;
 if (!$jobName || !$maxLoad || !$workerPath) {
-    throw new Exception('Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration>]');
+    throw new Exception('Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --writeConsistency=<consistency>]');
 }
 if ($maxLoad <= 0) {
     throw new Exception('Maximum load must be greater than zero');

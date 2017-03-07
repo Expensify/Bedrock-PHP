@@ -15,7 +15,7 @@ use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
  * After N cycle in the loop, we exit
  * If the versionWatchFile modified time changes, we stop processing new jobs and exit after finishing all running jobs.
  *
- * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --versionWatchFile=<file>] --writeConsistency=<consistency>`
+ * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --versionWatchFile=<file> --writeConsistency=<consistency>]`
  */
 
 // Verify it's being started correctly

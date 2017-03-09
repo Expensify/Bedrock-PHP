@@ -116,17 +116,6 @@ class Client implements LoggerAwareInterface
         if (!$this->host || !$this->port || !$this->failoverHost || !$this->failoverPort) {
             throw new BedrockError('Failed to construct Bedrock object');
         }
-
-        // Add the plugins
-        foreach (['Status', 'DB', 'Jobs', 'Cache'] as $plugin) {
-            $this->getLogger()->debug("Loading plugin '$plugin'");
-            $className = "Expensify\\Bedrock\\$plugin";
-            if (class_exists($className)) {
-                $this->{strtolower($plugin)} = new $className($this);
-            } else {
-                $this->getLogger()->warning("Failed to load plugin '$plugin', ignoring.");
-            }
-        }
     }
 
     public function __destruct()

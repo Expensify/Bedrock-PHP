@@ -190,7 +190,7 @@ try {
                     // that we automatically pick up new versions over the
                     // worker without needing to restart the parent.
                     include_once $workerFilename;
-                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $job, $extraParams, $logger) {
+                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger) {
                         $worker = new $workerName($bedrock, $job);
                         try {
                             // Run the worker.  If it completes successfully, finish the job.

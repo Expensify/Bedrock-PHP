@@ -2,6 +2,7 @@
 
 use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
+use Expensify\Bedrock\Jobs;
 
 /*
  * BedrockWorkerManager
@@ -82,6 +83,7 @@ try {
 
     // Connect to Bedrock -- it'll reconnect if necessary
     $bedrock = new Client();
+    $jobs = new Jobs($bedrock);
 
     // Begin the infinite loop
     $loopIteration = 0;
@@ -122,7 +124,7 @@ try {
             }
             try {
                 // Attempt to get a job
-                $response = $bedrock->jobs->getJob($jobName, 60 * 1000); // Wait up to 60s
+                $response = $jobs->getJob($jobName, 60 * 1000); // Wait up to 60s
             } catch (Exception $e) {
                 // Try again in 60 seconds
                 $logger->info('Problem getting job, retrying in 60s', ['message' => $e->getMessage()]);
@@ -188,7 +190,7 @@ try {
                     // that we automatically pick up new versions over the
                     // worker without needing to restart the parent.
                     include_once $workerFilename;
-                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $job, $extraParams, $logger) {
+                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger) {
                         $worker = new $workerName($bedrock, $job);
                         try {
                             // Run the worker.  If it completes successfully, finish the job.
@@ -200,7 +202,7 @@ try {
                                 'id' => $job['jobID'],
                                 'extraParams' => $extraParams,
                             ]);
-                            $bedrock->jobs->finishJob($job['jobID'], $worker->getData());
+                            $jobs->finishJob($job['jobID'], $worker->getData());
                         } catch (RetryableException $e) {
                             // Worker had a recoverable failure; retry again later.
                             $logger->info("Job could not complete, retrying.", [
@@ -208,7 +210,7 @@ try {
                                 'id' => $job['jobID'],
                                 'extraParams' => $extraParams,
                             ]);
-                            $bedrock->jobs->retryJob($job['jobID'], $e->getDelay(), $worker->getData());
+                            $jobs->retryJob($job['jobID'], $e->getDelay(), $worker->getData());
                         } catch (Throwable $e) {
                             $logger->alert("Job failed with errors, exiting.", [
                                 'name' => $job['name'],
@@ -217,7 +219,7 @@ try {
                                 'exception' => $e,
                             ]);
                             // Worker had a fatal error -- mark as failed.
-                            $bedrock->jobs->failJob($job['jobID']);
+                            $jobs->failJob($job['jobID']);
                         }
                     });
 
@@ -234,7 +236,7 @@ try {
             } else {
                 // No worker for this job
                 $logger->warning('No worker found, ignoring', ['jobName' => $job['name']]);
-                $bedrock->jobs->failJob($job['jobID']);
+                $jobs->failJob($job['jobID']);
             }
         } elseif ($response['code'] == 303) {
             $logger->info("No job found, retrying.");

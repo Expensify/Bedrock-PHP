@@ -8,6 +8,7 @@ use Expensify\Bedrock\Exceptions\Jobs\GenericError;
 use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\MalformedAttribute;
 use Expensify\Bedrock\Exceptions\Jobs\SqlFailed;
+use Expensify\Bedrock\Exceptions\Jobs\TimedOut;
 
 /**
  * Encapsulates the built-in Jobs plugin to Bedrock.
@@ -108,6 +109,10 @@ class Jobs extends Plugin
 
         if ($responseCode === 502) {
             throw new SqlFailed("SQL failed for job $job: {$codeLine}");
+        }
+
+        if ($responseCode === 303) {
+            throw new TimedOut("Bedrock timed out `$method`: $codeLine");
         }
 
         // 202 code is a successful job creation using the "Connection: forget" header

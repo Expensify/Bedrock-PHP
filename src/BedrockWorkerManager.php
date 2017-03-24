@@ -207,41 +207,42 @@ class BedrockWorkerManager
         $workerName = explode('?', $workerName)[0];
         $workerFilename = $workerPath . "/$workerName.php";
         $this->logger->info("Looking for worker '$workerFilename'");
-        if (file_exists($workerFilename)) {
-            // The file seems to exist -- fork it so we can run it.
-            $this->logger->info("Forking and running a worker.", [
-                'workerFileName' => $workerFilename,
-            ]);
-            // Ignore SIGCHLD signal, which should help 'reap' zombie processes, forcing zombies to kill themselves
-            // in the event that the parent process dies before the child/zombie)
-            pcntl_signal(SIGCHLD, SIG_IGN);
-            $pid = pcntl_fork();
-            if ($pid == -1) {
-                // Something went wrong, couldn't fork
-                $errorMessage = pcntl_strerror(pcntl_get_last_error());
-                throw new Exception("Unable to fork because '$errorMessage', aborting.");
-            } elseif ($pid == 0) {
-                // We forked successfully
-                $this->stats->counter('bedrockJob.create.' . $job['name']);
-                $this->stats->benchmark('bedrockJob.finish.' . $job['name'], function () use ($workerName, $workerFilename, $job, $extraParams) {
-                    $this->runJob($workerName, $workerFilename, $job, $extraParams);
-                });
-                $this->stats->counter('bedrockJob.finish.' . $job['name']);
-
-                // We are in the child process, so we can exit
-                exit(1);
-            } else {
-                // Otherwise we are the parent thread -- continue execution
-                $this->logger->info("Successfully started running job", [
-                    'name' => $job['name'],
-                    'id' => $job['jobID'],
-                    'pid' => $pid,
-                ]);
-            }
-        } else {
+        if (!file_exists($workerFilename)) {
             // No worker for this job
             $this->logger->warning('No worker found, ignoring', ['jobName' => $job['name']]);
             $this->jobs->failJob($job['jobID']);
+            return;
+        }
+
+        // The file exists -- fork it so we can run it.
+        $this->logger->info("Forking and running a worker.", [
+            'workerFileName' => $workerFilename,
+        ]);
+        // Ignore SIGCHLD signal, which should help 'reap' zombie processes, forcing zombies to kill themselves
+        // in the event that the parent process dies before the child/zombie)
+        pcntl_signal(SIGCHLD, SIG_IGN);
+        $pid = pcntl_fork();
+        if ($pid == -1) {
+            // Something went wrong, couldn't fork
+            $errorMessage = pcntl_strerror(pcntl_get_last_error());
+            throw new Exception("Unable to fork because '$errorMessage', aborting.");
+        } elseif ($pid == 0) {
+            // We forked successfully
+            $this->stats->counter('bedrockJob.create.' . $job['name']);
+            $this->stats->benchmark('bedrockJob.finish.' . $job['name'], function () use ($workerName, $workerFilename, $job, $extraParams) {
+                $this->runJob($workerName, $workerFilename, $job, $extraParams);
+            });
+            $this->stats->counter('bedrockJob.finish.' . $job['name']);
+
+            // We are in the child process, so we can exit
+            exit(1);
+        } else {
+            // Otherwise we are the parent thread -- continue execution
+            $this->logger->info("Successfully started running job", [
+                'name' => $job['name'],
+                'id' => $job['jobID'],
+                'pid' => $pid,
+            ]);
         }
     }
 

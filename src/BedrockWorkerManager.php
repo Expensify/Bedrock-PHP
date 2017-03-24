@@ -8,7 +8,9 @@ use Expensify\Bedrock\Exceptions\BedrockError;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Exceptions\Jobs\TimedOut;
 use Expensify\Bedrock\Exceptions\Jobs\VersionFileChanged;
+use Expensify\Bedrock\Jobs\WorkerInterface;
 use Throwable;
+use Exception;
 
 class BedrockWorkerManager
 {
@@ -258,8 +260,7 @@ class BedrockWorkerManager
             'id' => $job['jobID'],
             'extraParams' => $extraParams,
         ]);
-        include_once $workerFilename;
-        $worker = new $workerName($this->bedrock, $job);
+        $worker = $this->getWorkerInstance($workerName, $workerFilename, $job);
         try {
             // Run the worker.  If it completes successfully, finish the job.
             $worker->run();
@@ -289,5 +290,20 @@ class BedrockWorkerManager
             // Worker had a fatal error -- mark as failed.
             $this->jobs->failJob($job['jobID']);
         }
+    }
+
+    /**
+     * Instantiates a worker instance.
+     *
+     * @param string $workerName
+     * @param string $workerFilename
+     * @param array $job
+     *
+     * @return WorkerInterface
+     */
+    private function getWorkerInstance(string $workerName, string $workerFilename, array $job): WorkerInterface
+    {
+        include_once $workerFilename;
+        return new $workerName($this->bedrock, $job);
     }
 }

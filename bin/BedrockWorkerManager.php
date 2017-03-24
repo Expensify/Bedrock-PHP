@@ -1,8 +1,7 @@
 <?php
 
+use Expensify\Bedrock\BedrockWorkerManager;
 use Expensify\Bedrock\Client;
-use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
-use Expensify\Bedrock\Jobs;
 
 /*
  * BedrockWorkerManager
@@ -23,7 +22,11 @@ use Expensify\Bedrock\Jobs;
 if (php_sapi_name() !== "cli") {
     throw new Exception('This script is cli only');
 }
+if (!file_exists('/proc/loadavg')) {
+    throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
+}
 
+// Get the options and check we are not missing any of the required ones.
 $options = getopt('', ['host::', 'port::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::']);
 $jobName = isset($options['jobName']) ? $options['jobName'] : null;
 $maxLoad = isset($options['maxLoad']) && floatval($options['maxLoad']) ? floatval($options['maxLoad']) : 0;
@@ -31,6 +34,16 @@ $maxLoopIteration = isset($options['maxIterations']) && intval($options['maxIter
 if (!$maxLoopIteration) {
     $maxLoopIteration = 1000;
 }
+$versionWatchFile = isset($options['versionWatchFile']) ? $options['versionWatchFile'] : null;
+$workerPath = isset($options['workerPath']) ? $options['workerPath'] : null;
+if (!$jobName || !$maxLoad || !$workerPath) {
+    throw new Exception('Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --writeConsistency=<consistency>]');
+}
+if ($maxLoad <= 0) {
+    throw new Exception('Maximum load must be greater than zero');
+}
+
+// Initialize the bedrock config
 $bedrockConfig = [];
 if (isset($options['host'])) {
     $bedrockConfig['host'] = $options['host'];
@@ -59,196 +72,9 @@ if (isset($options['failoverPort'])) {
 if (isset($options['writeConsistency'])) {
     $bedrockConfig['writeConsistency'] = $options['writeConsistency'];
 }
-$versionWatchFile = isset($options['versionWatchFile']) ? $options['versionWatchFile'] : null;
-$workerPath = isset($options['workerPath']) ? $options['workerPath'] : null;
-if (!$jobName || !$maxLoad || !$workerPath) {
-    throw new Exception('Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --writeConsistency=<consistency>]');
-}
-if ($maxLoad <= 0) {
-    throw new Exception('Maximum load must be greater than zero');
-}
 
-Client::configure($bedrockConfig);
-
+// Start processing jobs
 $logger = Client::getLogger();
 $stats = Client::getStats();
-$versionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile) ? filemtime($versionWatchFile) : false;
-
-try {
-    $logger->info('Starting BedrockWorkerManager', ['maxLoopIteration' => $maxLoopIteration]);
-
-    if (!file_exists('/proc/loadavg')) {
-        throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
-    }
-
-    // Connect to Bedrock -- it'll reconnect if necessary
-    $bedrock = new Client();
-    $jobs = new Jobs($bedrock);
-
-    // Begin the infinite loop
-    $loopIteration = 0;
-    while (true) {
-        if ($loopIteration === $maxLoopIteration) {
-            $logger->info("We did all our loops iteration, shutting down");
-            exit(0);
-        }
-
-        $loopIteration++;
-        $logger->info("Loop iteration", ['iteration' => $loopIteration]);
-
-        // Step One wait for resources to free up
-        while (true) {
-            // Get the latest load
-            $load = sys_getloadavg()[0];
-            if ($load < $maxLoad) {
-                $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
-                break;
-            } else {
-                $logger->info('Load is over max, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
-                sleep(1);
-            }
-        }
-
-        // Get any job managed by the BedrockWorkerManager
-        $response = null;
-        while (!$response) {
-            // php's filemtime results are cached, so we need to clear that cache or we'll be getting a stale modified time.
-            clearstatcache(true, $versionWatchFile);
-            $newVersionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile) ? filemtime($versionWatchFile) : false;
-            if ($versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp) {
-                $logger->info('Version watch file changed, stop processing new jobs');
-
-                // We break out of this loop and the outer one too. We don't want to process anything more,
-                // just wait for child processes to finish.
-                break 2;
-            }
-            try {
-                // Attempt to get a job
-                $response = $jobs->getJob($jobName, 60 * 1000); // Wait up to 60s
-            } catch (Exception $e) {
-                // Try again in 60 seconds
-                $logger->info('Problem getting job, retrying in 60s', ['message' => $e->getMessage()]);
-                sleep(60);
-            }
-        }
-
-        if (!$response) {
-            $logger->info('Got no response from bedrock... Continuing.');
-            continue;
-        }
-
-        // Found a job
-        if ($response['code'] == 200) {
-            // BWM jobs are '/' separated names, the last component of which indicates the name of the worker to
-            // instantiate to execute this job:
-            // arbitrary/optional/path/to/workerName
-            // We look for a file:
-            //
-            //                    <workerPath>/<workerName>.php
-            //
-            //                If it's there, we include it, and then create
-            //                an object and run it like:
-            //
-            //                    $worker = new $workerName( $job );
-            //                    $worker->safeRun( );
-            //
-            // The optional path info allows for jobs to be scheduled selectively. I.e., you may have separate jobs
-            // scheduled as production/jobName and staging/jobName, with a WorkerManager in each environment looking for
-            // each path.
-            $job = $response['body'];
-            $parts = explode('/', $job['name']);
-            $jobParts = explode('?', $job['name']);
-            $extraParams = count($jobParts) > 1 ? $jobParts[1] : null;
-            $job['name'] = $jobParts[0];
-            $workerName = $parts[count($parts) - 1];
-            $workerName = explode('?', $workerName)[0];
-            $workerFilename = $workerPath."/$workerName.php";
-            $logger->info("Looking for worker '$workerFilename'");
-            if (file_exists($workerFilename)) {
-                // The file seems to exist -- fork it so we can run it.
-                $logger->info("Forking and running a worker.", [
-                    'workerFileName' => $workerFilename,
-                ]);
-                // Ignore SIGCHLD signal, which should help 'reap' zombie processes, forcing zombies to kill themselves
-                // in the event that the parent process dies before the child/zombie)
-                pcntl_signal(SIGCHLD, SIG_IGN);
-                $pid = pcntl_fork();
-                if ($pid == -1) {
-                    // Something went wrong, couldn't fork
-                    $errorMessage = pcntl_strerror(pcntl_get_last_error());
-                    throw new Exception("Unable to fork because '$errorMessage', aborting.");
-                } elseif ($pid == 0) {
-                    $logger->info("Fork succeeded, child process, running job", [
-                        'name' => $job['name'],
-                        'id' => $job['jobID'],
-                        'extraParams' => $extraParams,
-                    ]);
-
-                    $stats->counter('bedrockJob.create.'.$job['name']);
-
-                    // Include the worker now (not in the parent thread) such
-                    // that we automatically pick up new versions over the
-                    // worker without needing to restart the parent.
-                    include_once $workerFilename;
-                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger) {
-                        $worker = new $workerName($bedrock, $job);
-                        try {
-                            // Run the worker.  If it completes successfully, finish the job.
-                            $worker->run();
-
-                            // Success
-                            $logger->info("Job completed successfully, exiting.", [
-                                'name' => $job['name'],
-                                'id' => $job['jobID'],
-                                'extraParams' => $extraParams,
-                            ]);
-                            $jobs->finishJob($job['jobID'], $worker->getData());
-                        } catch (RetryableException $e) {
-                            // Worker had a recoverable failure; retry again later.
-                            $logger->info("Job could not complete, retrying.", [
-                                'name' => $job['name'],
-                                'id' => $job['jobID'],
-                                'extraParams' => $extraParams,
-                            ]);
-                            $jobs->retryJob($job['jobID'], $e->getDelay(), $worker->getData());
-                        } catch (Throwable $e) {
-                            $logger->alert("Job failed with errors, exiting.", [
-                                'name' => $job['name'],
-                                'id' => $job['jobID'],
-                                'extraParams' => $extraParams,
-                                'exception' => $e,
-                            ]);
-                            // Worker had a fatal error -- mark as failed.
-                            $jobs->failJob($job['jobID']);
-                        }
-                    });
-
-                    $stats->counter('bedrockJob.finish.'.$job['name']);
-                    exit(1);
-                } else {
-                    // Otherwise we are the parent thread -- continue execution
-                    $logger->info("Successfully ran job", [
-                        'name' => $job['name'],
-                        'id' => $job['jobID'],
-                        'pid' => $pid,
-                    ]);
-                }
-            } else {
-                // No worker for this job
-                $logger->warning('No worker found, ignoring', ['jobName' => $job['name']]);
-                $jobs->failJob($job['jobID']);
-            }
-        } elseif ($response['code'] == 303) {
-            $logger->info("No job found, retrying.");
-        } else {
-            $logger->warning("Failed to get job", ['codeLine' => $job['codeLine']]);
-        }
-    }
-
-    // We wait for all children to finish before dying.
-    $status = null;
-    pcntl_wait($status);
-} catch (Exception $e) {
-    $message = $e->getMessage();
-    $logger->alert('BedrockWorkerManager.php exited abnormally', ['exception' => $e]);
-}
+$bwm = new BedrockWorkerManager($versionWatchFile, $maxLoad, $maxLoopIteration, $bedrockConfig);
+$bwm->start($workerPath, $jobName);

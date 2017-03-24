@@ -226,7 +226,8 @@ class BedrockWorkerManager
             // Something went wrong, couldn't fork
             $errorMessage = pcntl_strerror(pcntl_get_last_error());
             throw new Exception("Unable to fork because '$errorMessage', aborting.");
-        } elseif ($pid == 0) {
+        }
+        if ($pid == 0) {
             // We forked successfully
             $this->stats->counter('bedrockJob.create.' . $job['name']);
             $this->stats->benchmark('bedrockJob.finish.' . $job['name'], function () use ($workerName, $workerFilename, $job, $extraParams) {
@@ -236,14 +237,14 @@ class BedrockWorkerManager
 
             // We are in the child process, so we can exit
             exit(1);
-        } else {
-            // Otherwise we are the parent thread -- continue execution
-            $this->logger->info("Successfully started running job", [
-                'name' => $job['name'],
-                'id' => $job['jobID'],
-                'pid' => $pid,
-            ]);
         }
+
+        // Otherwise we are the parent thread -- continue execution
+        $this->logger->info("Successfully started running job", [
+            'name' => $job['name'],
+            'id' => $job['jobID'],
+            'pid' => $pid,
+        ]);
     }
 
     /**

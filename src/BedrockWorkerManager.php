@@ -87,8 +87,8 @@ class BedrockWorkerManager
             $loopIteration = 0;
             while (true) {
                 if ($loopIteration === $this->maxLoopIteration) {
-                    $this->logger->info("We did all our loops iteration, shutting down");
-                    return;
+                    $this->logger->info("We did all our loops iteration, stop processing new jobs");
+                    break;
                 }
 
                 $loopIteration++;
@@ -108,6 +108,7 @@ class BedrockWorkerManager
             }
 
             // We wait for all children to finish before dying.
+            $this->logger->info("Waiting for children to finish");
             $status = null;
             pcntl_wait($status);
         } catch (Throwable $t) {

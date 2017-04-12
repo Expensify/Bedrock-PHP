@@ -71,34 +71,37 @@ if ($maxLoad <= 0) {
 Client::configure($bedrockConfig);
 
 $logger = Client::getLogger();
+$logger->info('Starting BedrockWorkerManager', ['maxLoopIteration' => $maxLoopIteration]);
+
 $stats = Client::getStats();
 $versionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile) ? filemtime($versionWatchFile) : false;
 
+// Wrap everything in a general exception handler so we can handle error
+// conditions as gracefully as possible.
 try {
-    $logger->info('Starting BedrockWorkerManager', ['maxLoopIteration' => $maxLoopIteration]);
-
-    if (!file_exists('/proc/loadavg')) {
-        throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
-    }
-
     // Connect to Bedrock -- it'll reconnect if necessary
     $bedrock = new Client();
     $jobs = new Jobs($bedrock);
 
-    // Begin the infinite loop
+    // Loop a finite number of times and then self destruct.  This is to guard
+    // against memory leaks, as we assume there is some other script that will
+    // restart this when it dies.
     $loopIteration = 0;
     while (true) {
+        // Is it time to self destruct?
         if ($loopIteration === $maxLoopIteration) {
             $logger->info("We did all our loops iteration, shutting down");
-            exit(0);
+            break;
         }
-
         $loopIteration++;
         $logger->info("Loop iteration", ['iteration' => $loopIteration]);
 
         // Step One wait for resources to free up
         while (true) {
             // Get the latest load
+            if (!file_exists('/proc/loadavg')) {
+                throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
+            }
             $load = sys_getloadavg()[0];
             if ($load < $maxLoad) {
                 $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
@@ -109,12 +112,17 @@ try {
             }
         }
 
-        // Get any job managed by the BedrockWorkerManager
+        // Poll the server until we successfully get a job
         $response = null;
         while (!$response) {
-            // php's filemtime results are cached, so we need to clear that cache or we'll be getting a stale modified time.
+            // Watch a version file that will cause us to automatically shut
+            // down if it changes.  This enables triggering a restart if new
+            // PHP is deployed.
+            //
+            // Note: php's filemtime results are cached, so we need to clear
+            //       that cache or we'll be getting a stale modified time.
             clearstatcache(true, $versionWatchFile);
-            $newVersionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile) ? filemtime($versionWatchFile) : false;
+            $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;
             if ($versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
@@ -122,8 +130,10 @@ try {
                 // just wait for child processes to finish.
                 break 2;
             }
+
+            // Query the server for a job
             try {
-                // Attempt to get a job
+                // Call GetJob
                 $response = $jobs->getJob($jobName, 60 * 1000); // Wait up to 60s
             } catch (Exception $e) {
                 // Try again in 60 seconds
@@ -166,11 +176,15 @@ try {
             $logger->info("Looking for worker '$workerFilename'");
             if (file_exists($workerFilename)) {
                 // The file seems to exist -- fork it so we can run it.
+                //
+                // Note: By explicitly ignoring SIGCHLD we tell the kernel to
+                //       "reap" finished child processes automatically, rather
+                //       than creating "zombie" processes.  (We don't care
+                //       about the child's exit code, so we have no use for the
+                //       zombie process.)
                 $logger->info("Forking and running a worker.", [
                     'workerFileName' => $workerFilename,
                 ]);
-                // Ignore SIGCHLD signal, which should help 'reap' zombie processes, forcing zombies to kill themselves
-                // in the event that the parent process dies before the child/zombie)
                 pcntl_signal(SIGCHLD, SIG_IGN);
                 $pid = pcntl_fork();
                 if ($pid == -1) {
@@ -245,10 +259,13 @@ try {
         }
     }
 
-    // We wait for all children to finish before dying.
-    $status = null;
-    pcntl_wait($status);
 } catch (Exception $e) {
     $message = $e->getMessage();
     $logger->alert('BedrockWorkerManager.php exited abnormally', ['exception' => $e]);
 }
+
+// We wait for all children to finish before dying.
+$logger->info('Stopping BedrockWorkerManager, waiting for children');
+$status = null;
+pcntl_wait($status);
+$logger->info('Stopped BedrockWorkerManager');

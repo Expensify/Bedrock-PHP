@@ -166,7 +166,7 @@ class Jobs extends Plugin
             // Add the timeout
             $headers["Connection"] = "wait";
             $headers["timeout"]    = $timeout;
-            $headers["idempotent"] = "true";
+            $headers["idempotent"] = true;
         }
 
         return $this->call("GetJob", $headers);
@@ -189,7 +189,7 @@ class Jobs extends Plugin
                 "jobID"      => $jobID,
                 "data"       => $data,
                 "repeat"     => $repeat,
-                "idempotent" => "true",
+                "idempotent" => true,
             ]
         );
     }
@@ -209,7 +209,7 @@ class Jobs extends Plugin
             [
                 "jobID"      => $jobID,
                 "data"       => $data,
-                "idempotent" => "true",
+                "idempotent" => true,
             ]
         );
     }
@@ -227,7 +227,7 @@ class Jobs extends Plugin
             "DeleteJob",
             [
                 "jobID"      => $jobID,
-                "idempotent" => "true",
+                "idempotent" => true,
             ]
         );
     }
@@ -245,7 +245,7 @@ class Jobs extends Plugin
             "FailJob",
             [
                 "jobID"      => $jobID,
-                "idempotent" => "true",
+                "idempotent" => true,
             ]
         );
     }
@@ -267,7 +267,7 @@ class Jobs extends Plugin
                 "jobID"      => $jobID,
                 "delay"      => $delay,
                 "data"       => $data,
-                "idempotent" => "true",
+                "idempotent" => true,
             ]
         );
     }
@@ -295,7 +295,7 @@ class Jobs extends Plugin
             "QueryJob",
             [
                 "jobID"      => $jobID,
-                "idempotent" => "true",
+                "idempotent" => true,
             ]
         );
 

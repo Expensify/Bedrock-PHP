@@ -183,7 +183,7 @@ class Client implements LoggerAwareInterface
         $rawRequest .= $body;
 
         // Try idempotent requests up to three times, everything else only once
-        $numTries = (@$headers['idempotent'] === 'true') ? 3 : 1;
+        $numTries = @$headers['idempotent'] ? 3 : 1;
         $response = null;
         while($numTries-- && !$response)
         {

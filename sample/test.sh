@@ -25,23 +25,25 @@ fi
 
 
 # -----------------------
-echo 'Creating job...'
+echo 'Creating 2 jobs...'
 echo "CreateJob
 name: SampleWorker
-data: {\"path\":\"$SAMPLEPATH\"}
+
+CreateJob
+name: SampleWorker
 connection: close
 
 " | nc localhost 8888 > /dev/null
 
 # -----------------------
-echo "Confirming job is QUEUED"
+echo "Confirming jobs are QUEUED"
 COUNT=`echo "Query: SELECT COUNT(*) FROM jobs;
 connection: close
 
 " | nc localhost 8888 | tail -n 1`
-if [ "$COUNT" != 1 ]
+if [ "$COUNT" != 2 ]
 then
-    echo "Failed to queue job"
+    echo "Failed to queue jobs"
     exit
 fi
 
@@ -51,7 +53,7 @@ php ../bin/BedrockWorkerManager.php --workerPath=. &
 PID=$!
 
 # -----------------------
-while [ "$COUNT" == 1 ]
+while [ "$COUNT" != 0 ]
 do
 echo "Waiting for job to finish"
 COUNT=`echo "Query: SELECT COUNT(*) FROM jobs;

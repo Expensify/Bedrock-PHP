@@ -22,6 +22,7 @@ class Client implements LoggerAwareInterface
      */
     public static function configure(array $config)
     {
+        // Store the configuration
         self::$config = array_merge([
             'host' => 'localhost',
             'port' => 8888,
@@ -146,8 +147,8 @@ class Client implements LoggerAwareInterface
         // Include the requestID for logging purposes
         if ($this->requestID) {
             $headers['requestID'] = $this->requestID;
-        } else if ($this->globalRequestID) {
-            $headers['requestID'] = $this->globalRequestID;
+        } else if (self::$globalRequestID) {
+            $headers['requestID'] = self::$globalRequestID;
         }
 
         // Set the write consistency

@@ -19,7 +19,7 @@ connection: close
 ' | nc localhost 8888 | head -n 1`
 if [[ "$RESULT" != 200* ]]
 then
-    echo "Cleanup failed: $RESULT"
+    echo "ERROR: Cleanup failed ($RESULT)"
     exit
 fi
 
@@ -34,6 +34,7 @@ name: SampleWorker
 connection: close
 
 " | nc localhost 8888 > /dev/null
+sleep 1
 
 # -----------------------
 echo "Confirming jobs are QUEUED"
@@ -43,13 +44,14 @@ connection: close
 " | nc localhost 8888 | tail -n 1`
 if [ "$COUNT" != 2 ]
 then
-    echo "Failed to queue jobs"
+    echo "ERROR: Failed to queue jobs (count=$COUNT)"
     exit
 fi
 
 # -----------------------
+# Simulate a broken primary server just to test the failover
 echo "Starting BWM..."
-php ../bin/BedrockWorkerManager.php --workerPath=. &
+php ../bin/BedrockWorkerManager.php --workerPath=. --host=0.0.0.0 --port=1234 --failoverHost=localhost --failoverPort=8888 &
 PID=$!
 
 # -----------------------
@@ -63,5 +65,6 @@ connection: close
 sleep 1
 done
 
+# -----------------------
 echo "Done"
 kill $PID

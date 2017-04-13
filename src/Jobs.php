@@ -166,6 +166,7 @@ class Jobs extends Plugin
             // Add the timeout
             $headers["Connection"] = "wait";
             $headers["timeout"]    = $timeout;
+            $headers["idempotent"] = "true";
         }
 
         return $this->call("GetJob", $headers);
@@ -185,9 +186,10 @@ class Jobs extends Plugin
         return $this->call(
             "UpdateJob",
             [
-                "jobID"    => $jobID,
-                "data"     => $data,
-                "repeat"   => $repeat,
+                "jobID"      => $jobID,
+                "data"       => $data,
+                "repeat"     => $repeat,
+                "idempotent" => "true",
             ]
         );
     }
@@ -205,8 +207,9 @@ class Jobs extends Plugin
         return $this->call(
             "FinishJob",
             [
-                "jobID" => $jobID,
-                "data"  => $data,
+                "jobID"      => $jobID,
+                "data"       => $data,
+                "idempotent" => "true",
             ]
         );
     }
@@ -223,7 +226,8 @@ class Jobs extends Plugin
         return $this->call(
             "DeleteJob",
             [
-                "jobID" => $jobID,
+                "jobID"      => $jobID,
+                "idempotent" => "true",
             ]
         );
     }
@@ -240,7 +244,8 @@ class Jobs extends Plugin
         return $this->call(
             "FailJob",
             [
-                "jobID" => $jobID,
+                "jobID"      => $jobID,
+                "idempotent" => "true",
             ]
         );
     }
@@ -259,9 +264,10 @@ class Jobs extends Plugin
         return $this->call(
             "RetryJob",
             [
-                "jobID" => $jobID,
-                "delay" => $delay,
-                "data"  => $data,
+                "jobID"      => $jobID,
+                "delay"      => $delay,
+                "data"       => $data,
+                "idempotent" => "true",
             ]
         );
     }
@@ -288,7 +294,8 @@ class Jobs extends Plugin
         $bedrockResponse = $this->call(
             "QueryJob",
             [
-                "jobID" => $jobID,
+                "jobID"      => $jobID,
+                "idempotent" => "true",
             ]
         );
 

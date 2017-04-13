@@ -182,11 +182,31 @@ class Client implements LoggerAwareInterface
         $rawRequest .= "\r\n";
         $rawRequest .= $body;
 
-        // Do the request.  This is split up into separate functions so we can
-        // profile them independently -- useful when diagnosing various network
-        // conditions.
-        $this->sendRawRequest($rawRequest);
-        $response = $this->receiveRawResponse();
+        // Try idempotent requests up to three times, everything else only once
+        $numTries = (@$headers['idempotent'] === 'true') ? 3 : 1;
+        $response = null;
+        while($numTries-- && !$response)
+        {
+            // Catch any connection failures and retry, but ignore non-connection failures.
+            try
+            {
+                // Do the request.  This is split up into separate functions so we can
+                // profile them independently -- useful when diagnosing various network
+                // conditions.
+                $this->sendRawRequest($rawRequest);
+                $response = $this->receiveRawResponse();
+            }
+            catch(ConnectionFailure $e)
+            {
+                // Failed to connect.  Are we retrying?
+                if ($numTries) {
+                    $this->getLogger()->warning("Failed to connect, send, or receive request; retrying $numTries more times", ['message' => $e->getMessage()]);
+                } else {
+                    $this->getLogger()->warning("Failed to connect, send, or receive request; not retrying", ['message' => $e->getMessage()]);
+                    throw $e;
+                }
+            }
+        }
 
         // Log how long this particular call took
         $processingTime = isset($response['headers']['processingTime']) ? $response['headers']['processingTime'] : 0;
@@ -317,6 +337,7 @@ class Client implements LoggerAwareInterface
             throw new ConnectionFailure("Could not connect to Bedrock primary or failover $socketError");
         }
 
+        // Configure this socket and connect to the primary host, failing over if necessary
         socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->sendTimeout, 'usec' => 0]);
         socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
         if (!(@socket_connect($this->socket, $this->host, $this->port))) {

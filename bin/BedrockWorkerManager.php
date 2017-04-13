@@ -29,7 +29,7 @@ if (php_sapi_name() !== "cli") {
 }
 
 // Parse the command line and verify the required settings are provided
-$options = getopt('', ['host::', 'port::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::']);
+$options = getopt('', ['host::', 'port::', 'failoverHost::', 'failoverPort::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::']);
 $workerPath = @$options['workerPath'];
 if (!$workerPath) {
     echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --host=<host> --port=<port> --maxIterations=<iteration> --writeConsistency=<consistency>]\r\n";
@@ -41,36 +41,8 @@ $jobName = @$options['jobName'] ?: '*'; // Process all jobs by default
 $maxLoad = floatval(@$options['maxLoad']) ?: 1.0; // Max load of 1.0 by default
 $maxIterations = intval(@$options['maxIterations']) ?: -1; // Unlimited iterations by default
 
-// ?? Why do we do this? 
-$bedrockConfig = [];
-if (isset($options['host'])) {
-    $bedrockConfig['host'] = $options['host'];
-}
-if (isset($options['port'])) {
-    $bedrockConfig['port'] = $options['port'];
-}
-if (isset($options['logger'])) {
-    $bedrockConfig['logger'] = $options['logger'];
-}
-if (isset($options['stats'])) {
-    $bedrockConfig['stats'] = $options['stats'];
-}
-if (isset($options['connectionTimeout'])) {
-    $bedrockConfig['connectionTimeout'] = $options['connectionTimeout'];
-}
-if (isset($options['readTimeout'])) {
-    $bedrockConfig['readTimeout'] = $options['readTimeout'];
-}
-if (isset($options['failoverHost'])) {
-    $bedrockConfig['failoverHost'] = $options['failoverHost'];
-}
-if (isset($options['failoverPort'])) {
-    $bedrockConfig['failoverPort'] = $options['failoverPort'];
-}
-if (isset($options['writeConsistency'])) {
-    $bedrockConfig['writeConsistency'] = $options['writeConsistency'];
-}
-Client::configure($bedrockConfig);
+// Configure the Bedrock client with these command-line options
+Client::configure($options);
 
 // Prepare to use the host logger, if configured
 $logger = Client::getLogger();

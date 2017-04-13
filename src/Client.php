@@ -74,6 +74,15 @@ class Client implements LoggerAwareInterface
     }
 
     /**
+     * Sets the global requestID, which is used if no instance requestID is given.
+     */
+    public static function setGlobalRequestID($globalRequestID)
+    {
+        // Override the global requestID
+        self::$globalRequestID = $globalRequestID;
+    }
+
+    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
@@ -279,15 +288,6 @@ class Client implements LoggerAwareInterface
      *                  PHP request and the bedrock request.  Used if requestID is not provided for this instance.
      */
     private static $globalRequestID;
-
-    /**
-     * Sets the global requestID
-     */
-    public static function setGlobalRequestID($globalRequestID)
-    {
-        // Override the global requestID
-        self::$globalRequestID = $globalRequestID;
-    }
 
     /**
      * @var string The bedrock write consistency we want to use.

@@ -144,9 +144,9 @@ try {
                 break 2;
             }
 
-            // Query the server for a job
+            // Ready to get a new job
             try {
-                // Call GetJob
+                // Query the server for a job
                 $response = $jobs->getJob($jobName, 60 * 1000); // Wait up to 60s
             } catch (Exception $e) {
                 // Try again in 60 seconds

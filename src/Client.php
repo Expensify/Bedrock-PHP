@@ -144,8 +144,6 @@ class Client implements LoggerAwareInterface
         }
 
         // Include the requestID for logging purposes
-        echo "requestID: '" . $this->requestID . "', globalRequestID: '" . $this->globalRequestID . "'\n";
-        exit(0);
         if ($this->requestID) {
             $headers['requestID'] = $this->requestID;
         } else if ($this->globalRequestID) {

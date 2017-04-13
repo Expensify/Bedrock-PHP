@@ -144,8 +144,12 @@ class Client implements LoggerAwareInterface
         }
 
         // Include the requestID for logging purposes
+        echo "requestID: '" . $this->requestID . "', globalRequestID: '" . $this->globalRequestID . "'\n";
+        exit(0);
         if ($this->requestID) {
             $headers['requestID'] = $this->requestID;
+        } else if ($this->globalRequestID) {
+            $headers['requestID'] = $this->globalRequestID;
         }
 
         // Set the write consistency
@@ -270,6 +274,21 @@ class Client implements LoggerAwareInterface
      *                  PHP request and the bedrock request.
      */
     private $requestID;
+
+    /**
+     * @var null|string The requestID to send to bedrock. This can be used to get consolidated logging between the
+     *                  PHP request and the bedrock request.  Used if requestID is not provided for this instance.
+     */
+    private static $globalRequestID;
+
+    /**
+     * Sets the global requestID
+     */
+    public static function setGlobalRequestID($globalRequestID)
+    {
+        // Override the global requestID
+        self::$globalRequestID = $globalRequestID;
+    }
 
     /**
      * @var string The bedrock write consistency we want to use.

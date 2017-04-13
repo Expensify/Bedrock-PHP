@@ -16,21 +16,32 @@ use Expensify\Bedrock\Jobs;
  * After N cycle in the loop, we exit
  * If the versionWatchFile modified time changes, we stop processing new jobs and exit after finishing all running jobs.
  *
- * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --versionWatchFile=<file> --writeConsistency=<consistency>]`
+ * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<iteration> --versionWatchFile=<file> --writeConsistency=<consistency>]`
  */
 
 // Verify it's being started correctly
 if (php_sapi_name() !== "cli") {
+    // Throw an exception rather than just output because we assume this is
+    // being executed on a webserver, so no STDOUT.  Hopefully they've
+    // configured a general uncaught exception handler, and this will trigger
+    // that.
     throw new Exception('This script is cli only');
 }
 
+// Parse the command line and verify the required settings are provided
 $options = getopt('', ['host::', 'port::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::']);
-$jobName = isset($options['jobName']) ? $options['jobName'] : null;
-$maxLoad = isset($options['maxLoad']) && floatval($options['maxLoad']) ? floatval($options['maxLoad']) : 0;
-$maxLoopIteration = isset($options['maxIterations']) && intval($options['maxIterations']) ? intval($options['maxIterations']) : 0;
-if (!$maxLoopIteration) {
-    $maxLoopIteration = 1000;
+$workerPath = @$options['workerPath'];
+if (!$workerPath) {
+    echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --host=<host> --port=<port> --maxIterations=<iteration> --writeConsistency=<consistency>]\r\n";
+    exit(1);
 }
+
+// Add defaults
+$jobName = @$options['jobName'] ?: '*'; // Process all jobs by default
+$maxLoad = floatval(@$options['maxLoad']) ?: 1.0; // Max load of 1.0 by default
+$maxIterations = intval(@$options['maxIterations']) ?: -1; // Unlimited iterations by default
+
+// ?? Why do we do this? 
 $bedrockConfig = [];
 if (isset($options['host'])) {
     $bedrockConfig['host'] = $options['host'];
@@ -59,42 +70,44 @@ if (isset($options['failoverPort'])) {
 if (isset($options['writeConsistency'])) {
     $bedrockConfig['writeConsistency'] = $options['writeConsistency'];
 }
-$versionWatchFile = isset($options['versionWatchFile']) ? $options['versionWatchFile'] : null;
-$workerPath = isset($options['workerPath']) ? $options['workerPath'] : null;
-if (!$jobName || !$maxLoad || !$workerPath) {
-    throw new Exception('Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --maxIterations=<loopIteration> --writeConsistency=<consistency>]');
-}
-if ($maxLoad <= 0) {
-    throw new Exception('Maximum load must be greater than zero');
-}
-
 Client::configure($bedrockConfig);
 
+// Prepare to use the host logger, if configured
 $logger = Client::getLogger();
-$logger->info('Starting BedrockWorkerManager', ['maxLoopIteration' => $maxLoopIteration]);
+$logger->info('Starting BedrockWorkerManager', ['maxIterations' => $maxIterations]);
 
-$stats = Client::getStats();
+// If --versionWatch is enabled, begin watching a version file for changes
+$versionWatchFile = @$options['versionWatchFile'];
 $versionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile) ? filemtime($versionWatchFile) : false;
 
 // Wrap everything in a general exception handler so we can handle error
 // conditions as gracefully as possible.
+$stats = Client::getStats();
 try {
+    // Validate details now that we have exception handling
+    if (!is_dir($workerPath)) {
+        throw new Exception("Invalid --workerPath path '$workerPath'");
+    }
+    if ($maxLoad <= 0) {
+        throw new Exception('--maxLoad must be greater than zero');
+    }
+
     // Connect to Bedrock -- it'll reconnect if necessary
     $bedrock = new Client();
     $jobs = new Jobs($bedrock);
 
-    // Loop a finite number of times and then self destruct.  This is to guard
-    // against memory leaks, as we assume there is some other script that will
-    // restart this when it dies.
-    $loopIteration = 0;
+    // If --maxIterations is set, loop a finite number of times and then self
+    // destruct.  This is to guard against memory leaks, as we assume there is
+    // some other script that will restart this when it dies.
+    $iteration = 0;
     while (true) {
         // Is it time to self destruct?
-        if ($loopIteration === $maxLoopIteration) {
+        if ($maxIterations > 0 && $iteration >= $maxIterations) {
             $logger->info("We did all our loops iteration, shutting down");
             break;
         }
-        $loopIteration++;
-        $logger->info("Loop iteration", ['iteration' => $loopIteration]);
+        $iteration++;
+        $logger->info("Loop iteration", ['iteration' => $iteration]);
 
         // Step One wait for resources to free up
         while (true) {
@@ -142,29 +155,28 @@ try {
             }
         }
 
-        if (!$response) {
-            $logger->info('Got no response from bedrock... Continuing.');
-            continue;
-        }
-
         // Found a job
         if ($response['code'] == 200) {
-            // BWM jobs are '/' separated names, the last component of which indicates the name of the worker to
-            // instantiate to execute this job:
-            // arbitrary/optional/path/to/workerName
+            // BWM jobs are '/' separated names, the last component of which
+            // indicates the name of the worker to instantiate to execute this
+            // job:
+            //
+            //     arbitrary/optional/path/to/workerName
+            //
             // We look for a file:
             //
-            //                    <workerPath>/<workerName>.php
+            //     <workerPath>/<workerName>.php
             //
-            //                If it's there, we include it, and then create
-            //                an object and run it like:
+            // If it's there, we include it, and then create an object and run
+            // it like:
             //
-            //                    $worker = new $workerName( $job );
-            //                    $worker->safeRun( );
+            //     $worker = new $workerName( $job );
+            //     $worker->safeRun( );
             //
-            // The optional path info allows for jobs to be scheduled selectively. I.e., you may have separate jobs
-            // scheduled as production/jobName and staging/jobName, with a WorkerManager in each environment looking for
-            // each path.
+            // The optional path info allows for jobs to be scheduled
+            // selectively.  For example, you may have separate jobs scheduled
+            // as production/jobName and staging/jobName, with a WorkerManager
+            // in each environment looking for each path.
             $job = $response['body'];
             $parts = explode('/', $job['name']);
             $jobParts = explode('?', $job['name']);
@@ -262,6 +274,7 @@ try {
 } catch (Exception $e) {
     $message = $e->getMessage();
     $logger->alert('BedrockWorkerManager.php exited abnormally', ['exception' => $e]);
+    echo "Error: $message\r\n";
 }
 
 // We wait for all children to finish before dying.

@@ -10,6 +10,6 @@ class SampleWorker extends BedrockWorker
      */
     public function run()
     {
-        Log::info("Running SampleWorker for '{$this->job['name']}'");
+        $this->bedrock->getLogger()->info("Running SampleWorker for '{$this->job['name']}'");
     }
 }

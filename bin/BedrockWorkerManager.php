@@ -37,7 +37,7 @@ if (!$workerPath) {
 }
 
 // Add defaults
-$jobName = @$options['jobName'] ?: '*'; // Process all jobs by default
+$jobName = $options['jobName'] ?? '*'; // Process all jobs by default
 $maxLoad = floatval(@$options['maxLoad']) ?: 1.0; // Max load of 1.0 by default
 $maxIterations = intval(@$options['maxIterations']) ?: -1; // Unlimited iterations by default
 

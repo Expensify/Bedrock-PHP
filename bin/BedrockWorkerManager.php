@@ -143,7 +143,7 @@ try {
             // it like:
             //
             //     $worker = new $workerName( $job );
-            //     $worker->safeRun( );
+            //     $worker->run( );
             //
             // The optional path info allows for jobs to be scheduled
             // selectively.  For example, you may have separate jobs scheduled
@@ -176,12 +176,14 @@ try {
                     $errorMessage = pcntl_strerror(pcntl_get_last_error());
                     throw new Exception("Unable to fork because '$errorMessage', aborting.");
                 } elseif ($pid == 0) {
+                    // **NOTE: There is a crazy hack where we depend on the
+                    //         info below being sent exactly as currently
+                    //         worded; do not make any changes
                     $logger->info("Fork succeeded, child process, running job", [
                         'name' => $job['name'],
                         'id' => $job['jobID'],
                         'extraParams' => $extraParams,
                     ]);
-
                     $stats->counter('bedrockJob.create.'.$job['name']);
 
                     // Include the worker now (not in the parent thread) such
@@ -221,6 +223,7 @@ try {
                         }
                     });
 
+                    // The forked worker process is all done.
                     $stats->counter('bedrockJob.finish.'.$job['name']);
                     exit(1);
                 } else {

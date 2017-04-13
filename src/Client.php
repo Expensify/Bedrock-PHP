@@ -185,19 +185,16 @@ class Client implements LoggerAwareInterface
         // Try idempotent requests up to three times, everything else only once
         $numTries = @$headers['idempotent'] ? 3 : 1;
         $response = null;
-        while($numTries-- && !$response)
-        {
+        while($numTries-- && !$response) {
             // Catch any connection failures and retry, but ignore non-connection failures.
-            try
-            {
+            try {
                 // Do the request.  This is split up into separate functions so we can
                 // profile them independently -- useful when diagnosing various network
                 // conditions.
                 $this->sendRawRequest($rawRequest);
                 $response = $this->receiveRawResponse();
             }
-            catch(ConnectionFailure $e)
-            {
+            catch(ConnectionFailure $e) {
                 // Failed to connect.  Are we retrying?
                 if ($numTries) {
                     $this->getLogger()->warning("Failed to connect, send, or receive request; retrying $numTries more times", ['message' => $e->getMessage()]);

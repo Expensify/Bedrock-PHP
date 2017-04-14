@@ -199,7 +199,7 @@ class Client implements LoggerAwareInterface
                 if ($numTries) {
                     $this->getLogger()->warning("Failed to connect, send, or receive request; retrying $numTries more times", ['message' => $e->getMessage()]);
                 } else {
-                    $this->getLogger()->warning("Failed to connect, send, or receive request; not retrying", ['message' => $e->getMessage()]);
+                    $this->getLogger()->error("Failed to connect, send, or receive request; not retrying", ['message' => $e->getMessage()]);
                     throw $e;
                 }
             }

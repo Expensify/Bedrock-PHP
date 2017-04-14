@@ -32,7 +32,6 @@ class Client implements LoggerAwareInterface
             'readTimeout' => 300,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
-            'requestID' => null,
             'writeConsistency' => 'ASYNC',
         ], self::$config, $config);
     }
@@ -74,15 +73,6 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Sets the global requestID, which is used if no instance requestID is given.
-     */
-    public static function setGlobalRequestID($globalRequestID)
-    {
-        // Override the global requestID
-        self::$globalRequestID = $globalRequestID;
-    }
-
-    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
@@ -94,12 +84,11 @@ class Client implements LoggerAwareInterface
      * @param int             $readTimeout       Timeout to use when reading
      * @param LoggerInterface $logger            Class to use for logging
      * @param StatsInterface  $stats             Class to use for statistics tracking
-     * @param string          $requestID         RequestID to send to bedrock for consolidated logging
      * @param string          $writeConsistency  The bedrock write consistency we want to use
      *
      * @throws BedrockError
      */
-    public function __construct($host = null, $port = null, $failoverHost = null, $failoverPort = null, $connectionTimeout = null, $readTimeout = null, LoggerInterface $logger = null, StatsInterface $stats = null, $requestID = null, $writeConsistency = null)
+    public function __construct($host = null, $port = null, $failoverHost = null, $failoverPort = null, $connectionTimeout = null, $readTimeout = null, LoggerInterface $logger = null, StatsInterface $stats = null, $writeConsistency = null)
     {
         // Store these for future use
         $this->host             = $host ?: self::$config['host'];
@@ -110,7 +99,6 @@ class Client implements LoggerAwareInterface
         $this->readTimeout      = $readTimeout ?: self::$config['readTimeout'];
         $this->logger           = $logger ?: self::getLogger();
         $this->stats            = $stats ?: self::getStats();
-        $this->requestID        = $requestID ?: self::$config['requestID'];
         $this->writeConsistency = $writeConsistency ?: self::$config['writeConsistency'];
 
         // If failovers still not defined, just copy primary
@@ -154,10 +142,8 @@ class Client implements LoggerAwareInterface
         }
 
         // Include the requestID for logging purposes
-        if ($this->requestID) {
-            $headers['requestID'] = $this->requestID;
-        } else if (self::$globalRequestID) {
-            $headers['requestID'] = self::$globalRequestID;
+        if (defined('REQUEST_ID')) {
+            $headers['requestID'] = REQUEST_ID;
         }
 
         // Set the write consistency
@@ -293,18 +279,6 @@ class Client implements LoggerAwareInterface
      * @var StatsInterface
      */
     private $stats;
-
-    /**
-     * @var null|string The requestID to send to bedrock. This can be used to get consolidated logging between the
-     *                  PHP request and the bedrock request.
-     */
-    private $requestID;
-
-    /**
-     * @var null|string The requestID to send to bedrock. This can be used to get consolidated logging between the
-     *                  PHP request and the bedrock request.  Used if requestID is not provided for this instance.
-     */
-    private static $globalRequestID;
 
     /**
      * @var string The bedrock write consistency we want to use.

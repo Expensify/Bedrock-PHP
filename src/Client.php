@@ -142,8 +142,8 @@ class Client implements LoggerAwareInterface
         }
 
         // Include the requestID for logging purposes
-        if (defined('REQUEST_ID')) {
-            $headers['requestID'] = REQUEST_ID;
+        if (isset($GLOBALS['REQUEST_ID'])) {
+            $headers['requestID'] = $GLOBALS['REQUEST_ID'];
         }
 
         // Set the write consistency

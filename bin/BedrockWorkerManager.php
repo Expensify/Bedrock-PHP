@@ -176,14 +176,24 @@ try {
                     $errorMessage = pcntl_strerror(pcntl_get_last_error());
                     throw new Exception("Unable to fork because '$errorMessage', aborting.");
                 } elseif ($pid == 0) {
-                    // **NOTE: There is a crazy hack where we depend on the
-                    //         info below being sent exactly as currently
-                    //         worded; do not make any changes
+                    // If we are using a global REQUEST_ID, reset it to indicate this is a new process.
                     $logger->info("Fork succeeded, child process, running job", [
                         'name' => $job['name'],
                         'id' => $job['jobID'],
                         'extraParams' => $extraParams,
                     ]);
+                    if (isset($GLOBALS['REQUEST_ID'])) {
+                        // Reset the REQUEST_ID and re-log the line so we see
+                        // it when searching for either the parent and child
+                        // REQUEST_IDs.
+                        mt_srand(getmypid());
+                        $GLOBALS['REQUEST_ID'] = substr(base64_encode(sha1(mt_rand())),0,6); // random 6 character ID
+                        $logger->info("Fork succeeded, child process, running job", [
+                            'name' => $job['name'],
+                            'id' => $job['jobID'],
+                            'extraParams' => $extraParams,
+                        ]);
+                    }
                     $stats->counter('bedrockJob.create.'.$job['name']);
 
                     // Include the worker now (not in the parent thread) such

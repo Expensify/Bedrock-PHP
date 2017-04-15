@@ -1,5 +1,5 @@
 #!/bin/bash
-# This is a trival test to demonstrate Bedrock::Jobs
+# This is a trival script to demonstrate Bedrock::Jobs
 
 # -----------------------
 echo "Confirming bedrock is running"
@@ -11,7 +11,7 @@ then
 fi
 
 # -----------------------
-echo "Clean up after the last test"
+echo "Clean up after the last demo"
 RESULT=`echo 'Query
 query: DELETE FROM jobs;
 connection: close
@@ -25,11 +25,8 @@ fi
 
 
 # -----------------------
-echo 'Creating 2 jobs...'
+echo 'Creating a SampleWorker job...'
 echo "CreateJob
-name: SampleWorker
-
-CreateJob
 name: SampleWorker
 connection: close
 
@@ -37,21 +34,20 @@ connection: close
 sleep 1
 
 # -----------------------
-echo "Confirming jobs are QUEUED"
+echo "Confirming job is QUEUED"
 COUNT=`echo "Query: SELECT COUNT(*) FROM jobs;
 connection: close
 
 " | nc localhost 8888 | tail -n 1`
-if [ "$COUNT" != 2 ]
+if [ "$COUNT" != 1 ]
 then
-    echo "ERROR: Failed to queue jobs (count=$COUNT)"
+    echo "ERROR: Failed to queue job (count=$COUNT)"
     exit
 fi
 
 # -----------------------
-# Simulate a broken primary server just to test the failover
 echo "Starting BWM..."
-php ../bin/BedrockWorkerManager.php --workerPath=. --host=0.0.0.0 --port=1234 --failoverHost=localhost --failoverPort=8888 &
+php ../bin/BedrockWorkerManager.php --workerPath=. &
 PID=$!
 
 # -----------------------

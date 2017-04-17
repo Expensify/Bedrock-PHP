@@ -22,6 +22,7 @@ class Client implements LoggerAwareInterface
      */
     public static function configure(array $config)
     {
+        // Store the configuration
         self::$config = array_merge([
             'host' => 'localhost',
             'port' => 8888,
@@ -31,7 +32,6 @@ class Client implements LoggerAwareInterface
             'readTimeout' => 300,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
-            'requestID' => null,
             'writeConsistency' => 'ASYNC',
         ], self::$config, $config);
     }
@@ -84,12 +84,11 @@ class Client implements LoggerAwareInterface
      * @param int             $readTimeout       Timeout to use when reading
      * @param LoggerInterface $logger            Class to use for logging
      * @param StatsInterface  $stats             Class to use for statistics tracking
-     * @param string          $requestID         RequestID to send to bedrock for consolidated logging
      * @param string          $writeConsistency  The bedrock write consistency we want to use
      *
      * @throws BedrockError
      */
-    public function __construct($host = null, $port = null, $failoverHost = null, $failoverPort = null, $connectionTimeout = null, $readTimeout = null, LoggerInterface $logger = null, StatsInterface $stats = null, $requestID = null, $writeConsistency = null)
+    public function __construct($host = null, $port = null, $failoverHost = null, $failoverPort = null, $connectionTimeout = null, $readTimeout = null, LoggerInterface $logger = null, StatsInterface $stats = null, $writeConsistency = null)
     {
         // Store these for future use
         $this->host             = $host ?: self::$config['host'];
@@ -100,7 +99,6 @@ class Client implements LoggerAwareInterface
         $this->readTimeout      = $readTimeout ?: self::$config['readTimeout'];
         $this->logger           = $logger ?: self::getLogger();
         $this->stats            = $stats ?: self::getStats();
-        $this->requestID        = $requestID ?: self::$config['requestID'];
         $this->writeConsistency = $writeConsistency ?: self::$config['writeConsistency'];
 
         // If failovers still not defined, just copy primary
@@ -144,8 +142,8 @@ class Client implements LoggerAwareInterface
         }
 
         // Include the requestID for logging purposes
-        if ($this->requestID) {
-            $headers['requestID'] = $this->requestID;
+        if (isset($GLOBALS['REQUEST_ID'])) {
+            $headers['requestID'] = $GLOBALS['REQUEST_ID'];
         }
 
         // Set the write consistency
@@ -170,11 +168,35 @@ class Client implements LoggerAwareInterface
         $rawRequest .= "\r\n";
         $rawRequest .= $body;
 
-        // Do the request.  This is split up into separate functions so we can
-        // profile them independently -- useful when diagnosing various network
-        // conditions.
-        $this->sendRawRequest($rawRequest);
-        $response = $this->receiveRawResponse();
+        // Try idempotent requests up to three times, everything else only once
+        $numTries = @$headers['idempotent'] ? 3 : 1;
+        $response = null;
+        $lastTryException = null;
+        while($numTries-- && !$response) {
+            // Catch any connection failures and retry, but ignore non-connection failures.
+            try {
+                // Do the request.  This is split up into separate functions so we can
+                // profile them independently -- useful when diagnosing various network
+                // conditions.
+                $this->sendRawRequest($rawRequest);
+                $response = $this->receiveRawResponse();
+                
+                // Record the last error in the response as this affects how we
+                // handle errors on this command
+                if ($lastTryException) {
+                    $response['lastTryException'] = $lastTryException;
+                }
+            } catch(ConnectionFailure $e) {
+                // Failed to connect.  Are we retrying?
+                if ($numTries) {
+                    $this->getLogger()->warning("Failed to connect, send, or receive request; retrying $numTries more times", ['message' => $e->getMessage()]);
+                    $lastTryException = $e;
+                } else {
+                    $this->getLogger()->error("Failed to connect, send, or receive request; not retrying", ['message' => $e->getMessage()]);
+                    throw $e;
+                }
+            }
+        }
 
         // Log how long this particular call took
         $processingTime = isset($response['headers']['processingTime']) ? $response['headers']['processingTime'] : 0;
@@ -266,12 +288,6 @@ class Client implements LoggerAwareInterface
     private $stats;
 
     /**
-     * @var null|string The requestID to send to bedrock. This can be used to get consolidated logging between the
-     *                  PHP request and the bedrock request.
-     */
-    private $requestID;
-
-    /**
      * @var string The bedrock write consistency we want to use.
      */
     private $writeConsistency;
@@ -299,6 +315,7 @@ class Client implements LoggerAwareInterface
             throw new ConnectionFailure("Could not connect to Bedrock primary or failover $socketError");
         }
 
+        // Configure this socket and connect to the primary host, failing over if necessary
         socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->sendTimeout, 'usec' => 0]);
         socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
         if (!(@socket_connect($this->socket, $this->host, $this->port))) {

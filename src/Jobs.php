@@ -94,6 +94,19 @@ class Jobs extends Plugin
 
         $this->client->getStats()->counter('bedrockJob.call.response.'.$method.$responseCode);
 
+        if ($responseCode!=200 && @$response['lastTryException']) {
+            // We had a connection failure last time around, so let's ignore
+            // any non-200 requests this time.  Either it worked and this error
+            // is a false alarm, or it didn't work and the next command will
+            // fail.  Either way, we can't know at this moment if this is a
+            // real error so just log the problem and hope it gets sorted out.
+            $lastError = $response['lastTryException']->getMessage();
+            $this->client->getLogger()->warning("Retried a command and got a potentially benign error: '$lastError'");
+            $responseCode = 200;
+            $response['code'] = 200;
+        }
+            
+
         if ($responseCode === 402) {
             throw new MalformedAttribute("Malformed attribute. Job :$job, message: $codeLine");
         }
@@ -166,6 +179,7 @@ class Jobs extends Plugin
             // Add the timeout
             $headers["Connection"] = "wait";
             $headers["timeout"]    = $timeout;
+            $headers["idempotent"] = true;
         }
 
         return $this->call("GetJob", $headers);
@@ -185,9 +199,10 @@ class Jobs extends Plugin
         return $this->call(
             "UpdateJob",
             [
-                "jobID"    => $jobID,
-                "data"     => $data,
-                "repeat"   => $repeat,
+                "jobID"      => $jobID,
+                "data"       => $data,
+                "repeat"     => $repeat,
+                "idempotent" => true,
             ]
         );
     }
@@ -205,8 +220,9 @@ class Jobs extends Plugin
         return $this->call(
             "FinishJob",
             [
-                "jobID" => $jobID,
-                "data"  => $data,
+                "jobID"      => $jobID,
+                "data"       => $data,
+                "idempotent" => true,
             ]
         );
     }
@@ -223,7 +239,8 @@ class Jobs extends Plugin
         return $this->call(
             "DeleteJob",
             [
-                "jobID" => $jobID,
+                "jobID"      => $jobID,
+                "idempotent" => true,
             ]
         );
     }
@@ -240,7 +257,8 @@ class Jobs extends Plugin
         return $this->call(
             "FailJob",
             [
-                "jobID" => $jobID,
+                "jobID"      => $jobID,
+                "idempotent" => true,
             ]
         );
     }
@@ -259,9 +277,10 @@ class Jobs extends Plugin
         return $this->call(
             "RetryJob",
             [
-                "jobID" => $jobID,
-                "delay" => $delay,
-                "data"  => $data,
+                "jobID"      => $jobID,
+                "delay"      => $delay,
+                "data"       => $data,
+                "idempotent" => true,
             ]
         );
     }
@@ -288,7 +307,8 @@ class Jobs extends Plugin
         $bedrockResponse = $this->call(
             "QueryJob",
             [
-                "jobID" => $jobID,
+                "jobID"      => $jobID,
+                "idempotent" => true,
             ]
         );
 

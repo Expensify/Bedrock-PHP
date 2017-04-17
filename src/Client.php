@@ -171,6 +171,7 @@ class Client implements LoggerAwareInterface
         // Try idempotent requests up to three times, everything else only once
         $numTries = @$headers['idempotent'] ? 3 : 1;
         $response = null;
+        $lastTryException = null;
         while($numTries-- && !$response) {
             // Catch any connection failures and retry, but ignore non-connection failures.
             try {
@@ -179,11 +180,18 @@ class Client implements LoggerAwareInterface
                 // conditions.
                 $this->sendRawRequest($rawRequest);
                 $response = $this->receiveRawResponse();
+                
+                // Record the last error in the response as this affects how we
+                // handle errors on this command
+                if ($lastTryException) {
+                    $response['lastTryException'] = $lastTryException;
+                }
             }
             catch(ConnectionFailure $e) {
                 // Failed to connect.  Are we retrying?
                 if ($numTries) {
                     $this->getLogger()->warning("Failed to connect, send, or receive request; retrying $numTries more times", ['message' => $e->getMessage()]);
+                    $lastTryException = $e;
                 } else {
                     $this->getLogger()->error("Failed to connect, send, or receive request; not retrying", ['message' => $e->getMessage()]);
                     throw $e;

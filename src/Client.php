@@ -186,8 +186,7 @@ class Client implements LoggerAwareInterface
                 if ($lastTryException) {
                     $response['lastTryException'] = $lastTryException;
                 }
-            }
-            catch(ConnectionFailure $e) {
+            } catch(ConnectionFailure $e) {
                 // Failed to connect.  Are we retrying?
                 if ($numTries) {
                     $this->getLogger()->warning("Failed to connect, send, or receive request; retrying $numTries more times", ['message' => $e->getMessage()]);

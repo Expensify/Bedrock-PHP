@@ -186,7 +186,7 @@ try {
                         // Reset the REQUEST_ID and re-log the line so we see
                         // it when searching for either the parent and child
                         // REQUEST_IDs.
-                        mt_srand(getmypid());
+                        mt_srand(getmypid() * microtime());
                         $GLOBALS['REQUEST_ID'] = substr(base64_encode(sha1(mt_rand())),0,6); // random 6 character ID
                         $logger->info("Fork succeeded, child process, running job", [
                             'name' => $job['name'],

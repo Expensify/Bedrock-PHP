@@ -135,17 +135,18 @@ class Jobs extends Plugin
      * Schedules a new job, optionally in the future, optionally to repeat.
      *
      * @param string      $name
-     * @param array|null  $data        (optional)
-     * @param string|null $firstRun    (optional)
-     * @param string|null $repeat      (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
-     * @param bool        $unique      Do we want only one job with this name to exist?
-     * @param int         $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
-     * @param int|null    $parentJobID (optional) Specify this job's parent job.
-     * @param string      $connection  (optional) Specify 'Connection' header using constants defined in this class.
+     * @param array|null  $data         (optional)
+     * @param string|null $firstRun     (optional)
+     * @param string|null $repeat       (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param bool        $unique       Do we want only one job with this name to exist?
+     * @param int         $priority     (optional) Specify a job priority. Jobs with higher priorities will be run first.
+     * @param int|null    $parentJobID  (optional) Specify this job's parent job.
+     * @param string      $connection   (optional) Specify 'Connection' header using constants defined in this class.
+     * @param bool        $isIdempotent (optional) Whether the command can be retried if it fails.
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $isIdempotent = false)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
 
@@ -160,6 +161,7 @@ class Jobs extends Plugin
                 'priority'    => $priority,
                 'parentJobID' => $parentJobID,
                 'Connection'  => $connection,
+                'idempotent'  => $isIdempotent
             ]
         );
     }

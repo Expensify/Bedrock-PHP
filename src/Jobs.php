@@ -160,6 +160,9 @@ class Jobs extends Plugin
                 'priority'    => $priority,
                 'parentJobID' => $parentJobID,
                 'Connection'  => $connection,
+                // If the name of the job has to be unique, Bedrock will return any existing job that exists with the
+                // given name instead of making a new one, which essentially makes the command idempotent.
+                'idempotent'  => $unique
             ]
         );
     }

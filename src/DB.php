@@ -39,6 +39,7 @@ class DB extends Plugin
      */
     public function query($sql)
     {
+        $sql = substr($sql, -1) === ";" ? $sql : $sql.";";
         $response = new Response($this->client->call(
             "Query",
             [

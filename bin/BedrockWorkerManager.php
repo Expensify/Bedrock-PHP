@@ -29,7 +29,11 @@ if (php_sapi_name() !== "cli") {
 }
 
 // Parse the command line and verify the required settings are provided
-$options = getopt('', ['host::', 'port::', 'failoverHost::', 'failoverPort::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::']);
+$options = getopt('', ['host::', 'port::', 'failoverHost::', 'failoverPort::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::', ‘maxNumberWorkerThreads::’]);
+
+// Store parent ID to determine if we should continue forking
+$parentID = getmypid();
+
 $workerPath = @$options['workerPath'];
 if (!$workerPath) {
     echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --host=<host> --port=<port> --maxIterations=<iteration> --writeConsistency=<consistency>]\r\n";
@@ -40,6 +44,7 @@ if (!$workerPath) {
 $jobName = $options['jobName'] ?? '*'; // Process all jobs by default
 $maxLoad = floatval(@$options['maxLoad']) ?: 1.0; // Max load of 1.0 by default
 $maxIterations = intval(@$options['maxIterations']) ?: -1; // Unlimited iterations by default
+$maxNumberWorkerThreads = intval($options[‘maxNumberWorkerThreads’]) ?? 5; // Max number of worker threads for temporary load handling. TODO: Remove this in favor of better solution
 
 // Configure the Bedrock client with these command-line options
 Client::configure($options);
@@ -81,18 +86,24 @@ try {
         $iteration++;
         $logger->info("Loop iteration", ['iteration' => $iteration]);
 
+        $forkIterations = 0;
         // Step One wait for resources to free up
         while (true) {
             // Get the latest load
             if (!file_exists('/proc/loadavg')) {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
+
+            // Check if we can fork based on our hard-coded limit
+            exec("pgrep -P $parentID", $output);
+
+            // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            if ($load < $maxLoad) {
+            if ($load < $maxLoad || count($output) < $maxNumberWorkerThreads) {
                 $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 break;
             } else {
-                $logger->info('Load is over max, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('Load is over max, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad, 'forkIterations' => $forkIterations]);
                 sleep(1);
             }
         }

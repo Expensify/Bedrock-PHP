@@ -99,7 +99,7 @@ try {
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            if ($load < $maxLoad || count($output) < $maxNumberWorkerThreads) {
+            if ($load < $maxLoad && count($output) < $maxNumberWorkerThreads) {
                 $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad, 'numberWorkerThreads' => count($output), 'forkIterations' => $forkIterations]);
                 break;
             } else {

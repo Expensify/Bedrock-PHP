@@ -32,7 +32,7 @@ if (php_sapi_name() !== "cli") {
 $options = getopt('', ['host::', 'port::', 'failoverHost::', 'failoverPort::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::', 'maxNumberWorkerThreads::']);
 
 // Store parent ID to determine if we should continue forking
-$parentID = getmypid();
+$thisPID = getmypid();
 
 $workerPath = @$options['workerPath'];
 if (!$workerPath) {
@@ -86,24 +86,25 @@ try {
         $iteration++;
         $logger->info("Loop iteration", ['iteration' => $iteration]);
 
-        $forkIterations = 0;
         // Step One wait for resources to free up
+        $forkIterations = 0;
         while (true) {
+            $childProcesses = [];
             // Get the latest load
             if (!file_exists('/proc/loadavg')) {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
 
             // Check if we can fork based on our hard-coded limit
-            exec("pgrep -P $parentID", $output);
+            exec("pgrep -P $thisPID", $childProcesses);
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            if ($load < $maxLoad && count($output) < $maxNumberWorkerThreads) {
-                $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad, 'numberWorkerThreads' => count($output), 'forkIterations' => $forkIterations]);
+            if ($load < $maxLoad && count($childProcesses) <= $maxNumberWorkerThreads) {
+                $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad, 'numberWorkerThreads' => count($childProcesses), 'maxNumberWorkerThreads' => $maxNumberWorkerThreads, 'forkIterations' => $forkIterations]);
                 break;
             } else {
-                $logger->info('Load is over max, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad, 'numberWorkerThreads' => count($output), 'forkIterations' => $forkIterations]);
+                $logger->info('Load is over max, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad, 'numberWorkerThreads' => count($childProcesses), 'maxNumberWorkerThreads' => $maxNumberWorkerThreads, 'forkIterations' => $forkIterations]);
                 sleep(1);
             }
         }

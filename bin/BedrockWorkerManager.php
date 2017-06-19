@@ -42,8 +42,8 @@ if (!$workerPath) {
 
 // Add defaults
 $jobName = $options['jobName'] ?? '*'; // Process all jobs by default
-$maxLoad = floatval(@$options['maxLoad']) ?: 1.0; // Max load of 1.0 by default
-$maxIterations = intval(@$options['maxIterations']) ?: -1; // Unlimited iterations by default
+$maxLoad = floatval($options['maxLoad'] ?? 1.0); // Max load of 1.0 by default
+$maxIterations = intval($options['maxIterations'] ?? -1); // Unlimited iterations by default
 $maxNumberWorkerThreads = intval($options['maxNumberWorkerThreads'] ?? 5); // Max number of worker threads for temporary load handling. TODO: Remove this in favor of better solution
 
 // Configure the Bedrock client with these command-line options

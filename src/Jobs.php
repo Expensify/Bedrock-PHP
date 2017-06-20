@@ -149,7 +149,7 @@ class Jobs extends Plugin
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
 
-        return $this->call(
+        $response = $this->call(
             'CreateJob',
             [
                 'name'        => $name,
@@ -165,6 +165,10 @@ class Jobs extends Plugin
                 'idempotent'  => $unique
             ]
         );
+
+        $this->client->getLogger()->info('Job created', ['name' => $name, 'id' => $response['body']['jobID'] ?? null]);
+
+        return $response;
     }
 
     /**

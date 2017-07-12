@@ -4,6 +4,17 @@ use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
 
+const PATH_TO_DB = "../data/test.db";
+// Magic numbers (configurable via the command line)
+const NUM_TOTAL_JOBS = 100;
+const MIN_SAFE_JOBS = 10;  // The minimum number of jobs before we start paying attention
+const MAX_SAFE_TIME = 0; // The maximum job time before we start paying attention
+const DEBUG_THROTTLE = false; // Set to true to maintain a debug history
+$target = MIN_SAFE_JOBS;
+
+createTable();
+$localJobID = getNextLocalJobID();
+
 /*
  * BedrockWorkerManager
  * ====================
@@ -44,7 +55,7 @@ if (!$workerPath) {
 $jobName = $options['jobName'] ?? '*'; // Process all jobs by default
 $maxLoad = floatval(@$options['maxLoad']) ?: 1.0; // Max load of 1.0 by default
 $maxIterations = intval(@$options['maxIterations']) ?: -1; // Unlimited iterations by default
-$maxNumberWorkerThreads = intval($options['maxNumberWorkerThreads']) ?? 5; // Max number of worker threads for temporary load handling. TODO: Remove this in favor of better solution
+//$maxNumberWorkerThreads = intval($options['maxNumberWorkerThreads']) ?? 5; // Max number of worker threads for temporary load handling. TODO: Remove this in favor of better solution
 
 // Configure the Bedrock client with these command-line options
 Client::configure($options);
@@ -83,11 +94,11 @@ try {
             $logger->info("We did all our loops iteration, shutting down");
             break;
         }
+        $localJobID++;
         $iteration++;
         $logger->info("Loop iteration", ['iteration' => $iteration]);
 
         // Step One wait for resources to free up
-        $forkIterations = 0;
         while (true) {
             $childProcesses = [];
             // Get the latest load
@@ -95,16 +106,13 @@ try {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
 
-            // Check if we can fork based on our hard-coded limit
-            exec("pgrep -P $thisPID", $childProcesses);
-
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            if ($load < $maxLoad && count($childProcesses) <= $maxNumberWorkerThreads) {
-                $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad, 'numberWorkerThreads' => count($childProcesses), 'maxNumberWorkerThreads' => $maxNumberWorkerThreads, 'forkIterations' => $forkIterations]);
+            if ($load < $maxLoad && safeToStartANewJob()) {
+                $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 break;
             } else {
-                $logger->info('Load is over max, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad, 'numberWorkerThreads' => count($childProcesses), 'maxNumberWorkerThreads' => $maxNumberWorkerThreads, 'forkIterations' => $forkIterations]);
+                $logger->info('Load is over max, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 sleep(1);
             }
         }
@@ -213,9 +221,15 @@ try {
                     include_once $workerFilename;
                     $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger) {
                         $worker = new $workerName($bedrock, $job);
+                        $childPID = getmypid();
                         try {
+                            $logger->info("write query: ".$localJobID);
+                            write("INSERT INTO localJobs (localJobID, pid, jobID, jobName, started) values (".$localJobID.", $childPID, {$job['jobID']}, {$job['name']}, DATETIME('now'));");
+
                             // Run the worker.  If it completes successfully, finish the job.
                             $worker->run();
+
+                            write("UPDATE localJobs SET ended=DATETIME('now') WHERE localJobID=".$localJobID.";");
 
                             // Success
                             $logger->info("Job completed successfully, exiting.", [
@@ -278,3 +292,112 @@ $logger->info('Stopping BedrockWorkerManager, waiting for children');
 $status = null;
 pcntl_wait($status);
 $logger->info('Stopped BedrockWorkerManager');
+
+// Determines whether or not we call GetJob and try to start a new job
+function safeToStartANewJob()
+{
+    global $target, $logger;
+    // Have we hit our target job count?
+    $query = 'SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;';
+    $numActive = read($query)[0];
+
+    if ($numActive < $target) {
+        $logger->info("LOAD: $target $numActive");
+        // Still in a safe zone, don't worry about load
+        return true;
+    }
+
+    // We're at or over our target; do we have enough data to evaluate the speed?
+    $numFinished = read('SELECT COUNT(*) FROM localJobs WHERE ended IS NOT NULL;')[0];
+    if ($numFinished < $target*2) {
+        // Wait until we finish at least two batches of our target so we can evaluate its speed,
+        // before expanding the batch.
+        return false;
+    }
+
+    // Calculate the speed of the last 2 batches to see if we're speeding up or slowing down
+    $oldBatchTime = 0;
+    $oldBatchTimes = read("SELECT cast(strftime('%s', ended)-strftime('%s', started) as int) from localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;");
+    if (is_array($oldBatchTimes)) {
+        $oldBatchTime = array_sum($oldBatchTimes)/count($oldBatchTimes);
+    }
+
+    $newBatchTime = read("SELECT sum(cast(strftime('%s', ended)-strftime('%s', started) as int))/count(*) from localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;")[0];
+    if (($newBatchTime < MAX_SAFE_TIME || $newBatchTime < 1.1 * $oldBatchTime) && $numActive <= $target) {
+        // The new batch is going fast enough that we don't really care, or if we do care,
+        // it's going roughly the same speed as the batch before.  This suggests that we
+        // haven't hit any serious bottleneck yet, so let's dial it up ever so slightly and see
+        // if speeds hold at the new target.
+        $target++;
+        $logger->info("LOAD: $target $numActive");
+
+        // Also, blow away any data from more than two batches ago, because we don't
+        // look farther back than that and don't want to accumulate data infinitely.  However,
+        // this is very useful data to keep while debugging to analyze our throttle behavior.
+        if (!DEBUG_THROTTLE) {
+            write("DELETE FROM localjobs WHERE localjobid IN (SELECT localjobid FROM localjobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT -1 OFFSET $target*2);");
+        }
+
+        // Authorize one more job given that we've just increased the target by one.
+        return true;
+    } else if ($newBatchTime < MAX_SAFE_TIME || $newBatchTime < 1.5 * $oldBatchTime) {
+        // Things seem to be slowing down, pull our target back a lot
+        $target = max(floor($target/2), MIN_SAFE_JOBS);
+    }
+
+    return false; // Don't authorize BWM to call GetJobs
+}
+
+function read($string)
+{
+    global $logger;
+    $handle = new SQLite3(PATH_TO_DB);
+    $handle->busyTimeout(15000);
+    $logger->info("read query: ".$string);
+    $result = $handle->query($string);
+    if ($result) {
+        $returnValue = $result->fetchArray(SQLITE3_NUM);
+    }
+    $handle->close();
+    unset($handle);
+    return $returnValue ?? null;
+}
+
+function write($string)
+{
+    global $logger;
+    $handle = new SQLite3(PATH_TO_DB);
+    $handle->busyTimeout(15000);
+    $logger->info("write query: ".$string);
+    $result = $handle->query($string);
+    $handle->close();
+    unset($handle);
+}
+
+function createTable()
+{
+    $query = "CREATE TABLE IF NOT EXISTS localJobs (
+                  localJobID integer PRIMARY KEY NOT NULL,
+                  pid integer NOT NULL,
+                  jobID integer NOT NULL,
+                  jobName text NOT NULL,
+                  started text NOT NULL,
+                  ended text
+              );";
+
+    $handle = new SQLite3(PATH_TO_DB);
+    $result = $handle->query($query);
+    unset($handle);
+}
+
+function getNextLocalJobID()
+{
+	global $logger;
+    $localJobID = read("select localJobID from localJobs limit 1;");
+
+    if (!$localJobID) {
+        return 1;
+    }
+
+    return $localJobID[0] + 1;
+}

@@ -4,17 +4,6 @@ use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
 
-const PATH_TO_DB = "../data/test.db";
-// Magic numbers (configurable via the command line)
-const NUM_TOTAL_JOBS = 100;
-const MIN_SAFE_JOBS = 10;  // The minimum number of jobs before we start paying attention
-const MAX_SAFE_TIME = 0; // The maximum job time before we start paying attention
-const DEBUG_THROTTLE = false; // Set to true to maintain a debug history
-$target = MIN_SAFE_JOBS;
-
-createTable();
-$localJobID = getNextLocalJobID();
-
 /*
  * BedrockWorkerManager
  * ====================
@@ -40,14 +29,14 @@ if (php_sapi_name() !== "cli") {
 }
 
 // Parse the command line and verify the required settings are provided
-$options = getopt('', ['host::', 'port::', 'failoverHost::', 'failoverPort::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::', 'maxNumberWorkerThreads::']);
+$options = getopt('', ['host::', 'port::', 'failoverHost::', 'failoverPort::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::', 'minSafeJobs::', 'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'disableLoadHandler']);
 
 // Store parent ID to determine if we should continue forking
 $thisPID = getmypid();
 
 $workerPath = @$options['workerPath'];
 if (!$workerPath) {
-    echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --host=<host> --port=<port> --maxIterations=<iteration> --writeConsistency=<consistency> --maxNumberWorkerThreads=<maxNumberWorkerThreads>]\r\n";
+    echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --host=<host> --port=<port> --maxIterations=<iteration> --writeConsistency=<consistency> --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --debugThrottle --disableLoadHandler]\r\n";
     exit(1);
 }
 
@@ -55,7 +44,16 @@ if (!$workerPath) {
 $jobName = $options['jobName'] ?? '*'; // Process all jobs by default
 $maxLoad = floatval(@$options['maxLoad']) ?: 1.0; // Max load of 1.0 by default
 $maxIterations = intval(@$options['maxIterations']) ?: -1; // Unlimited iterations by default
-//$maxNumberWorkerThreads = intval($options['maxNumberWorkerThreads']) ?? 5; // Max number of worker threads for temporary load handling. TODO: Remove this in favor of better solution
+
+$pathToDB = $options['localJobsDBPath'] ?? '/tmp/localJobsDB.sql';
+$minSafeJobs = intval($options['minSafeJobs']) ?: 10;  // The minimum number of jobs before we start paying attention
+$maxSafeTime = intval($options['maxSafeTime']) ?: 0; // The maximum job time before we start paying attention
+$debugThrottle = $options['debugThrottle']; // Set to true to maintain a debug history
+$target = $minSafeJobs;
+
+// Set up the database for the AIMD load handler.
+createTable();
+$localJobID = getNextLocalJobID();
 
 // Configure the Bedrock client with these command-line options
 Client::configure($options);
@@ -219,17 +217,16 @@ try {
                     // that we automatically pick up new versions over the
                     // worker without needing to restart the parent.
                     include_once $workerFilename;
-                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger) {
+                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localJobID) {
                         $worker = new $workerName($bedrock, $job);
                         $childPID = getmypid();
                         try {
-                            $logger->info("write query: ".$localJobID);
-                            write("INSERT INTO localJobs (localJobID, pid, jobID, jobName, started) values (".$localJobID.", $childPID, {$job['jobID']}, {$job['name']}, DATETIME('now'));");
+                            write("INSERT INTO localJobs (localJobID, pid, jobID, jobName, started) values ($localJobID, $childPID, {$job['jobID']}, '{$job['name']}', DATETIME('now'));");
 
                             // Run the worker.  If it completes successfully, finish the job.
                             $worker->run();
 
-                            write("UPDATE localJobs SET ended=DATETIME('now') WHERE localJobID=".$localJobID.";");
+                            write("UPDATE localJobs SET ended=DATETIME('now') WHERE localJobID=$localJobID;");
 
                             // Success
                             $logger->info("Job completed successfully, exiting.", [
@@ -302,7 +299,6 @@ function safeToStartANewJob()
     $numActive = read($query)[0];
 
     if ($numActive < $target) {
-        $logger->info("LOAD: $target $numActive");
         // Still in a safe zone, don't worry about load
         return true;
     }
@@ -323,26 +319,25 @@ function safeToStartANewJob()
     }
 
     $newBatchTime = read("SELECT sum(cast(strftime('%s', ended)-strftime('%s', started) as int))/count(*) from localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;")[0];
-    if (($newBatchTime < MAX_SAFE_TIME || $newBatchTime < 1.1 * $oldBatchTime) && $numActive <= $target) {
+    if (($newBatchTime < $maxSafeTime || $newBatchTime < 1.1 * $oldBatchTime) && $numActive <= $target) {
         // The new batch is going fast enough that we don't really care, or if we do care,
         // it's going roughly the same speed as the batch before.  This suggests that we
         // haven't hit any serious bottleneck yet, so let's dial it up ever so slightly and see
         // if speeds hold at the new target.
         $target++;
-        $logger->info("LOAD: $target $numActive");
 
         // Also, blow away any data from more than two batches ago, because we don't
         // look farther back than that and don't want to accumulate data infinitely.  However,
         // this is very useful data to keep while debugging to analyze our throttle behavior.
-        if (!DEBUG_THROTTLE) {
+        if (!$debugThrottle) {
             write("DELETE FROM localjobs WHERE localjobid IN (SELECT localjobid FROM localjobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT -1 OFFSET $target*2);");
         }
 
         // Authorize one more job given that we've just increased the target by one.
         return true;
-    } else if ($newBatchTime < MAX_SAFE_TIME || $newBatchTime < 1.5 * $oldBatchTime) {
+    } else if ($newBatchTime < $maxSafeTime || $newBatchTime < 1.5 * $oldBatchTime) {
         // Things seem to be slowing down, pull our target back a lot
-        $target = max(floor($target/2), MIN_SAFE_JOBS);
+        $target = max(floor($target/2), $minSafeJobs);
     }
 
     return false; // Don't authorize BWM to call GetJobs
@@ -392,7 +387,6 @@ function createTable()
 
 function getNextLocalJobID()
 {
-	global $logger;
     $localJobID = read("select localJobID from localJobs limit 1;");
 
     if (!$localJobID) {

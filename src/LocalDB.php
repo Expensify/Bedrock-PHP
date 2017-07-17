@@ -1,5 +1,9 @@
 <?php
 
+namespace Expensify\Bedrock;
+
+use SQLite3;
+
 class LocalDB
 {
     private $location;

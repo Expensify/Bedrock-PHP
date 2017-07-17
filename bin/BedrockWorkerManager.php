@@ -3,6 +3,7 @@
 use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
+use Expensify\Bedrock\LocalDB;
 
 /*
  * BedrockWorkerManager
@@ -16,7 +17,7 @@ use Expensify\Bedrock\Jobs;
  * After N cycle in the loop, we exit
  * If the versionWatchFile modified time changes, we stop processing new jobs and exit after finishing all running jobs.
  *
- * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --failoverHost=<host> --failoverPort=<port> --maxIterations=<iteration> --versionWatchFile=<file> --writeConsistency=<consistency>]`
+ * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --failoverHost=<host> --failoverPort=<port> --maxIterations=<iteration> --versionWatchFile=<file> --writeConsistency=<consistency> --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle --disableLoadHandler]`
  */
 
 // Verify it's being started correctly
@@ -36,7 +37,7 @@ $thisPID = getmypid();
 
 $workerPath = @$options['workerPath'];
 if (!$workerPath) {
-    echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --host=<host> --port=<port> --maxIterations=<iteration> --writeConsistency=<consistency> --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --debugThrottle --disableLoadHandler]\r\n";
+    echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --host=<host> --port=<port> --maxIterations=<iteration> --writeConsistency=<consistency> --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle --disableLoadHandler]\r\n";
     exit(1);
 }
 
@@ -50,6 +51,7 @@ $minSafeJobs = intval($options['minSafeJobs']) ?: 10;  // The minimum number of 
 $maxSafeTime = intval($options['maxSafeTime']) ?: 0; // The maximum job time before we start paying attention
 $debugThrottle = $options['debugThrottle']; // Set to true to maintain a debug history
 $target = $minSafeJobs;
+$disableLoadHandler = $options['disableLoadHandler'];
 
 $localDB = new LocalDB($pathToDB);
 
@@ -124,7 +126,7 @@ try {
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            if ($load < $maxLoad && safeToStartANewJob($localDB, $target)) {
+            if ($load < $maxLoad && ($disableLoadHandler || safeToStartANewJob($localDB, $target, $logger))) {
                 $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 break;
             } else {
@@ -235,7 +237,7 @@ try {
                     // that we automatically pick up new versions over the
                     // worker without needing to restart the parent.
                     include_once $workerFilename;
-                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localJobID) {
+                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localJobID, $localDB) {
                         $worker = new $workerName($bedrock, $job);
                         $childPID = getmypid();
                         try {

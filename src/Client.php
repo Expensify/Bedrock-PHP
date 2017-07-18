@@ -199,7 +199,7 @@ class Client implements LoggerAwareInterface
         }
 
         // Log how long this particular call took
-        $processingTime = isset($response['headers']['processingTime']) ? $response['headers']['processingTime'] : 0;
+        $processingTime = isset($response['headers']['processTime']) ? $response['headers']['processTime'] : 0;
         $serverTime     = isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0;
         $clientTime     = (int) (microtime(true) - $timeStart) * 1000;
         $networkTime    = $clientTime - $serverTime;

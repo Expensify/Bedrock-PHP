@@ -1,11 +1,17 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Expensify\Bedrock;
 
 use SQLite3;
 
+/**
+ * Class the represents a database on the local server.
+ */
 class LocalDB
 {
+    /** @var SQLite3 $handle */
     private $handle;
 
     /**
@@ -24,7 +30,7 @@ class LocalDB
      *
      * @param string $query
      *
-     * @return array
+     * @return array|null
      */
     public function read(string $query)
     {
@@ -52,7 +58,7 @@ class LocalDB
      *
      * @return int
      */
-    public function getLastInsertedRowID()
+    public function getLastInsertedRowID() : int
     {
         return $this->handle->lastInsertRowID();
     }

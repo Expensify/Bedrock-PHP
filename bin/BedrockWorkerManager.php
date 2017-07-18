@@ -317,7 +317,7 @@ $logger->info('Stopped BedrockWorkerManager');
  *
  * @return array
  */
-function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $debugThrottle, Expensify\Logger $logger)
+function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $debugThrottle, Expensify\Logger $logger) : array
 {
     // Have we hit our target job count?
     $query = 'SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;';
@@ -325,6 +325,7 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
 
     if ($numActive < $target) {
         // Still in a safe zone, don't worry about load
+        $logger->info("Safe to start new job", ['numActive' => $numActive, 'target' => $target]);
         return [true, $target];
     }
 
@@ -333,15 +334,14 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
     if ($numFinished < $target*2) {
         // Wait until we finish at least two batches of our target so we can evaluate its speed,
         // before expanding the batch.
+        $logger->info("Haven't finished two batches of target, not queuing job", ['numActive' => $numActive, 'target' => $target]);
         return [false, $target];
     }
 
     // Calculate the speed of the last 2 batches to see if we're speeding up or slowing down
     $oldBatchTime = 0;
-    $oldBatchTimes = $localDB->read("SELECT cast(strftime('%s', ended)-strftime('%s', started) as int) from localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;");
-    if (is_array($oldBatchTimes)) {
-        $oldBatchTime = array_sum($oldBatchTimes)/count($oldBatchTimes);
-    }
+    $oldBatchTimes = $localDB->read("SELECT cast(strftime('%s', ended)-strftime('%s', started) AS int) FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;");
+    $oldBatchTime = array_sum($oldBatchTimes)/count($oldBatchTimes);
 
     $newBatchTime = $localDB->read("SELECT sum(cast(strftime('%s', ended)-strftime('%s', started) as int))/count(*) from localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;")[0];
     if (($newBatchTime < $maxSafeTime || $newBatchTime < 1.1 * $oldBatchTime) && $numActive <= $target) {

@@ -311,7 +311,7 @@ pcntl_wait($status);
 $logger->info('Stopped BedrockWorkerManager');
 
 // Determines whether or not we call GetJob and try to start a new job
-function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, $debugThrottle, $logger)
+function safeToStartANewJob(LocalDB $localDB, int& $target, int $maxSafeTime, int $minSafeJobs, $debugThrottle, $logger)
 {
     // Have we hit our target job count?
     $query = 'SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;';

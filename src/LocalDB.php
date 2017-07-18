@@ -6,16 +6,17 @@ use SQLite3;
 
 class LocalDB
 {
-    private $location;
+    private $handle;
 
     /**
-     * Creates a LocalDB object and defines the file location.
+     * Creates a LocalDB object and opens a database connection.
      *
-     * @param $location
+     * @param string $location
      */
-    public function __construct($location)
+    public function __construct(string $location)
     {
-        $this->location = $location;
+        $this->handle = new SQLite3($location);
+        $this->handle->busyTimeout(15000);
     }
 
     /**
@@ -25,18 +26,14 @@ class LocalDB
      *
      * @return array
      */
-    public function read($query)
+    public function read(string $query)
     {
-        $handle = new SQLite3($this->location);
-        $handle->busyTimeout(15000);
-        $result = $handle->query($query);
+        $result = $this->handle->query($query);
 
         if ($result) {
             $returnValue = $result->fetchArray(SQLITE3_NUM);
         }
 
-        $handle->close();
-        unset($handle);
         return $returnValue ?? null;
     }
 
@@ -45,12 +42,18 @@ class LocalDB
      *
      * @param string $query
      */
-    public function write($query)
+    public function write(string $query)
     {
-        $handle = new SQLite3($this->location);
-        $handle->busyTimeout(15000);
-        $handle->query($query);
-        $handle->close();
-        unset($handle);
+        $this->handle->query($query);
+    }
+
+    /**
+     * Gets last inserted row.
+     *
+     * @return int
+     */
+    public function getLastInsertedRowID()
+    {
+        return $this->handle->lastInsertRowID();
     }
 }

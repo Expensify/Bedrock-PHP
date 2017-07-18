@@ -126,7 +126,7 @@ try {
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            if ($load < $maxLoad && ($disableLoadHandler || safeToStartANewJob($localDB, $target, $logger))) {
+            if ($load < $maxLoad && ($disableLoadHandler || safeToStartANewJob($localDB, $target, $maxSafeTime, $minSafeJobs, $debugThrottle, $logger))) {
                 $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 break;
             } else {
@@ -311,7 +311,7 @@ pcntl_wait($status);
 $logger->info('Stopped BedrockWorkerManager');
 
 // Determines whether or not we call GetJob and try to start a new job
-function safeToStartANewJob($localDB, $target, $logger)
+function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, $debugThrottle, $logger)
 {
     // Have we hit our target job count?
     $query = 'SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;';

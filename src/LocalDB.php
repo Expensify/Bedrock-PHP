@@ -10,6 +10,8 @@ class LocalDB
 
     /**
      * Creates a LocalDB object and defines the file location.
+     *
+     * @param $location
      */
     public function __construct($location)
     {
@@ -47,7 +49,7 @@ class LocalDB
     {
         $handle = new SQLite3($this->location);
         $handle->busyTimeout(15000);
-        $result = $handle->query($query);
+        $handle->query($query);
         $handle->close();
         unset($handle);
     }

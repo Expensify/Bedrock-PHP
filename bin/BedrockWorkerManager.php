@@ -43,8 +43,8 @@ if (!$workerPath) {
 
 // Add defaults
 $jobName = $options['jobName'] ?? '*'; // Process all jobs by default
-$maxLoad = floatval(@$options['maxLoad']) ?: 1.0; // Max load of 1.0 by default
-$maxIterations = intval(@$options['maxIterations']) ?: -1; // Unlimited iterations by default
+$maxLoad = floatval($options['maxLoad']) ?? 1.0; // Max load of 1.0 by default
+$maxIterations = intval($options['maxIterations']) ?? -1; // Unlimited iterations by default
 
 $pathToDB = $options['localJobsDBPath'] ?? '/tmp/localJobsDB.sql';
 $minSafeJobs = intval($options['minSafeJobs']) ?: 10;  // The minimum number of jobs before we start paying attention
@@ -201,6 +201,10 @@ try {
                 $logger->info("Forking and running a worker.", [
                     'workerFileName' => $workerFilename,
                 ]);
+
+                // Close DB connection before forking.
+                $localDB->close();
+
                 pcntl_signal(SIGCHLD, SIG_IGN);
                 $pid = pcntl_fork();
                 if ($pid == -1) {
@@ -341,7 +345,7 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
     // Calculate the speed of the last 2 batches to see if we're speeding up or slowing down
     $oldBatchTime = 0;
     $oldBatchTimes = $localDB->read("SELECT cast(strftime('%s', ended)-strftime('%s', started) AS int) FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;");
-    $oldBatchTime = array_sum($oldBatchTimes)/count($oldBatchTimes);
+    $oldBatchTime = array_sum($oldBatchTimes) / count($oldBatchTimes);
 
     $newBatchTime = $localDB->read("SELECT sum(cast(strftime('%s', ended)-strftime('%s', started) as int))/count(*) from localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;")[0];
     if (($newBatchTime < $maxSafeTime || $newBatchTime < 1.1 * $oldBatchTime) && $numActive <= $target) {

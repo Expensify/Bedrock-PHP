@@ -120,8 +120,8 @@ try {
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            list($safeToStartANewJob, $target) = safeToStartANewJob($localDB, $target, $maxSafeTime, $minSafeJobs, $debugThrottle, $logger);
-            if ($load < $maxLoad && (!$enableLoadHandler || $safeToStartANewJob)) {
+            list($safeToStartANewJob, $target) = safeToStartANewJob($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $debugThrottle, $logger);
+            if ($load < $maxLoad && $safeToStartANewJob) {
                 $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 break;
             } else {
@@ -325,8 +325,14 @@ $logger->info('Stopped BedrockWorkerManager');
  *
  * @return array First value is whether or not it is safe to start a new job, second is an updated $target value.
  */
-function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $debugThrottle, Expensify\Logger $logger) : array
+function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $enableLoadHandler, bool $debugThrottle, Expensify\Logger $logger) : array
 {
+    if (!$enableLoadHandler) {
+        $logger->info("Load handler not enabled");
+
+        return true;
+    }
+
     // Have we hit our target job count?
     $numActive = $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0];
 

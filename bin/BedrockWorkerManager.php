@@ -240,6 +240,7 @@ try {
                         $worker = new $workerName($bedrock, $job);
                         $childPID = getmypid();
 
+                        // Open the DB connection after the fork in the child process.
                         $localDB->open();
                         $localDB->write("INSERT INTO localJobs (pid, jobID, jobName, started) VALUES ($childPID, {$job['jobID']}, '{$job['name']}', DATETIME('now'));");
                         $localJobID = $localDB->getLastInsertedRowID();
@@ -281,7 +282,9 @@ try {
                     $stats->counter('bedrockJob.finish.'.$job['name']);
                     exit(1);
                 } else {
+                    // Reopen the DB connection in the parent thread.
                     $localDB->open();
+
                     // Otherwise we are the parent thread -- continue execution
                     $logger->info("Successfully ran job", [
                         'name' => $job['name'],

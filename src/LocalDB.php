@@ -18,15 +18,34 @@ class LocalDB
     private $location;
 
     /**
-     * Creates a LocalDB object and opens a database connection.
+     * Creates a localDB object and sets the file location.
      *
      * @param string $location
      */
     public function __construct(string $location)
     {
         $this->location = $location;
-        $this->handle = new SQLite3($location);
-        $this->handle->busyTimeout(15000);
+    }
+
+    /**
+     * Opens a DB connection.
+     */
+    public function open() {
+        if (!isset($this->handle)) {
+            $this->handle = new SQLite3($this->location);
+            $this->handle->busyTimeout(15000);
+        }
+    }
+
+    /**
+     * Close the DB connection and unset the object.
+     */
+    public function close()
+    {
+        if (isset($this->handle)) {
+            $this->handle->close();
+            unset($this->handle);
+        }
     }
 
     /**
@@ -38,11 +57,6 @@ class LocalDB
      */
     public function read(string $query)
     {
-        if (!isset($this->handle)) {
-            $this->handle = new SQLite3($this->location);
-            $this->handle->busyTimeout(15000);
-        }
-
         $result = $this->handle->query($query);
 
         if ($result) {
@@ -59,18 +73,13 @@ class LocalDB
      */
     public function write(string $query)
     {
-        if (!isset($this->handle)) {
-            $this->handle = new SQLite3($this->location);
-            $this->handle->busyTimeout(15000);
-        }
-
         $this->handle->query($query);
     }
 
     /**
      * Gets last inserted row.
      *
-     * @return int
+     * @return int|null
      */
     public function getLastInsertedRowID()
     {
@@ -79,16 +88,5 @@ class LocalDB
         }
 
         return $this->handle->lastInsertRowID();
-    }
-
-    /**
-     * Close the DB connection and unset the object.
-     */
-    public function close()
-    {
-        if (isset($this->handle)) {
-            $this->handle->close();
-            unset($this->handle);
-        }
     }
 }

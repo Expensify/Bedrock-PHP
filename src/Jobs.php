@@ -189,7 +189,7 @@ class Jobs extends Plugin
             ]
         );
 
-        $this->client->getLogger()->info('Jobs created', ['jobIDs' => $response['body']['jobID'] ?? null]);
+        $this->client->getLogger()->info('Jobs created', ['jobIDs' => $response['body']['jobIDs'] ?? null]);
 
         return $response;
     }
@@ -286,7 +286,7 @@ class Jobs extends Plugin
     /**
      * Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
      *
-     * @param int   $jobID
+     * @param int $jobID
      *
      * @return array
      */

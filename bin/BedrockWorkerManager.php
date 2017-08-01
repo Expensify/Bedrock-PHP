@@ -65,7 +65,6 @@ if ($enableLoadHandler) {
         started text NOT NULL,
         ended text
     );';
-
     $localDB->write($query);
 }
 

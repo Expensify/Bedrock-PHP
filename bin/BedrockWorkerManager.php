@@ -45,18 +45,17 @@ if (!$workerPath) {
 $jobName = $options['jobName'] ?? '*'; // Process all jobs by default
 $maxLoad = floatval($options['maxLoad'] ?? 1.0); // Max load of 1.0 by default
 $maxIterations = intval($options['maxIterations'] ?? -1); // Unlimited iterations by default
-
 $pathToDB = $options['localJobsDBPath'] ?? '/tmp/localJobsDB.sql';
-$minSafeJobs = intval($options['minSafeJobs'] ?: 10);  // The minimum number of jobs before we start paying attention
-$maxSafeTime = intval($options['maxSafeTime'] ?: 0); // The maximum job time before we start paying attention
+$minSafeJobs = intval($options['minSafeJobs'] ?? 10);  // The minimum number of jobs before we start paying attention
+$maxSafeTime = intval($options['maxSafeTime'] ?? 0); // The maximum job time before we start paying attention
 $debugThrottle = isset($options['debugThrottle']); // Set to true to maintain a debug history
 $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD load handler
 $target = $minSafeJobs;
 
+// Set up the database for the AIMD load handler.
 $localDB = new LocalDB($pathToDB);
 $localDB->open();
 
-// Set up the database for the AIMD load handler.
 if ($enableLoadHandler) {
     $query = 'CREATE TABLE IF NOT EXISTS localJobs (
         localJobID integer PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -122,10 +121,10 @@ try {
             $load = sys_getloadavg()[0];
             list($safeToStartANewJob, $target) = safeToStartANewJob($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $debugThrottle, $logger);
             if ($load < $maxLoad && $safeToStartANewJob) {
-                $logger->info('Load is under max, checking for more work.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('Safe to start a new job, checking for more work', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 break;
             } else {
-                $logger->info('Load is over max, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('Not safe to start a new job, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 sleep(1);
             }
         }
@@ -205,7 +204,6 @@ try {
 
                 // Close DB connection before forking.
                 $localDB->close();
-
                 pcntl_signal(SIGCHLD, SIG_IGN);
                 $pid = pcntl_fork();
                 if ($pid == -1) {
@@ -244,7 +242,6 @@ try {
                         $localDB->open();
                         $localDB->write("INSERT INTO localJobs (pid, jobID, jobName, started) VALUES ($childPID, {$job['jobID']}, '{$job['name']}', DATETIME('now'));");
                         $localJobID = $localDB->getLastInsertedRowID();
-
                         try {
                             // Run the worker.  If it completes successfully, finish the job.
                             $worker->run();
@@ -330,18 +327,17 @@ $logger->info('Stopped BedrockWorkerManager');
  */
 function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $enableLoadHandler, bool $debugThrottle, Expensify\Logger $logger) : array
 {
+    // Allow for disabling of the load handler.
     if (!$enableLoadHandler) {
         $logger->info("Load handler not enabled");
-
         return true;
     }
 
     // Have we hit our target job count?
     $numActive = $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0];
-
     if ($numActive < $target) {
         // Still in a safe zone, don't worry about load
-        $logger->info("Safe to start new job", ['numActive' => $numActive, 'target' => $target]);
+        $logger->info("Safe to start new job", ["numActive" => $numActive, "target" => $target]);
         return [true, $target];
     }
 
@@ -350,7 +346,7 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
     if ($numFinished < $target * 2) {
         // Wait until we finish at least two batches of our target so we can evaluate its speed,
         // before expanding the batch.
-        $logger->info("Haven't finished two batches of target, not queuing job", ['numActive' => $numActive, 'target' => $target]);
+        $logger->info("Haven't finished two batches of target, not queuing job", ["numActive" => $numActive, "target" => $target]);
         return [false, $target];
     }
 
@@ -358,14 +354,13 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
     $oldBatchAverageTime = 0;
     $oldBatchTimes = $localDB->read("SELECT CAST(STRFTIME('%s', ended) - STRFTIME('%s', started) AS int) FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;");
     $oldBatchAverageTime = array_sum($oldBatchTimes) / count($oldBatchTimes);
-
     $newBatchAverageTime = $localDB->read("SELECT SUM(CAST(STRFTIME('%s', ended) - strftime('%s', started) AS int)) / count(*) FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;")[0];
     if (($newBatchAverageTime < $maxSafeTime || $newBatchAverageTime < 1.1 * $oldBatchAverageTime) && $numActive <= $target) {
-        $logger->info("Increasing target", ['newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
         // The new batch is going fast enough that we don't really care, or if we do care,
         // it's going roughly the same speed as the batch before.  This suggests that we
         // haven't hit any serious bottleneck yet, so let's dial it up ever so slightly and see
         // if speeds hold at the new target.
+        $logger->info('Increasing target', ['newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
         $target++;
 
         // Also, blow away any data from more than two batches ago, because we don't
@@ -379,9 +374,10 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
         return [true, $target];
     } else if ($newBatchAverageTime > $maxSafeTime || $newBatchAverageTime < 1.5 * $oldBatchAverageTime) {
         // Things seem to be slowing down, pull our target back a lot
-        $target = max(floor($target/2), $minSafeJobs);
+        $target = max(floor($target / 2), $minSafeJobs);
         $logger->info("Jobs are slowing down, halving the target", ['newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
     }
 
-    return [false, $target]; // Don't authorize BWM to call GetJobs
+    // Don't authorize BWM to call GetJobs
+    return [false, $target];
 }

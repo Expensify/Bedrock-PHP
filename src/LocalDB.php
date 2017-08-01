@@ -19,8 +19,6 @@ class LocalDB
 
     /**
      * Creates a localDB object and sets the file location.
-     *
-     * @param string $location
      */
     public function __construct(string $location)
     {
@@ -51,8 +49,6 @@ class LocalDB
     /**
      * Runs a read query on a local database.
      *
-     * @param string $query
-     *
      * @return array|null
      */
     public function read(string $query)
@@ -68,8 +64,6 @@ class LocalDB
 
     /**
      * Runs a write query on a local database.
-     *
-     * @param string $query
      */
     public function write(string $query)
     {

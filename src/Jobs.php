@@ -172,6 +172,29 @@ class Jobs extends Plugin
     }
 
     /**
+     * Schedules a list of jobs.
+     *
+     * @param array $jobs JSON array containing each job. Each job should include the same parameters as jobs define in CreateJob
+     *
+     * @return array - contain the jobIDs with the unique identifier of the created jobs
+     */
+    public function createJobs(array $jobs) : array
+    {
+        $this->client->getLogger()->info("Create jobs", ['jobs' => $jobs]);
+
+        $response = $this->call(
+            'CreateJobs',
+            [
+                'jobs' => $jobs,
+            ]
+        );
+
+        $this->client->getLogger()->info('Jobs created', ['jobIDs' => $response['body']['jobIDs'] ?? null]);
+
+        return $response;
+    }
+
+    /**
      * Waits for a match (if requested) and atomically dequeues exactly one job.
      *
      * @param string $name
@@ -256,6 +279,23 @@ class Jobs extends Plugin
                 "jobID"      => $jobID,
                 "data"       => $data,
                 "idempotent" => true,
+            ]
+        );
+    }
+
+    /**
+     * Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
+     *
+     * @param int $jobID
+     *
+     * @return array
+     */
+    public function cancelJob(int $jobID) : array
+    {
+        return $this->call(
+            "CancelJob",
+            [
+                "jobID" => $jobID
             ]
         );
     }

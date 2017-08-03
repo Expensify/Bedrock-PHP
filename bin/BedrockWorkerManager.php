@@ -315,21 +315,22 @@ $logger->info('Stopped BedrockWorkerManager');
 /**
  * Determines whether or not we call GetJob and try to start a new job
  *
- * @param LocalDB          $localDB
- * @param int              $target        The current max number of jobs allowed.
- * @param int              $maxSafeTime   Maximum safe average time for a batch of jobs before it cuts back.
- * @param int              $minSafeJobs   A number of jobs that will always be safe to run.
- * @param bool             $debugThrottle If true, doesn't delete jobs from localDB
- * @param Expensify\Logger $logger
+ * @param LocalDB                 $localDB
+ * @param int                     $target            The current max number of jobs allowed.
+ * @param int                     $maxSafeTime       Maximum safe average time for a batch of jobs before it cuts back.
+ * @param bool                    $enableLoadHandler
+ * @param int                     $minSafeJobs       A number of jobs that will always be safe to run.
+ * @param bool                    $debugThrottle     If true, doesn't delete jobs from localDB
+ * @param Psr\Log\LoggerInterface $logger
  *
  * @return array First value is whether or not it is safe to start a new job, second is an updated $target value.
  */
-function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $enableLoadHandler, bool $debugThrottle, Expensify\Logger $logger) : array
+function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $enableLoadHandler, bool $debugThrottle, Psr\Log\LoggerInterface $logger) : array
 {
     // Allow for disabling of the load handler.
     if (!$enableLoadHandler) {
         $logger->info("Load handler not enabled");
-        return true;
+        return [true, $target];
     }
 
     // Have we hit our target job count?

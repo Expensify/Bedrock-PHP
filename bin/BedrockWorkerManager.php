@@ -238,9 +238,11 @@ try {
                         $childPID = getmypid();
 
                         // Open the DB connection after the fork in the child process.
-                        $localDB->open();
-                        $localDB->write("INSERT INTO localJobs (pid, jobID, jobName, started) VALUES ($childPID, {$job['jobID']}, '{$job['name']}', DATETIME('now'));");
-                        $localJobID = $localDB->getLastInsertedRowID();
+                        if ($enableLoadHandler) {
+                            $localDB->open();
+                            $localDB->write("INSERT INTO localJobs (pid, jobID, jobName, started) VALUES ($childPID, {$job['jobID']}, '{$job['name']}', DATETIME('now'));");
+                            $localJobID = $localDB->getLastInsertedRowID();
+                        }
                         try {
                             // Run the worker.  If it completes successfully, finish the job.
                             $worker->run();
@@ -270,7 +272,9 @@ try {
                             // Worker had a fatal error -- mark as failed.
                             $jobs->failJob($job['jobID']);
                         } finally {
-                            $localDB->write("UPDATE localJobs SET ended=DATETIME('now') WHERE localJobID=$localJobID;");
+                            if ($enableLoadHandler) {
+                                $localDB->write("UPDATE localJobs SET ended=DATETIME('now') WHERE localJobID=$localJobID;");
+                            }
                         }
                     });
 

@@ -329,7 +329,7 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
     // Allow for disabling of the load handler.
     if (!$enableLoadHandler) {
         $logger->info("Load handler not enabled");
-        return true;
+        return [true, $target];
     }
 
     // Have we hit our target job count?

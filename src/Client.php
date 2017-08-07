@@ -446,9 +446,11 @@ class Client implements LoggerAwareInterface
             $rawResponseBody .= $this->recv();
         }
         if (strlen($rawResponseBody) != $contentLength) {
-            $this->getLogger()->warning('Server sent more content than expected, ignoring.',
-                ['Content-Length' => $contentLength, 'bodyLength' => strlen($rawResponseBody)]
-            );
+            $this->getLogger()->warning('Server sent more content than expected, ignoring.', [
+                'Content-Length' => $contentLength,
+                'bodyLength' => strlen($rawResponseBody),
+                'response' => $rawResponseBody,
+            ]);
         }
 
         // If there is a body, let's parse it

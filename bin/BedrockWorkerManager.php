@@ -233,7 +233,7 @@ try {
                     // that we automatically pick up new versions over the
                     // worker without needing to restart the parent.
                     include_once $workerFilename;
-                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB) {
+                    $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler) {
                         $worker = new $workerName($bedrock, $job);
                         $childPID = getmypid();
 

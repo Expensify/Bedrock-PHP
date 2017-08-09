@@ -2,7 +2,7 @@
     "name": "expensify/Bedrock-PHP",
     "description": "Bedrock PHP Library",
     "type": "library",
-    "version": "1.0.26",
+    "version": "1.0.27",
     "authors": [
         {
             "name": "Expensify",

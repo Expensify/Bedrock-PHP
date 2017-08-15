@@ -64,7 +64,7 @@ if ($enableLoadHandler) {
         started text NOT NULL,
         ended text
     );
-    CREATE INDEX IF NOT EXISTS idx ON localJobs (localJobID);
+    CREATE INDEX IF NOT EXISTS localJobsLocalJobID ON localJobs (localJobID);
     PRAGMA journal_mode = WAL;';
     $localDB->write($query);
 }

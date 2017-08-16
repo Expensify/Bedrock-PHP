@@ -53,10 +53,9 @@ $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD l
 $target = $minSafeJobs;
 
 // Set up the database for the AIMD load handler.
-$localDB = new LocalDB($pathToDB);
-$localDB->open();
-
 if ($enableLoadHandler) {
+    $localDB = new LocalDB($pathToDB);
+    $localDB->open();
     $query = 'CREATE TABLE IF NOT EXISTS localJobs (
         localJobID integer PRIMARY KEY AUTOINCREMENT NOT NULL,
         pid integer NOT NULL,
@@ -64,7 +63,9 @@ if ($enableLoadHandler) {
         jobName text NOT NULL,
         started text NOT NULL,
         ended text
-    );';
+    );
+    CREATE INDEX IF NOT EXISTS localJobsLocalJobID ON localJobs (localJobID);
+    PRAGMA journal_mode = WAL;';
     $localDB->write($query);
 }
 
@@ -202,7 +203,9 @@ try {
                 ]);
 
                 // Close DB connection before forking.
-                $localDB->close();
+                if ($enableLoadHandler) {
+                    $localDB->close();
+                }
                 pcntl_signal(SIGCHLD, SIG_IGN);
                 $pid = pcntl_fork();
                 if ($pid == -1) {
@@ -283,7 +286,9 @@ try {
                     exit(1);
                 } else {
                     // Reopen the DB connection in the parent thread.
-                    $localDB->open();
+                    if ($enableLoadHandler) {
+                        $localDB->open();
+                    }
 
                     // Otherwise we are the parent thread -- continue execution
                     $logger->info("Successfully ran job", [

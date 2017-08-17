@@ -51,10 +51,10 @@ $maxSafeTime = intval($options['maxSafeTime'] ?? 0); // The maximum job time bef
 $debugThrottle = isset($options['debugThrottle']); // Set to true to maintain a debug history
 $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD load handler
 $target = $minSafeJobs;
+$localDB = new LocalDB($pathToDB);
 
 // Set up the database for the AIMD load handler.
 if ($enableLoadHandler) {
-    $localDB = new LocalDB($pathToDB);
     $localDB->open();
     $query = 'CREATE TABLE IF NOT EXISTS localJobs (
         localJobID integer PRIMARY KEY AUTOINCREMENT NOT NULL,

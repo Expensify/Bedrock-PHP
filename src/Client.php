@@ -76,15 +76,15 @@ class Client implements LoggerAwareInterface
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
-     * @param string          $host              First host we attempt to connect to
-     * @param int             $port              First port we attempt to connect to
-     * @param string          $failoverHost      Host we attempt if the primary fails
-     * @param int             $failoverPort      Port we attempt if the primary fails
-     * @param int             $connectionTimeout Timeout to use when connecting
-     * @param int             $readTimeout       Timeout to use when reading
-     * @param LoggerInterface $logger            Class to use for logging
-     * @param StatsInterface  $stats             Class to use for statistics tracking
-     * @param string          $writeConsistency  The bedrock write consistency we want to use
+     * @param string|null          $host              First host we attempt to connect to
+     * @param int|null             $port              First port we attempt to connect to
+     * @param string|null          $failoverHost      Host we attempt if the primary fails
+     * @param int|null             $failoverPort      Port we attempt if the primary fails
+     * @param int|null             $connectionTimeout Timeout to use when connecting
+     * @param int|null             $readTimeout       Timeout to use when reading
+     * @param LoggerInterface|null $logger            Class to use for logging
+     * @param StatsInterface|null  $stats             Class to use for statistics tracking
+     * @param string|null          $writeConsistency  The bedrock write consistency we want to use
      *
      * @throws BedrockError
      */

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Expensify\Bedrock;
 
+use Exception;
+use Psr\Log\LoggerInterface;
 use SQLite3;
 
 /**
@@ -17,12 +19,16 @@ class LocalDB
     /** @var string $location */
     private $location;
 
+    /** @var LoggerInterface $logger */
+    private $logger;
+
     /**
      * Creates a localDB object and sets the file location.
      */
-    public function __construct(string $location)
+    public function __construct(string $location, LoggerInterface $logger)
     {
         $this->location = $location;
+        $this->logger = $logger;
     }
 
     /**
@@ -32,6 +38,7 @@ class LocalDB
         if (!isset($this->handle)) {
             $this->handle = new SQLite3($this->location);
             $this->handle->busyTimeout(15000);
+            $this->handle->enableExceptions(true);
         }
     }
 
@@ -53,7 +60,20 @@ class LocalDB
      */
     public function read(string $query)
     {
-        $result = $this->handle->query($query);
+        $result = null;
+        while(true) {
+            try {
+                $result = $this->handle->query($query);
+                break;
+            } catch (Exception $e) {
+                if ($e->getMessage() === 'database is locked') {
+                    $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                } else {
+                    $this->logger->info("Query failed, not retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    throw $e;
+                }
+            }
+        }
 
         if ($result) {
             $returnValue = $result->fetchArray(SQLITE3_NUM);
@@ -67,7 +87,19 @@ class LocalDB
      */
     public function write(string $query)
     {
-        $this->handle->query($query);
+        while(true) {
+            try {
+                $this->handle->query($query);
+                break;
+            } catch (Exception $e) {
+                if ($e->getMessage() === 'database is locked') {
+                    $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                } else {
+                    $this->logger->info("Query failed, not retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    throw $e;
+                }
+            }
+        }
     }
 
     /**

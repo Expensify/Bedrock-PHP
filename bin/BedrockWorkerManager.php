@@ -51,9 +51,16 @@ $maxSafeTime = intval($options['maxSafeTime'] ?? 0); // The maximum job time bef
 $debugThrottle = isset($options['debugThrottle']); // Set to true to maintain a debug history
 $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD load handler
 $target = $minSafeJobs;
-$localDB = new LocalDB($pathToDB);
+
+// Configure the Bedrock client with these command-line options
+Client::configure($options);
+
+// Prepare to use the host logger, if configured
+$logger = Client::getLogger();
+$logger->info('Starting BedrockWorkerManager', ['maxIterations' => $maxIterations]);
 
 // Set up the database for the AIMD load handler.
+$localDB = new LocalDB($pathToDB, $logger);
 if ($enableLoadHandler) {
     $localDB->open();
     $query = 'CREATE TABLE IF NOT EXISTS localJobs (
@@ -68,13 +75,6 @@ if ($enableLoadHandler) {
     PRAGMA journal_mode = WAL;';
     $localDB->write($query);
 }
-
-// Configure the Bedrock client with these command-line options
-Client::configure($options);
-
-// Prepare to use the host logger, if configured
-$logger = Client::getLogger();
-$logger->info('Starting BedrockWorkerManager', ['maxIterations' => $maxIterations]);
 
 // If --versionWatch is enabled, begin watching a version file for changes
 $versionWatchFile = @$options['versionWatchFile'];

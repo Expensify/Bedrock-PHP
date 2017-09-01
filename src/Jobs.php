@@ -38,6 +38,13 @@ class Jobs extends Plugin
     const STATE_QUEUED = "QUEUED";
 
     /**
+     * State of a job that is currently cancelled.
+     *
+     * @var string
+     */
+    const STATE_CANCELLED = "CANCELLED";
+
+    /**
      * "Connection" header option to wait for a response.
      *
      * @var string
@@ -88,9 +95,9 @@ class Jobs extends Plugin
             return $this->client->call($method, $headers, $body);
         });
 
-        $job = isset($headers['name']) ? $headers['name'] : $headers['jobID'];
-        $responseCode = isset($response['code']) ? $response['code'] : null;
-        $codeLine = isset($response['codeLine']) ? $response['codeLine'] : null;
+        $job = $headers['name'] ?? $headers['jobID'] ?? null;
+        $responseCode = $response['code'] ?? null;
+        $codeLine = $response['codeLine'] ?? null;
 
         $this->client->getStats()->counter('bedrockJob.call.response.'.$method.$responseCode);
 
@@ -385,7 +392,7 @@ class Jobs extends Plugin
             ]
         );
 
-        return isset($bedrockResponse['body']) ? $bedrockResponse['body'] : null;
+        return $bedrockResponse['body'] ?? null;
     }
 
     /**

@@ -66,7 +66,12 @@ class LocalDB
                 $result = $this->handle->query($query);
                 break;
             } catch (Exception $e) {
-                $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => json_encode($e)]);
+                if ($e->getMessage() === 'database is locked') {
+                    $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                } else {
+                    $this->logger->info("Query failed, not retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    throw $e;
+                }
             }
         }
 
@@ -87,7 +92,12 @@ class LocalDB
                 $this->handle->query($query);
                 break;
             } catch (Exception $e) {
-                $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => json_encode($e)]);
+                if ($e->getMessage() === 'database is locked') {
+                    $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                } else {
+                    $this->logger->info("Query failed, not retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    throw $e;
+                }
             }
         }
     }

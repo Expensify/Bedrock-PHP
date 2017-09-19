@@ -264,7 +264,7 @@ try {
                                 'id' => $job['jobID'],
                                 'extraParams' => $extraParams,
                             ]);
-                            $jobs->retryJob($job['jobID'], $e->getDelay(), $worker->getData());
+                            $jobs->retryJob($job['jobID'], $e->getDelay(), $worker->getData(), $e->getNextRun(), $e->getName());
                         } catch (Throwable $e) {
                             $logger->alert("Job failed with errors, exiting.", [
                                 'name' => $job['name'],

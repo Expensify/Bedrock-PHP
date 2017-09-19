@@ -180,7 +180,7 @@ class Client implements LoggerAwareInterface
                 // conditions.
                 $this->sendRawRequest($rawRequest);
                 $response = $this->receiveRawResponse();
-                
+
                 // Record the last error in the response as this affects how we
                 // handle errors on this command
                 if ($lastTryException) {

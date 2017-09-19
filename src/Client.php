@@ -229,12 +229,16 @@ class Client implements LoggerAwareInterface
         $numTries = 3;
         $response = null;
         $lastTryException = null;
-        while($numTries-- && !$response) {
+        $hosts = $this->getPossibleHosts();
+        $host = null;
+        while($numTries-- && !$response && count($hosts)) {
+            reset($hosts);
+            $host = key($hosts);
             try {
                 // Do the request.  This is split up into separate functions so we can
                 // profile them independently -- useful when diagnosing various network
                 // conditions.
-                $this->sendRawRequest($rawRequest);
+                $this->sendRawRequest($host, $rawRequest);
                 $response = $this->receiveRawResponse();
 
                 // Record the last error in the response as this affects how we
@@ -262,6 +266,8 @@ class Client implements LoggerAwareInterface
                     $this->logger->error("Failed to send the whole request or to receive it; not retrying", ['message' => $e->getMessage()]);
                     throw $e;
                 }
+            } finally {
+                array_shift($hosts);
             }
         }
 
@@ -285,66 +291,50 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Create and connect a socket (with failovers).
-     *
-     * @throws ConnectionFailure
-     */
-    private function reconnect()
-    {
-        $this->logger->debug('Opening new socket');
-
-        $hosts = $this->getPossibleHosts();
-        $socketErrorCode = 1;
-        $host = null;
-        while ($socketErrorCode !== 0) {
-            // Try to connect to the requested host
-            if ($this->socket) {
-                socket_close($this->socket);
-                $this->socket = null;
-            }
-            $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
-
-            // Make sure we succeed to create a socket
-            if ($this->socket === false) {
-                $socketError = socket_strerror(socket_last_error());
-                throw new ConnectionFailure("Could not connect to create socket: $socketError");
-            }
-
-            // Configure this socket and try all the possible hosts in order, till we find one that works or all of them fail
-            socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => 0]);
-            socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
-
-            reset($hosts);
-            $host = key($hosts);
-            @socket_connect($this->socket, $host, $hosts[$host]['port']);
-            $socketErrorCode = socket_last_error($this->socket);
-            socket_clear_error($this->socket);
-            $this->lastHostUsed = $host;
-            if ($socketErrorCode) {
-                $socketError = socket_strerror($socketErrorCode);
-                $this->logger->info("Failed to connect to host", ['host' => $host, 'port' => $hosts[$host]['port'], 'error' => $socketError]);
-                $this->markHostAsFailed();
-                array_shift($hosts);
-            }
-
-            // Nothing we can do, we couldn't connect to any host
-            if (empty($hosts)) {
-                throw new ConnectionFailure("Could not connect to Bedrock hosts or failovers");
-            }
-        }
-    }
-
-    /**
      * Sends the request on the existing socket, if possible, else it reconnects.
      *
      * @param string $rawRequest
      *
-     * @throws ConnectionFailure
-     * @throws BedrockError
+     * @throws ConnectionFailure When the failure is before sending any data to the server
+     * @throws BedrockError When we already sent some data
      */
-    private function sendRawRequest($rawRequest)
+    private function sendRawRequest(string $host, $rawRequest)
     {
-        $this->reconnect();
+        $this->logger->debug('Opening new socket');
+        // Try to connect to the requested host
+        if ($this->socket) {
+            socket_close($this->socket);
+            $this->socket = null;
+        }
+        $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
+
+        // Make sure we succeed to create a socket
+        if ($this->socket === false) {
+            $socketError = socket_strerror(socket_last_error());
+            throw new ConnectionFailure("Could not connect to create socket: $socketError");
+        }
+
+        // Configure this socket and try all the possible hosts in order, till we find one that works or all of them fail
+        socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => 0]);
+        socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
+
+        @socket_connect($this->socket, $host, self::$cachedHosts[$this->clusterName][$host]['port']);
+        $socketErrorCode = socket_last_error($this->socket);
+        socket_clear_error($this->socket);
+        $this->lastHostUsed = $host;
+        if ($socketErrorCode) {
+            $socketError = socket_strerror($socketErrorCode);
+            $this->logger->info("Failed to connect to host", ['host' => $host, 'port' => $hosts[$host]['port'], 'error' => $socketError]);
+            $this->markHostAsFailed();
+            array_shift($hosts);
+        }
+
+        // Nothing we can do, we couldn't connect to any host
+        if (empty($hosts)) {
+            throw new ConnectionFailure("Could not connect to Bedrock hosts or failovers");
+        }
+
+        // Send the information to the socket
         $bytesSent = socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
 
         // Failed to send anything
@@ -419,7 +409,7 @@ class Client implements LoggerAwareInterface
      *
      * @return string The new data received.
      *
-     * @throws ConnectionFailure
+     * @throws BedrockError
      */
     private function recv()
     {
@@ -429,9 +419,9 @@ class Client implements LoggerAwareInterface
         if ($numRecv === false) {
             $errorCode = socket_last_error();
             $errorMsg = socket_strerror($errorCode);
-            throw new ConnectionFailure("Socket read failed: '$errorMsg' #$errorCode");
+            throw new BedrockError("Socket read failed: '$errorMsg' #$errorCode");
         } elseif ($numRecv <= 0) {
-            throw new ConnectionFailure("Socket read failed: no data returned");
+            throw new BedrockError("Socket read failed: no data returned");
         }
 
         return $buf;

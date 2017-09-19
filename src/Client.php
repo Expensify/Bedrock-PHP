@@ -15,6 +15,9 @@ use Psr\Log\NullLogger;
  */
 class Client implements LoggerAwareInterface
 {
+    const HEADER_DELIMITER = "\r\n\r\n";
+    const HEADER_FIELD_SEPARATOR = "\r\n";
+
     private static $cachedHosts = [];
     private static $defaultConfig = [];
 
@@ -116,7 +119,7 @@ class Client implements LoggerAwareInterface
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
 
         // Make sure we have at least one host configured
-        $this->logger->debug("Bedrock::Bedrock $this->clusterName", ['hosts' => $this->hosts, 'failovers' => $this->failovers]);
+        $this->logger->debug('Bedrock\Client - Constructed', ['clusterName' => $this->clusterName, 'hosts' => $this->hosts, 'failovers' => $this->failovers]);
         if (empty($this->hosts)) {
             throw new BedrockError('Failed to construct Bedrock object');
         }
@@ -164,6 +167,8 @@ class Client implements LoggerAwareInterface
     public function setLogger(LoggerInterface $logger)
     {
         $this->logger = $logger;
+
+        return null;
     }
 
     /**
@@ -192,7 +197,7 @@ class Client implements LoggerAwareInterface
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
-        $this->logger->info("Starting a bedrock request", ['command' => $method, 'headers' => $headers]);
+        $this->logger->info('Bedrock\Client - Starting a request', ['command' => $method, 'headers' => $headers]);
 
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
@@ -226,6 +231,7 @@ class Client implements LoggerAwareInterface
         $rawRequest .= "\r\n";
         $rawRequest .= $body;
 
+        // We try 3 times each on a different valid host
         $numTries = 3;
         $response = null;
         $lastTryException = null;
@@ -239,7 +245,7 @@ class Client implements LoggerAwareInterface
                 // profile them independently -- useful when diagnosing various network
                 // conditions.
                 $this->sendRawRequest($host, $rawRequest);
-                $response = $this->receiveRawResponse();
+                $response = $this->receiveResponse();
 
                 // Record the last error in the response as this affects how we
                 // handle errors on this command
@@ -250,25 +256,29 @@ class Client implements LoggerAwareInterface
                 // The error happened during connection (or before we sent any data) so we can retry it safely
                 $this->markHostAsFailed();
                 if ($numTries) {
-                    $this->logger->warning("Failed to connect or send the request; retrying", ['message' => $e->getMessage(), 'retriesLeft' => $numTries]);
+                    $this->logger->warning('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTries, 'exception' => $e]);
                     $lastTryException = $e;
                 } else {
-                    $this->logger->error("Failed to connect or send the request; not retrying", ['message' => $e->getMessage()]);
+                    $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying', ['host' => $host, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
                 }
             } catch(BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $this->markHostAsFailed();
                 if ($numTries && ($headers['idempotent'] ?? false)) {
-                    $this->logger->warning("Failed to send the whole request or to receive it; retrying", ['message' => $e->getMessage(), 'retriesLeft' => $numTries]);
+                    $this->logger->warning('Bedrock\Client - Failed to send the whole request or to receive it; retrying', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTries, 'exception' => $e]);
                     $lastTryException = $e;
                 } else {
-                    $this->logger->error("Failed to send the whole request or to receive it; not retrying", ['message' => $e->getMessage()]);
+                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying', ['host' => $host, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
                 }
             } finally {
                 array_shift($hosts);
             }
+        }
+
+        if (is_null($response)) {
+            throw new ConnectionFailure('Could not connect to Bedrock hosts or failovers');
         }
 
         // Log how long this particular call took
@@ -277,7 +287,7 @@ class Client implements LoggerAwareInterface
         $clientTime     = (int) (microtime(true) - $timeStart) * 1000;
         $networkTime    = $clientTime - $serverTime;
         $waitTime       = $serverTime - $processingTime;
-        $this->logger->info("Bedrock request finished", [
+        $this->logger->info('Bedrock\Client - Request finished', [
             'command' => $method,
             'jsonCode' => isset($response['codeLine']) ? $response['codeLine'] : null,
             'duration' => $clientTime,
@@ -293,14 +303,12 @@ class Client implements LoggerAwareInterface
     /**
      * Sends the request on the existing socket, if possible, else it reconnects.
      *
-     * @param string $rawRequest
-     *
      * @throws ConnectionFailure When the failure is before sending any data to the server
      * @throws BedrockError When we already sent some data
      */
-    private function sendRawRequest(string $host, $rawRequest)
+    private function sendRawRequest(string $host, string $rawRequest)
     {
-        $this->logger->debug('Opening new socket');
+        $this->logger->info('Bedrock\Client - Opening new socket', ['host' => $host]);
         // Try to connect to the requested host
         if ($this->socket) {
             socket_close($this->socket);
@@ -318,20 +326,14 @@ class Client implements LoggerAwareInterface
         socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => 0]);
         socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
 
-        @socket_connect($this->socket, $host, self::$cachedHosts[$this->clusterName][$host]['port']);
+        $port = self::$cachedHosts[$this->clusterName][$host]['port'];
+        @socket_connect($this->socket, $host, $port);
         $socketErrorCode = socket_last_error($this->socket);
         socket_clear_error($this->socket);
         $this->lastHostUsed = $host;
         if ($socketErrorCode) {
             $socketError = socket_strerror($socketErrorCode);
-            $this->logger->info("Failed to connect to host", ['host' => $host, 'port' => $hosts[$host]['port'], 'error' => $socketError]);
-            $this->markHostAsFailed();
-            array_shift($hosts);
-        }
-
-        // Nothing we can do, we couldn't connect to any host
-        if (empty($hosts)) {
-            throw new ConnectionFailure("Could not connect to Bedrock hosts or failovers");
+            throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
         }
 
         // Send the information to the socket
@@ -339,19 +341,16 @@ class Client implements LoggerAwareInterface
 
         // Failed to send anything
         if ($bytesSent === false) {
-            $errorCode = socket_last_error();
-            $errorMsg  = socket_strerror($errorCode);
-            $this->logger->warning('Bedrock socket_send error', [
-                'code' => $errorCode,
-                'msg' => $errorMsg,
-            ]);
-            throw new ConnectionFailure('Failed to send request to Bedrock');
+            $socketErrorCode = socket_last_error();
+            $socketError  = socket_strerror($socketErrorCode);
+            throw new ConnectionFailure("Failed to send request to bedrock host $host:$port. Error: $socketErrorCode $socketError");
         }
 
         // We sent something; can't retry or else we might double-send the same request. Let's make sure we sent the
         // whole thing, else there's a problem.
         if ($bytesSent != strlen($rawRequest)) {
-            throw new BedrockError('Sent partial request to Bedrock');
+            $this->logger->info('Bedrock\Client - Could not send all request', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
+            throw new BedrockError("Sent partial request to bedrock host $host:$port");
         }
     }
 
@@ -361,7 +360,7 @@ class Client implements LoggerAwareInterface
         if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) && empty(self::$cachedHosts[$this->clusterName])) {
             $apcuKey = 'bedrockFailoverHosts-'.$this->clusterName;
             self::$cachedHosts[$this->clusterName] = apcu_fetch($apcuKey) ?: [];
-            $this->logger->info('APC fetch failover hosts', self::$cachedHosts[$this->clusterName]);
+            $this->logger->info('Bedrock\Client - APC fetch failover hosts', self::$cachedHosts[$this->clusterName]);
 
             // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
             $savedHostsAndPort = [];
@@ -376,7 +375,7 @@ class Client implements LoggerAwareInterface
             asort($configHostsAndPort);
             if ($savedHostsAndPort !== $configHostsAndPort) {
                 self::$cachedHosts[$this->clusterName] = array_merge($this->hosts, $this->failovers);
-                $this->logger->info('APC init failover hosts', self::$cachedHosts[$this->clusterName]);
+                $this->logger->info('Bedrock\Client - APC init failover hosts', self::$cachedHosts[$this->clusterName]);
                 apcu_store($apcuKey, self::$cachedHosts[$this->clusterName]);
             }
         }
@@ -401,93 +400,139 @@ class Client implements LoggerAwareInterface
             }
         }
 
+        $this->getLogger()->info('Bedrock\Client - Possible hosts', ['hosts' => array_keys($nonBlackListedHosts)]);
+
         return $nonBlackListedHosts;
-    }
-
-    /**
-     * Receives a little bit more data.
-     *
-     * @return string The new data received.
-     *
-     * @throws BedrockError
-     */
-    private function recv()
-    {
-        // Get more data from the socket
-        $buf = null;
-        $numRecv = @socket_recv($this->socket, $buf, 1024 * 1024, 0); // Read up to 1MB per call
-        if ($numRecv === false) {
-            $errorCode = socket_last_error();
-            $errorMsg = socket_strerror($errorCode);
-            throw new BedrockError("Socket read failed: '$errorMsg' #$errorCode");
-        } elseif ($numRecv <= 0) {
-            throw new BedrockError("Socket read failed: no data returned");
-        }
-
-        return $buf;
     }
 
     /**
      * Receives and parses the response.
      *
-     * @return array Response object including 'code', 'codeLine', 'headers', and 'body'
+     * @return array Response object including 'code', 'codeLine', 'headers', `size` and 'body'
+     * @throws BedrockError
      */
-    private function receiveRawResponse()
+    private function receiveResponse()
     {
-        // We'll populate this object with the results
-        $response = [];
+        // TODO make the length a config used here and below
+        // Make sure bedrock is returning something https://github.com/Expensify/Expensify/issues/11010
+        if (@socket_recv($this->socket, $buf, 16384, MSG_PEEK) === false) {
+            throw new BedrockError('Socket failed to read data');
+        }
 
-        // First, receive the headers -- until we get \r\n\r\n
-        $rawResponse = '';
+        $totalDataReceived = 0;
+        $responseHeaders = null;
+        $responseLength = null;
+        $response = '';
+        $dataOnSocket = '';
+        $codeLine = null;
+
+        // Read the data on the socket block by block until we got them all
         do {
-            // Get a little more
-            $rawResponse .= $this->recv();
-            $headerEnd = strpos($rawResponse, "\r\n\r\n");
-        } while ($headerEnd === false);
+            $sizeDataOnSocket = @socket_recv($this->socket, $dataOnSocket, 16384, 0);
 
-        // Separate the headers from the body
-        $rawResponseHeaders = substr($rawResponse, 0, $headerEnd);
-        $rawResponseBody    = substr($rawResponse, $headerEnd + 4);
+            if ($sizeDataOnSocket === false) {
+                $errorCode = socket_last_error($this->socket);
+                $errorMsg  = socket_strerror($errorCode);
+                throw new BedrockError("Error receiving data: $errorCode - $errorMsg");
+            }
 
-        // Parse the headers.  Take the first line as the code, the rest as name/value pairs.  In the
-        $responseHeaderLines = explode("\r\n", $rawResponseHeaders);
-        $response['codeLine'] = array_shift($responseHeaderLines);
-        $response['code']     = intval($response['codeLine']);
-        $response['headers']  = [];
-        foreach ($responseHeaderLines as $responseHeaderLine) {
-            $nameValue = explode(':', $responseHeaderLine);
-            if (count($nameValue) != 2) {
-                $this->logger->warning('Malformed response header, ignoring.', ['responseHeaderLine' => $responseHeaderLine]);
-            } else {
-                $response['headers'][ trim($nameValue[0]) ] = trim($nameValue[1]);
+            if ($sizeDataOnSocket === 0 || strlen($dataOnSocket) === 0) {
+                throw new BedrockError('Bedrock response was empty');
+            }
+
+            $totalDataReceived += $sizeDataOnSocket;
+            $response .= $dataOnSocket;
+
+            // The first time are reading data from the socket, we need to extract the headers
+            // to ba able to get the size of the response
+            // It is use to know when to stop to read data from the socket
+            if ($responseLength === null && strpos($response, self::HEADER_DELIMITER) !== false) {
+                $dataOffset = strpos($response, self::HEADER_DELIMITER);
+                $responseHeadersStr = substr($response, 0, $dataOffset + strlen(self::HEADER_DELIMITER));
+                $responseHeaderLines = explode(self::HEADER_FIELD_SEPARATOR, $responseHeadersStr);
+                $codeLine = array_shift($responseHeaderLines);
+                $responseHeaders = $this->extractResponseHeaders($responseHeaderLines);
+                $responseLength = (int) $responseHeaders['Content-Length'];
+                $response = substr($response, $dataOffset + strlen(self::HEADER_DELIMITER));
+            }
+        } while (is_null($responseLength) || strlen($response) < $responseLength);
+
+        // If we received the commitCount, then save it for future requests. This is useful if for some reason we
+        // change the bedrock node we are talking to.
+        if (isset($responseHeaders["commitCount"])) {
+            $this->commitCount = $responseHeaders["commitCount"];
+        }
+
+        return [
+            'headers' => $responseHeaders,
+            'body'    => $this->parseRawBody($responseHeaders, $response),
+            'size'    => $totalDataReceived,
+            'codeLine' => $codeLine,
+            'code' => intval($codeLine),
+        ];
+    }
+
+    /**
+     * Parse a raw response from auth.
+     *
+     * Note: $response is passed by reference so we don't store two copies in memory
+     * Note: this function can exit; and never return in case of token expiration
+     *
+     * @return array the decoded json, or null on error
+     * @throws BedrockError
+     */
+    private function parseRawBody(array $headers, string $body)
+    {
+        // Detect if we are using Gzip (TODO: can we remove this?)
+        if (isset($responseHeaders['Content-Encoding']) && $headers['Content-Encoding'] === 'gzip') {
+            $body = gzdecode($body);
+            if ($body === false) {
+                throw new BedrockError('Could not gzip decode bedrock response');
+            }
+        } else {
+            // Who knows why we need to trim in this case?
+            $body = trim($body);
+        }
+
+        if (!$body) {
+            return [];
+        }
+
+        $json = json_decode($body, true);
+        // json_decode will return null if it cannot decode the string
+        if (is_null($json)) {
+            // This will remove unwanted characters.
+            // Check http://stackoverflow.com/a/20845642 and http://www.php.net/chr for details
+            for ($i = 0; $i <= 31; $i++) {
+                $body = str_replace(chr($i), '', $body);
+            }
+            $jsonStr = str_replace(chr(127), '', $body);
+
+            // We've seen occurrences of this happen when the string is not UTF-8. Forcing it fixes it.
+            // See https://github.com/Expensify/Expensify/issues/21805 for example.
+            $json = json_decode(mb_convert_encoding($jsonStr, 'UTF-8', 'UTF-8'), true);
+            if (is_null($json)) {
+                throw new BedrockError('Could not parse JSON from bedrock');
             }
         }
 
-        // Capture the latest commit count
-        if (isset($response['headers']['commitCount'])) {
-            $this->commitCount = $response['headers']['commitCount'];
+        return $json;
+    }
+
+    private function extractResponseHeaders($responseHeaderLines)
+    {
+        $responseHeaders = [];
+        foreach ($responseHeaderLines as $responseHeaderLine) {
+            // Try to split this line
+            $nameValue = explode(":", $responseHeaderLine);
+            if (count($nameValue) === 2) {
+                $responseHeaders[ trim($nameValue[0]) ] = trim($nameValue[1]);
+            } else if (strlen($responseHeaderLine)) {
+                $this->logger->warning('Bedrock\Client - Malformed response header, ignoring.', ['responseHeaderLine' => $responseHeaderLine]);
+            }
         }
 
-        // Get the content length, and then keep receiving more body until we get the full length
-        $contentLength = isset($response['headers']['Content-Length']) ? $response['headers']['Content-Length'] : 0;
-        $this->logger->debug("Received '$response[codeLine]', waiting for $contentLength bytes");
-        while (strlen($rawResponseBody) < $contentLength) {
-            $rawResponseBody .= $this->recv();
-        }
-        if (strlen($rawResponseBody) != $contentLength) {
-            $this->logger->warning('Server sent more content than expected, ignoring.', [
-                'Content-Length' => $contentLength,
-                'bodyLength' => strlen($rawResponseBody),
-                'response' => $rawResponseBody,
-            ]);
-        }
-
-        // If there is a body, let's parse it
-        $response['rawBody'] = $rawResponseBody;
-        $response['body']    = strlen($rawResponseBody) ? json_decode($rawResponseBody, true) : [];
-
-        // Done!
-        return $response;
+        return $responseHeaders;
     }
 
     /**
@@ -507,7 +552,9 @@ class Client implements LoggerAwareInterface
 
     private function markHostAsFailed()
     {
-        self::$cachedHosts[$this->clusterName][$this->lastHostUsed]['timeout'] = time() + rand(1, $this->maxBlackListTimeout);
+        $time = rand(1, $this->maxBlackListTimeout);
+        self::$cachedHosts[$this->clusterName][$this->lastHostUsed]['timeout'] = time() + $time;
         apcu_store('bedrockFailoverHosts-'.$this->clusterName, self::$cachedHosts[$this->clusterName]);
+        $this->logger->info('Bedrock\Client - Marking server as failed', ['host' => $this->lastHostUsed, 'time' => $time]);
     }
 }

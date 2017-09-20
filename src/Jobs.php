@@ -349,12 +349,10 @@ class Jobs extends Plugin
      * @param int     $jobID
      * @param int     $delay
      * @param ?array  $data
-     * @param string  $name
-     * @param string  $nextRun
      *
      * @return array
      */
-    public function retryJob($jobID, $delay = 0, $data = null, $name = '', $nextRun = '')
+    public function retryJob($jobID, $delay = 0, $data = null, string $name = '', string $nextRun = '')
     {
         return $this->call(
             "RetryJob",

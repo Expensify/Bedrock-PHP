@@ -28,14 +28,14 @@ class RetryableException extends BedrockError
     /**
      * RetryableException constructor.
      *
-     * @param string         $message  Message of the exception
-     * @param int            $delay    Time (in seconds)  to delay the retry.
-     * @param int            $code     Code of the exception
-     * @param Exception|null $previous
-     * @param string         $nextRun  DateTime to retry the job
-     * @param string         $name     New name for the job
+     * @param string     $message  Message of the exception
+     * @param ?int        $delay    Time (in seconds)  to delay the retry.
+     * @param int        $code     Code of the exception
+     * @param ?Exception $previous
+     * @param string     $name     New name for the job
+     * @param string     $nextRun  DateTime to retry the job
      */
-    public function __construct($message, $delay = 0, $code = null, Exception $previous = '', $nextRun = '')
+    public function __construct($message, $delay = 0, $code = null, Exception $previous = null, string $name, string $nextRun = '')
     {
         $code = $code ?? 666;
         $this->delay = $delay;

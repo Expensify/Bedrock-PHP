@@ -18,7 +18,17 @@ class Client implements LoggerAwareInterface
     const HEADER_DELIMITER = "\r\n\r\n";
     const HEADER_FIELD_SEPARATOR = "\r\n";
 
+    /**
+     * This is a list of hosts to use with it's ports and timeout. We store it here to not have to fetch it from APC on
+     * each request.
+     * @var array
+     */
     private static $cachedHosts = [];
+
+    /**
+     * This is a default configuration applied to all instances of this class. They can be overriden in the constructor.
+     * @var array
+     */
     private static $defaultConfig = [];
 
     /**
@@ -60,8 +70,14 @@ class Client implements LoggerAwareInterface
      */
     private $failovers = [];
 
+    /**
+     * @var int Timeout for connecting to the server.
+     */
     private $connectionTimeout;
 
+    /**
+     * @var int Timeout for reading the response from the server.
+     */
     private $readTimeout;
 
     /**
@@ -84,6 +100,16 @@ class Client implements LoggerAwareInterface
      */
     private $maxBlackListTimeout;
 
+    /**
+     * @var int The length of each packet read from the socket.
+     */
+    private $packetLength;
+
+    /**
+     * @var int The number of times to retry on a different server if the first one fails.
+     */
+    private $retries;
+
     private $lastHostUsed;
 
     /**
@@ -102,6 +128,8 @@ class Client implements LoggerAwareInterface
      * string|null          writeConsistency    The bedrock write consistency we want to use
      * int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up
      *                                          to this amount of seconds.
+     * int|null             packetLength        The length of each packet read from the socket
+     * int|null             retries             The number of times to retry on a different server if the first one fails
      *
      * @throws BedrockError
      */
@@ -117,6 +145,8 @@ class Client implements LoggerAwareInterface
         $this->stats = $config['stats'];
         $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
+        $this->packetLength = $config['packetLength'];
+        $this->retries = $config['retries'];
 
         // Make sure we have at least one host configured
         $this->logger->debug('Bedrock\Client - Constructed', ['clusterName' => $this->clusterName, 'hosts' => $this->hosts, 'failovers' => $this->failovers]);
@@ -146,6 +176,8 @@ class Client implements LoggerAwareInterface
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
+            'packetLength' => 16384,
+            'retries' => 2,
         ], self::$defaultConfig, $config);
     }
 
@@ -231,8 +263,8 @@ class Client implements LoggerAwareInterface
         $rawRequest .= "\r\n";
         $rawRequest .= $body;
 
-        // We try 3 times each on a different valid host
-        $numTries = 3;
+        // We try +1 of the configured amount of retries, each time on a different valid server
+        $numTries = $this->retries + 1;
         $response = null;
         $hosts = $this->getPossibleHosts();
         $host = null;
@@ -405,9 +437,8 @@ class Client implements LoggerAwareInterface
      */
     private function receiveResponse()
     {
-        // TODO make the length a config used here and below
         // Make sure bedrock is returning something https://github.com/Expensify/Expensify/issues/11010
-        if (@socket_recv($this->socket, $buf, 16384, MSG_PEEK) === false) {
+        if (@socket_recv($this->socket, $buf, $this->packetLength, MSG_PEEK) === false) {
             throw new BedrockError('Socket failed to read data');
         }
 
@@ -420,18 +451,15 @@ class Client implements LoggerAwareInterface
 
         // Read the data on the socket block by block until we got them all
         do {
-            $sizeDataOnSocket = @socket_recv($this->socket, $dataOnSocket, 16384, 0);
-
+            $sizeDataOnSocket = @socket_recv($this->socket, $dataOnSocket, $this->packetLength, 0);
             if ($sizeDataOnSocket === false) {
                 $errorCode = socket_last_error($this->socket);
                 $errorMsg  = socket_strerror($errorCode);
                 throw new BedrockError("Error receiving data: $errorCode - $errorMsg");
             }
-
             if ($sizeDataOnSocket === 0 || strlen($dataOnSocket) === 0) {
                 throw new BedrockError('Bedrock response was empty');
             }
-
             $totalDataReceived += $sizeDataOnSocket;
             $response .= $dataOnSocket;
 

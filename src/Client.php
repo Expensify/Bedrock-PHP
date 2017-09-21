@@ -234,7 +234,6 @@ class Client implements LoggerAwareInterface
         // We try 3 times each on a different valid host
         $numTries = 3;
         $response = null;
-        $lastTryException = null;
         $hosts = $this->getPossibleHosts();
         $host = null;
         while($numTries-- && !$response && count($hosts)) {
@@ -246,18 +245,11 @@ class Client implements LoggerAwareInterface
                 // conditions.
                 $this->sendRawRequest($host, $rawRequest);
                 $response = $this->receiveResponse();
-
-                // Record the last error in the response as this affects how we
-                // handle errors on this command
-                if ($lastTryException) {
-                    $response['lastTryException'] = $lastTryException;
-                }
             } catch(ConnectionFailure $e) {
                 // The error happened during connection (or before we sent any data) so we can retry it safely
                 $this->markHostAsFailed();
                 if ($numTries) {
                     $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTries, 'exception' => $e]);
-                    $lastTryException = $e;
                 } else {
                     $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying', ['host' => $host, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
@@ -267,7 +259,6 @@ class Client implements LoggerAwareInterface
                 $this->markHostAsFailed();
                 if ($numTries && ($headers['idempotent'] ?? false)) {
                     $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTries, 'exception' => $e]);
-                    $lastTryException = $e;
                 } else {
                     $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying', ['host' => $host, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;

@@ -574,7 +574,9 @@ class Client implements LoggerAwareInterface
     {
         $time = time() + rand(1, $this->maxBlackListTimeout);
         self::$cachedHosts[$this->clusterName][$this->lastHostUsed]['timeout'] = $time;
-        apcu_store('bedrockFailoverHosts-'.$this->clusterName, self::$cachedHosts[$this->clusterName]);
+        if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) && empty(self::$cachedHosts[$this->clusterName])) {
+            apcu_store('bedrockFailoverHosts-'.$this->clusterName, self::$cachedHosts[$this->clusterName]);
+        }
         $this->logger->info('Bedrock\Client - Marking server as failed', ['host' => $this->lastHostUsed, 'time' => date('Y-m-d H:i:s', $time)]);
     }
 }

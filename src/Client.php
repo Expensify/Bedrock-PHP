@@ -402,6 +402,8 @@ class Client implements LoggerAwareInterface
                 $this->logger->info('Bedrock\Client - APC init failover hosts', self::$cachedHosts[$this->clusterName]);
                 apcu_store($apcuKey, self::$cachedHosts[$this->clusterName]);
             }
+        } else {
+            self::$cachedHosts[$this->clusterName] = array_merge($this->hosts, $this->failovers);
         }
 
         // Get one main host and all the failovers, then remove any of them that we know already failed.

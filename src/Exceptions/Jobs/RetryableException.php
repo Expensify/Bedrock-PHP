@@ -56,20 +56,16 @@ class RetryableException extends BedrockError
 
     /**
      * Returns the nextRun time.
-     *
-     * @return string
      */
-    public function getNextRun()
+    public function getNextRun(): string
     {
         return $this->nextRun;
     }
 
     /**
      * Returns the new name.
-     *
-     * @return string
      */
-    public function getName()
+    public function getName(): string
     {
         return $this->name;
     }

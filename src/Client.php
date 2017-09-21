@@ -256,7 +256,7 @@ class Client implements LoggerAwareInterface
                 // The error happened during connection (or before we sent any data) so we can retry it safely
                 $this->markHostAsFailed();
                 if ($numTries) {
-                    $this->logger->warning('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTries, 'exception' => $e]);
+                    $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTries, 'exception' => $e]);
                     $lastTryException = $e;
                 } else {
                     $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying', ['host' => $host, 'message' => $e->getMessage(), 'exception' => $e]);
@@ -266,7 +266,7 @@ class Client implements LoggerAwareInterface
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $this->markHostAsFailed();
                 if ($numTries && ($headers['idempotent'] ?? false)) {
-                    $this->logger->warning('Bedrock\Client - Failed to send the whole request or to receive it; retrying', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTries, 'exception' => $e]);
+                    $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTries, 'exception' => $e]);
                     $lastTryException = $e;
                 } else {
                     $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying', ['host' => $host, 'message' => $e->getMessage(), 'exception' => $e]);
@@ -288,6 +288,7 @@ class Client implements LoggerAwareInterface
         $networkTime    = $clientTime - $serverTime;
         $waitTime       = $serverTime - $processingTime;
         $this->logger->info('Bedrock\Client - Request finished', [
+            'host' => $host,
             'command' => $method,
             'jsonCode' => isset($response['codeLine']) ? $response['codeLine'] : null,
             'duration' => $clientTime,
@@ -349,7 +350,7 @@ class Client implements LoggerAwareInterface
         // We sent something; can't retry or else we might double-send the same request. Let's make sure we sent the
         // whole thing, else there's a problem.
         if ($bytesSent != strlen($rawRequest)) {
-            $this->logger->info('Bedrock\Client - Could not send all request', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
+            $this->logger->info('Bedrock\Client - Could not send the whole request', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
             throw new BedrockError("Sent partial request to bedrock host $host:$port");
         }
     }
@@ -552,9 +553,9 @@ class Client implements LoggerAwareInterface
 
     private function markHostAsFailed()
     {
-        $time = rand(1, $this->maxBlackListTimeout);
-        self::$cachedHosts[$this->clusterName][$this->lastHostUsed]['timeout'] = time() + $time;
+        $time = time() + rand(1, $this->maxBlackListTimeout);
+        self::$cachedHosts[$this->clusterName][$this->lastHostUsed]['timeout'] = $time;
         apcu_store('bedrockFailoverHosts-'.$this->clusterName, self::$cachedHosts[$this->clusterName]);
-        $this->logger->info('Bedrock\Client - Marking server as failed', ['host' => $this->lastHostUsed, 'time' => $time]);
+        $this->logger->info('Bedrock\Client - Marking server as failed', ['host' => $this->lastHostUsed, 'time' => date('Y-m-d H:i:s', $time)]);
     }
 }

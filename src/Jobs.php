@@ -418,7 +418,7 @@ class Jobs extends Plugin
 
             return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection);
         } catch (Exception $e) {
-            Client::getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
+            $bedrock->getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
 
             return [];
         }

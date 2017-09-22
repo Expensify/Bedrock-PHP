@@ -44,7 +44,7 @@ class Client implements LoggerAwareInterface
     private $commitCount = null;
 
     /**
-     *  @var null|resource Existing socket, if any.  It's reused each time, if possible.
+     *  @var null|resource Existing socket.
      */
     private $socket = null;
 
@@ -138,7 +138,7 @@ class Client implements LoggerAwareInterface
         // Make sure we have at least one host configured
         $this->logger->debug('Bedrock\Client - Constructed', ['clusterName' => $this->clusterName, 'hosts' => $this->mainHostConfigs, 'failovers' => $this->failoverConfigs]);
         if (empty($this->mainHostConfigs)) {
-            throw new BedrockError('Failed to construct Bedrock object');
+            throw new BedrockError('Main hosts are not set, cannot instantiate bedrock client');
         }
     }
 
@@ -254,32 +254,32 @@ class Client implements LoggerAwareInterface
         $numTriesRemaining = $this->retries + 1;
         $response = null;
         $hosts = $this->getPossibleHosts();
-        $host = null;
+        $hostName = null;
         while($numTriesRemaining-- && !$response && count($hosts)) {
             reset($hosts);
-            $host = key($hosts);
+            $hostName = key($hosts);
             try {
                 // Do the request.  This is split up into separate functions so we can
                 // profile them independently -- useful when diagnosing various network
                 // conditions.
-                $this->sendRawRequest($host, $rawRequest);
+                $this->sendRawRequest($hostName, $rawRequest);
                 $response = $this->receiveResponse();
             } catch(ConnectionFailure $e) {
                 // The error happened during connection (or before we sent any data) so we can retry it safely
-                $this->markHostAsFailed($host);
+                $this->markHostAsFailed($hostName);
                 if ($numTriesRemaining) {
-                    $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTriesRemaining, 'exception' => $e]);
+                    $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numTriesRemaining, 'exception' => $e]);
                 } else {
-                    $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying', ['host' => $host, 'message' => $e->getMessage(), 'exception' => $e]);
+                    $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
                 }
             } catch(BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
-                $this->markHostAsFailed($host);
+                $this->markHostAsFailed($hostName);
                 if ($numTriesRemaining && ($headers['idempotent'] ?? false)) {
-                    $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $host, 'message' => $e->getMessage(), 'retriesLeft' => $numTriesRemaining, 'exception' => $e]);
+                    $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numTriesRemaining, 'exception' => $e]);
                 } else {
-                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying', ['host' => $host, 'message' => $e->getMessage(), 'exception' => $e]);
+                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
                 }
             } finally {
@@ -298,7 +298,7 @@ class Client implements LoggerAwareInterface
         $networkTime    = $clientTime - $serverTime;
         $waitTime       = $serverTime - $processingTime;
         $this->logger->info('Bedrock\Client - Request finished', [
-            'host' => $host,
+            'host' => $hostName,
             'command' => $method,
             'jsonCode' => isset($response['codeLine']) ? $response['codeLine'] : null,
             'duration' => $clientTime,
@@ -312,7 +312,7 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Sends the request on the existing socket, if possible, else it reconnects.
+     * Sends the request on a new socket, if a previous one existed, it closes the connection first.
      *
      * @throws ConnectionFailure When the failure is before sending any data to the server
      * @throws BedrockError When we already sent some data
@@ -453,7 +453,7 @@ class Client implements LoggerAwareInterface
             $response .= $dataOnSocket;
 
             // The first time are reading data from the socket, we need to extract the headers
-            // to ba able to get the size of the response
+            // to be able to get the size of the response
             // It is use to know when to stop to read data from the socket
             if ($responseLength === null && strpos($response, self::HEADER_DELIMITER) !== false) {
                 $dataOffset = strpos($response, self::HEADER_DELIMITER);
@@ -482,10 +482,7 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Parse a raw response from auth.
-     *
-     * Note: $response is passed by reference so we don't store two copies in memory
-     * Note: this function can exit; and never return in case of token expiration
+     * Parse a raw response from bedrock.
      *
      * @return array the decoded json, or null on error
      * @throws BedrockError
@@ -528,7 +525,7 @@ class Client implements LoggerAwareInterface
         return $json;
     }
 
-    private function extractResponseHeaders($responseHeaderLines)
+    private function extractResponseHeaders(array $responseHeaderLines)
     {
         $responseHeaders = [];
         foreach ($responseHeaderLines as $responseHeaderLine) {

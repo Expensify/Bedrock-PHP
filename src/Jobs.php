@@ -345,14 +345,8 @@ class Jobs extends Plugin
 
     /**
      * Retry a job. Job must be in a RUNNING state to be able to be retried.
-     *
-     * @param int     $jobID
-     * @param int     $delay
-     * @param ?array  $data
-     *
-     * @return array
      */
-    public function retryJob($jobID, $delay = 0, $data = null, string $name = '', string $nextRun = '')
+    public function retryJob(int $jobID, int $delay = 0, array $data = null, string $name = '', string $nextRun = ''): array
     {
         return $this->call(
             "RetryJob",

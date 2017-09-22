@@ -11,12 +11,12 @@ use Expensify\Bedrock\Exceptions\BedrockError;
 class RetryableException extends BedrockError
 {
     /**
-     * @var int Time (in seconds) to delay the retry.
+     * @var int Time to delay the retry (in seconds)
      */
     private $delay;
 
     /**
-     * @var string DateTime to retry this job
+     * @var string When to retry the job (takes precedence over delay; expects format Y-m-d H:i:s)
      */
     private $nextRun;
 
@@ -29,13 +29,13 @@ class RetryableException extends BedrockError
      * RetryableException constructor.
      *
      * @param string     $message  Message of the exception
-     * @param ?int        $delay    Time (in seconds)  to delay the retry.
-     * @param int        $code     Code of the exception
+     * @param ?int       $delay    Time to delay the retry (in seconds)
+     * @param ?int       $code     Code of the exception
      * @param ?Exception $previous
-     * @param string     $name     New name for the job
-     * @param string     $nextRun  DateTime to retry the job
+     * @param ?string    $name     New name for the job
+     * @param ?string    $nextRun  When to retry the job (takes precedence over delay; expects format Y-m-d H:i:s)
      */
-    public function __construct($message, $delay = 0, $code = null, Exception $previous = null, string $name = '', string $nextRun = '')
+    public function __construct(string $message, int $delay = 0, int $code = null, Exception $previous = null, string $name = '', string $nextRun = '')
     {
         $code = $code ?? 666;
         $this->delay = $delay;
@@ -45,17 +45,15 @@ class RetryableException extends BedrockError
     }
 
     /**
-     * Returns the time to delay the retry (in seconds).
-     *
-     * @return int
+     * Returns the time to delay the retry (in seconds)
      */
-    public function getDelay()
+    public function getDelay(): int
     {
         return $this->delay;
     }
 
     /**
-     * Returns the nextRun time.
+     * Returns the nextRun time
      */
     public function getNextRun(): string
     {
@@ -63,7 +61,7 @@ class RetryableException extends BedrockError
     }
 
     /**
-     * Returns the new name.
+     * Returns the new name
      */
     public function getName(): string
     {

@@ -19,10 +19,25 @@ class Client implements LoggerAwareInterface
     const HEADER_FIELD_SEPARATOR = "\r\n";
 
     /**
+     * The length of each packet read from the socket.
+     */
+    const PACKET_LENGTH = 16384;
+
+    /**
+     * The number of times to retry on a different server if the first one fails.
+     */
+    const RETRIES = 2;
+
+    /**
+     * The prefix to use in apcu to store the state of the hosts.
+     */
+    const APCU_CACHE_PREFIX = 'bedrockHostStates-';
+
+    /**
      * @var array This is a list of hosts to use with it's ports and timeout. We store it here to not have to fetch it
      * from APC on each request.
      */
-    private static $cachedHosts = [];
+    private static $cachedHostConfigs = [];
 
     /**
      * @var array This is a default configuration applied to all instances of this class. They can be overriden in the
@@ -57,7 +72,7 @@ class Client implements LoggerAwareInterface
      *  @var array List of failovers we attempt if the first didn't work. We randomize the list and try on several of
      * them (depending on the number of retries configured).
      */
-    private $failoverConfigs = [];
+    private $failoverHostConfigs = [];
 
     /**
      * @var int Timeout for connecting to the server.
@@ -90,23 +105,13 @@ class Client implements LoggerAwareInterface
     private $maxBlackListTimeout;
 
     /**
-     * @var int The length of each packet read from the socket.
-     */
-    private $packetLength;
-
-    /**
-     * @var int The number of times to retry on a different server if the first one fails.
-     */
-    private $retries;
-
-    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
      * @param array $config Configuration to use, can have all of these:
      * string               clusterName         Name of the bedrock cluster. This is used to separate requests made to
      *                                          different bedrock clusters.
-     * array|null           hosts               List of hosts to attempt first
+     * array|null           mainHostConfigs     List of hosts to attempt first
      * array|null           failovers           List of hosts to use as failovers
      * int|null             connectionTimeout   Timeout to use when connecting
      * int|null             readTimeout         Timeout to use when reading
@@ -115,8 +120,6 @@ class Client implements LoggerAwareInterface
      * string|null          writeConsistency    The bedrock write consistency we want to use
      * int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up
      *                                          to this amount of seconds.
-     * int|null             packetLength        The length of each packet read from the socket
-     * int|null             retries             The number of times to retry on a different server if the first one fails
      *
      * @throws BedrockError
      */
@@ -124,19 +127,17 @@ class Client implements LoggerAwareInterface
     {
         $config = array_merge(self::$defaultConfig, $config);
         $this->clusterName = $config['clusterName'];
-        $this->mainHostConfigs = $config['hosts'];
-        $this->failoverConfigs = $config['failovers'];
+        $this->mainHostConfigs = $config['mainHostConfigs'];
+        $this->failoverHostConfigs = $config['failoverHostConfigs'];
         $this->connectionTimeout = $config['connectionTimeout'];
         $this->readTimeout = $config['readTimeout'];
         $this->logger = $config['logger'];
         $this->stats = $config['stats'];
         $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
-        $this->packetLength = $config['packetLength'];
-        $this->retries = $config['retries'];
 
         // Make sure we have at least one host configured
-        $this->logger->debug('Bedrock\Client - Constructed', ['clusterName' => $this->clusterName, 'hosts' => $this->mainHostConfigs, 'failovers' => $this->failoverConfigs]);
+        $this->logger->debug('Bedrock\Client - Constructed', ['clusterName' => $this->clusterName, 'mainHostConfigs' => $this->mainHostConfigs, 'failoverHostConfigs' => $this->failoverHostConfigs]);
         if (empty($this->mainHostConfigs)) {
             throw new BedrockError('Main hosts are not set, cannot instantiate bedrock client');
         }
@@ -155,16 +156,14 @@ class Client implements LoggerAwareInterface
         // Store the configuration
         self::$defaultConfig = array_merge([
             'clusterName' => 'bedrock',
-            'hosts' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
-            'failovers' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
+            'mainHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
+            'failoverHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
             'connectionTimeout' => 1,
             'readTimeout' => 300,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
-            'packetLength' => 16384,
-            'retries' => 2,
         ], self::$defaultConfig, $config);
     }
 
@@ -251,7 +250,7 @@ class Client implements LoggerAwareInterface
         $rawRequest .= $body;
 
         // We try +1 of the configured amount of retries, each time on a different valid server
-        $numTriesRemaining = $this->retries + 1;
+        $numTriesRemaining = self::RETRIES + 1;
         $response = null;
         $hosts = $this->getPossibleHosts();
         $hostName = null;
@@ -336,7 +335,7 @@ class Client implements LoggerAwareInterface
         // Configure this socket and try to connect to it
         socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => 0]);
         socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
-        $port = self::$cachedHosts[$this->clusterName][$host]['port'];
+        $port = self::$cachedHostConfigs[$this->clusterName][$host]['port'];
         @socket_connect($this->socket, $host, $port);
         $socketErrorCode = socket_last_error($this->socket);
         socket_clear_error($this->socket);
@@ -368,29 +367,29 @@ class Client implements LoggerAwareInterface
         // If cached hosts aren't set, get them from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
         // is so that we don't keep the old cache after changing the hosts or failover configuration.
-        if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) && empty(self::$cachedHosts[$this->clusterName])) {
-            $apcuKey = 'bedrockFailoverHosts-'.$this->clusterName;
-            self::$cachedHosts[$this->clusterName] = apcu_fetch($apcuKey) ?: [];
-            $this->logger->info('Bedrock\Client - APC fetch failover hosts', self::$cachedHosts[$this->clusterName]);
+        if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) && empty(self::$cachedHostConfigs[$this->clusterName])) {
+            $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
+            self::$cachedHostConfigs[$this->clusterName] = apcu_fetch($apcuKey) ?: [];
+            $this->logger->info('Bedrock\Client - APC fetch failover hosts', self::$cachedHostConfigs[$this->clusterName]);
 
             // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
             $savedHostsAndPort = [];
-            foreach (self::$cachedHosts[$this->clusterName] as $hostName => $config) {
+            foreach (self::$cachedHostConfigs[$this->clusterName] as $hostName => $config) {
                 $savedHostsAndPort[$hostName] = $config['port'];
             }
             asort($savedHostsAndPort);
             $configHostsAndPort = [];
-            foreach (array_merge($this->mainHostConfigs, $this->failoverConfigs) as $hostName => $config) {
+            foreach (array_merge($this->mainHostConfigs, $this->failoverHostConfigs) as $hostName => $config) {
                 $configHostsAndPort[$hostName] = $config['port'];
             }
             asort($configHostsAndPort);
             if ($savedHostsAndPort !== $configHostsAndPort) {
-                self::$cachedHosts[$this->clusterName] = array_merge($this->mainHostConfigs, $this->failoverConfigs);
-                $this->logger->info('Bedrock\Client - APC init failover hosts', self::$cachedHosts[$this->clusterName]);
-                apcu_store($apcuKey, self::$cachedHosts[$this->clusterName]);
+                self::$cachedHostConfigs[$this->clusterName] = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
+                $this->logger->info('Bedrock\Client - APC init failover hosts', self::$cachedHostConfigs[$this->clusterName]);
+                apcu_store($apcuKey, self::$cachedHostConfigs[$this->clusterName]);
             }
         } else {
-            self::$cachedHosts[$this->clusterName] = array_merge($this->mainHostConfigs, $this->failoverConfigs);
+            self::$cachedHostConfigs[$this->clusterName] = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
         }
 
         // Get one main host and all the failovers, then remove any of them that we know already failed.
@@ -400,20 +399,20 @@ class Client implements LoggerAwareInterface
         // because if our first attempt fails we want to equally balance across *all* databases -- including the remote
         // ones. Otherwise if a database node goes down, the other databases in the same datacenter would get more load
         // (whereas this approach ensures the load is spread evenly across all).
-        $failoverHostNames = array_keys($this->failoverConfigs);
+        $failoverHostNames = array_keys($this->failoverHostConfigs);
         shuffle($failoverHostNames);
         $mainHostName = array_rand($this->mainHostConfigs);
         $hostNames = array_merge([$mainHostName], $failoverHostNames);
 
         $nonBlackListedHosts = [];
         foreach ($hostNames as $hostName) {
-            $blackListedUntil = self::$cachedHosts[$this->clusterName][$hostName]['blacklistedUntil'] ?? null;
+            $blackListedUntil = self::$cachedHostConfigs[$this->clusterName][$hostName]['blacklistedUntil'] ?? null;
             if (!$blackListedUntil || $blackListedUntil < time()) {
-                $nonBlackListedHosts[$hostName] = self::$cachedHosts[$this->clusterName][$hostName];
+                $nonBlackListedHosts[$hostName] = self::$cachedHostConfigs[$this->clusterName][$hostName];
             }
         }
 
-        $this->getLogger()->info('Bedrock\Client - Possible hosts', ['hosts' => array_keys($nonBlackListedHosts)]);
+        $this->getLogger()->info('Bedrock\Client - Possible hosts', ['mainHostConfigs' => array_keys($nonBlackListedHosts)]);
 
         return $nonBlackListedHosts;
     }
@@ -427,7 +426,7 @@ class Client implements LoggerAwareInterface
     private function receiveResponse()
     {
         // Make sure bedrock is returning something https://github.com/Expensify/Expensify/issues/11010
-        if (@socket_recv($this->socket, $buf, $this->packetLength, MSG_PEEK) === false) {
+        if (@socket_recv($this->socket, $buf, self::PACKET_LENGTH, MSG_PEEK) === false) {
             throw new BedrockError('Socket failed to read data');
         }
 
@@ -440,7 +439,7 @@ class Client implements LoggerAwareInterface
 
         // Read the data on the socket block by block until we got them all
         do {
-            $sizeDataOnSocket = @socket_recv($this->socket, $dataOnSocket, $this->packetLength, 0);
+            $sizeDataOnSocket = @socket_recv($this->socket, $dataOnSocket, self::PACKET_LENGTH, 0);
             if ($sizeDataOnSocket === false) {
                 $errorCode = socket_last_error($this->socket);
                 $errorMsg  = socket_strerror($errorCode);
@@ -564,9 +563,9 @@ class Client implements LoggerAwareInterface
     private function markHostAsFailed(string $host)
     {
         $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
-        self::$cachedHosts[$this->clusterName][$host]['blacklistedUntil'] = $blacklistedUntil;
-        if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) && empty(self::$cachedHosts[$this->clusterName])) {
-            apcu_store('bedrockFailoverHosts-'.$this->clusterName, self::$cachedHosts[$this->clusterName]);
+        self::$cachedHostConfigs[$this->clusterName][$host]['blacklistedUntil'] = $blacklistedUntil;
+        if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) && empty(self::$cachedHostConfigs[$this->clusterName])) {
+            apcu_store(self::APCU_CACHE_PREFIX.$this->clusterName, self::$cachedHostConfigs[$this->clusterName]);
         }
         $this->logger->info('Bedrock\Client - Marking server as failed', ['host' => $host, 'time' => date('Y-m-d H:i:s', $blacklistedUntil)]);
     }

@@ -31,7 +31,7 @@ class Client implements LoggerAwareInterface
     /**
      * The prefix to use in apcu to store the state of the hosts.
      */
-    const APCU_CACHE_PREFIX = 'bedrockHostStates-';
+    const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
      * @var array This is a default configuration applied to all instances of this class. They can be overriden in the
@@ -357,32 +357,32 @@ class Client implements LoggerAwareInterface
 
     private function getPossibleHosts()
     {
-        // If cached hosts aren't set, get them from the APC cache. Then, we check the configuration there with the passed
+        // We get the host configs from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
         // is so that we don't keep the old cache after changing the hosts or failover configuration.
         if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING)) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
-            $hostConfigs = apcu_fetch($apcuKey) ?: [];
-            $this->logger->info('Bedrock\Client - APC fetch failover hosts', $hostConfigs);
+            $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
+            $this->logger->info('Bedrock\Client - APC fetch host configs', $cachedHostConfigs);
 
             // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
-            $savedHostsAndPort = [];
-            foreach ($hostConfigs as $hostName => $config) {
-                $savedHostsAndPort[$hostName] = $config['port'];
+            $cachedHostsAndPorts = [];
+            foreach ($cachedHostConfigs as $hostName => $config) {
+                $cachedHostsAndPorts[$hostName] = $config['port'];
             }
-            asort($savedHostsAndPort);
-            $configHostsAndPort = [];
+            asort($cachedHostsAndPorts);
+            $uncachedHostsAndPort = [];
             foreach (array_merge($this->mainHostConfigs, $this->failoverHostConfigs) as $hostName => $config) {
-                $configHostsAndPort[$hostName] = $config['port'];
+                $uncachedHostsAndPort[$hostName] = $config['port'];
             }
-            asort($configHostsAndPort);
-            if ($savedHostsAndPort !== $configHostsAndPort) {
-                $hostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
-                $this->logger->info('Bedrock\Client - APC init failover hosts', $hostConfigs);
-                apcu_store($apcuKey, $hostConfigs);
+            asort($uncachedHostsAndPort);
+            if ($cachedHostsAndPorts !== $uncachedHostsAndPort) {
+                $cachedHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
+                $this->logger->info('Bedrock\Client - APC init host configs', $cachedHostConfigs);
+                apcu_store($apcuKey, $cachedHostConfigs);
             }
         } else {
-            $hostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
+            $cachedHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
         }
 
         // Get one main host and all the failovers, then remove any of them that we know already failed.
@@ -399,13 +399,13 @@ class Client implements LoggerAwareInterface
 
         $nonBlackListedHosts = [];
         foreach ($hostNames as $hostName) {
-            $blackListedUntil = $hostConfigs[$hostName]['blacklistedUntil'] ?? null;
+            $blackListedUntil = $cachedHostConfigs[$hostName]['blacklistedUntil'] ?? null;
             if (!$blackListedUntil || $blackListedUntil < time()) {
-                $nonBlackListedHosts[$hostName] = $hostConfigs[$hostName];
+                $nonBlackListedHosts[$hostName] = $cachedHostConfigs[$hostName];
             }
         }
 
-        $this->getLogger()->info('Bedrock\Client - Possible hosts', ['mainHostConfigs' => array_keys($nonBlackListedHosts)]);
+        $this->getLogger()->info('Bedrock\Client - Possible hosts', ['nonBlacklistedHosts' => array_keys($nonBlackListedHosts)]);
 
         return $nonBlackListedHosts;
     }

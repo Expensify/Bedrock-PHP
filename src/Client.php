@@ -363,7 +363,7 @@ class Client implements LoggerAwareInterface
         if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING)) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
-            $this->logger->info('Bedrock\Client - APC fetch host configs', $cachedHostConfigs);
+            $this->logger->info('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
 
             // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
             $cachedHostsAndPorts = [];
@@ -378,7 +378,7 @@ class Client implements LoggerAwareInterface
             asort($uncachedHostsAndPort);
             if ($cachedHostsAndPorts !== $uncachedHostsAndPort) {
                 $cachedHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
-                $this->logger->info('Bedrock\Client - APC init host configs', $cachedHostConfigs);
+                $this->logger->info('Bedrock\Client - APC store host configs', array_keys($cachedHostConfigs));
                 apcu_store($apcuKey, $cachedHostConfigs);
             }
         } else {

@@ -47,8 +47,8 @@ class Client implements LoggerAwareInterface
 
     /**
      *  @var null|string The last commit count of the node we talked to. This is used to ensure if we make a subsequent
-     * request to a different node in the same session, that the node waits until it is at least as "fresh" as the node
-     * we originally queried.
+     * request to a different node in the same session, that the node waits until it is at least up to date with the
+     * commits as the node we originally queried.
      */
     private $commitCount = null;
 
@@ -139,6 +139,7 @@ class Client implements LoggerAwareInterface
 
     public function __destruct()
     {
+        // We suppress all errors as this gets called automatically when the object is destroyed.
         @socket_close($this->socket);
     }
 

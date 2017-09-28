@@ -24,11 +24,6 @@ class Client implements LoggerAwareInterface
     const PACKET_LENGTH = 16384;
 
     /**
-     * The number of times to retry on a different server if the first one fails.
-     */
-    const RETRIES = 2;
-
-    /**
      * The prefix to use in apcu to store the state of the hosts.
      */
     const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
@@ -244,8 +239,8 @@ class Client implements LoggerAwareInterface
         $rawRequest .= "\r\n";
         $rawRequest .= $body;
 
-        // We try +1 of the configured amount of retries, each time on a different valid server
-        $numTriesRemaining = self::RETRIES + 1;
+        // We try 3 times, each time on a different valid server
+        $numTriesRemaining = 3;
         $response = null;
         $hostConfigs = $this->getPossibleHosts();
         $hostName = null;

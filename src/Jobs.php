@@ -101,19 +101,6 @@ class Jobs extends Plugin
 
         $this->client->getStats()->counter('bedrockJob.call.response.'.$method.$responseCode);
 
-        if ($responseCode!=200 && @$response['lastTryException']) {
-            // We had a connection failure last time around, so let's ignore
-            // any non-200 requests this time.  Either it worked and this error
-            // is a false alarm, or it didn't work and the next command will
-            // fail.  Either way, we can't know at this moment if this is a
-            // real error so just log the problem and hope it gets sorted out.
-            $lastError = $response['lastTryException']->getMessage();
-            $this->client->getLogger()->warning("Retried a command and got a potentially benign error: '$lastError'");
-            $responseCode = 200;
-            $response['code'] = 200;
-        }
-            
-
         if ($responseCode === 402) {
             throw new MalformedAttribute("Malformed attribute. Job :$job, message: $codeLine");
         }
@@ -414,7 +401,7 @@ class Jobs extends Plugin
 
             return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection);
         } catch (Exception $e) {
-            Client::getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
+            $bedrock->getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
 
             return [];
         }

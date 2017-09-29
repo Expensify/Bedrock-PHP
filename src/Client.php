@@ -15,37 +15,154 @@ use Psr\Log\NullLogger;
  */
 class Client implements LoggerAwareInterface
 {
+    const HEADER_DELIMITER = "\r\n\r\n";
+    const HEADER_FIELD_SEPARATOR = "\r\n";
+
     /**
-     * Sets the default configuration.
+     * The length of each packet read from the socket.
+     */
+    const PACKET_LENGTH = 16384;
+
+    /**
+     * The prefix to use in apcu to store the state of the hosts.
+     */
+    const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
+
+    /**
+     * @var array This is a default configuration applied to all instances of this class. They can be overriden in the
+     * constructor.
+     */
+    private static $defaultConfig = [];
+
+    /**
+     * @var null|string Name of the bedrock cluster we are talking to. If you have more than one bedrock cluster, you
+     * can pass in different names for them in order to have separate statistics collected and caches of failed servers.
+     */
+    private $clusterName = null;
+
+    /**
+     *  @var null|string The last commit count of the node we talked to. This is used to ensure if we make a subsequent
+     * request to a different node in the same session, that the node waits until it is at least up to date with the
+     * commits as the node we originally queried.
+     */
+    private $commitCount = null;
+
+    /**
+     *  @var null|resource Existing socket.
+     */
+    private $socket = null;
+
+    /**
+     *  @var array List of hosts to use as first choice. It will pick just one of these randomly and try it first.
+     */
+    private $mainHostConfigs = [];
+
+    /**
+     *  @var array List of failovers we attempt if the first didn't work. We randomize the list and try on several of
+     * them (depending on the number of retries configured).
+     */
+    private $failoverHostConfigs = [];
+
+    /**
+     * @var int Timeout for connecting to the server.
+     */
+    private $connectionTimeout;
+
+    /**
+     * @var int Timeout for reading the response from the server.
+     */
+    private $readTimeout;
+
+    /**
+     * @var LoggerInterface
+     */
+    private $logger;
+
+    /**
+     * @var StatsInterface
+     */
+    private $stats;
+
+    /**
+     * @var string The bedrock write consistency we want to use.
+     */
+    private $writeConsistency;
+
+    /**
+     * @var int When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
+     */
+    private $maxBlackListTimeout;
+
+    /**
+     * Creates a reusable Bedrock instance.
+     * All params are optional and values set in `configure` would be used if are not passed here.
      *
-     * @param array $config
+     * @param array $config Configuration to use, can have all of these:
+     * string               clusterName         Name of the bedrock cluster. This is used to separate requests made to
+     *                                          different bedrock clusters.
+     * array|null           mainHostConfigs     List of hosts to attempt first
+     * array|null           failovers           List of hosts to use as failovers
+     * int|null             connectionTimeout   Timeout to use when connecting
+     * int|null             readTimeout         Timeout to use when reading
+     * LoggerInterface|null logger              Class to use for logging
+     * StatsInterface|null  stats               Class to use for statistics tracking
+     * string|null          writeConsistency    The bedrock write consistency we want to use
+     * int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up
+     *                                          to this amount of seconds.
+     *
+     * @throws BedrockError
+     */
+    public function __construct(array $config = [])
+    {
+        $config = array_merge(self::$defaultConfig, $config);
+        $this->clusterName = $config['clusterName'];
+        $this->mainHostConfigs = $config['mainHostConfigs'];
+        $this->failoverHostConfigs = $config['failoverHostConfigs'];
+        $this->connectionTimeout = $config['connectionTimeout'];
+        $this->readTimeout = $config['readTimeout'];
+        $this->logger = $config['logger'];
+        $this->stats = $config['stats'];
+        $this->writeConsistency = $config['writeConsistency'];
+        $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
+
+        // Make sure we have at least one host configured
+        $this->logger->debug('Bedrock\Client - Constructed', ['clusterName' => $this->clusterName, 'mainHostConfigs' => $this->mainHostConfigs, 'failoverHostConfigs' => $this->failoverHostConfigs]);
+        if (empty($this->mainHostConfigs)) {
+            throw new BedrockError('Main hosts are not set, cannot instantiate bedrock client');
+        }
+    }
+
+    public function __destruct()
+    {
+        // We suppress all errors as this gets called automatically when the object is destroyed.
+        @socket_close($this->socket);
+    }
+
+    /**
+     * Sets the default config to use, these are used as defaults each time you create a new instance.
      */
     public static function configure(array $config)
     {
         // Store the configuration
-        self::$config = array_merge([
-            'host' => 'localhost',
-            'port' => 8888,
-            'failoverHost' => 'localhost',
-            'failoverPort' => 8888,
-            'connectionTimeout' => 300,
+        self::$defaultConfig = array_merge([
+            'clusterName' => 'bedrock',
+            'mainHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
+            'failoverHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
+            'connectionTimeout' => 1,
             'readTimeout' => 300,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
-        ], self::$config, $config);
+            'maxBlackListTimeout' => 1,
+        ], self::$defaultConfig, $config);
     }
 
     /**
      * @return LoggerInterface
      */
-    public static function getLogger()
+    public function getLogger()
     {
-        if (is_string(self::$config['logger'])) {
-            self::$config['logger'] = new self::$config['logger'];
-        }
-
-        return self::$config['logger'];
+        return $this->logger;
     }
 
     /**
@@ -57,68 +174,21 @@ class Client implements LoggerAwareInterface
      */
     public function setLogger(LoggerInterface $logger)
     {
-        self::$config['logger'] = $logger;
+        $this->logger = $logger;
+
+        return null;
     }
 
     /**
      * @return StatsInterface
      */
-    public static function getStats()
+    public function getStats()
     {
-        if (is_string(self::$config['stats'])) {
-            self::$config['stats'] = new self::$config['stats'];
+        if (is_string($this->stats)) {
+            $this->stats = new $this->stats;
         }
 
-        return self::$config['stats'];
-    }
-
-    /**
-     * Creates a reusable Bedrock instance.
-     * All params are optional and values set in `configure` would be used if are not passed here.
-     *
-     * @param string|null          $host              First host we attempt to connect to
-     * @param int|null             $port              First port we attempt to connect to
-     * @param string|null          $failoverHost      Host we attempt if the primary fails
-     * @param int|null             $failoverPort      Port we attempt if the primary fails
-     * @param int|null             $connectionTimeout Timeout to use when connecting
-     * @param int|null             $readTimeout       Timeout to use when reading
-     * @param LoggerInterface|null $logger            Class to use for logging
-     * @param StatsInterface|null  $stats             Class to use for statistics tracking
-     * @param string|null          $writeConsistency  The bedrock write consistency we want to use
-     *
-     * @throws BedrockError
-     */
-    public function __construct($host = null, $port = null, $failoverHost = null, $failoverPort = null, $connectionTimeout = null, $readTimeout = null, LoggerInterface $logger = null, StatsInterface $stats = null, $writeConsistency = null)
-    {
-        // Store these for future use
-        $this->host             = $host ?: self::$config['host'];
-        $this->port             = $port ?: self::$config['port'];
-        $this->failoverHost     = $failoverHost ?: self::$config['failoverHost'];
-        $this->failoverPort     = $failoverPort ?: self::$config['failoverPort'];
-        $this->sendTimeout      = $connectionTimeout ?: self::$config['connectionTimeout'];
-        $this->readTimeout      = $readTimeout ?: self::$config['readTimeout'];
-        $this->logger           = $logger ?: self::getLogger();
-        $this->stats            = $stats ?: self::getStats();
-        $this->writeConsistency = $writeConsistency ?: self::$config['writeConsistency'];
-
-        // If failovers still not defined, just copy primary
-        if (!$this->failoverHost) {
-            $this->failoverHost = $this->host;
-        }
-        if (!$this->failoverPort) {
-            $this->failoverPort = $this->port;
-        }
-
-        // Make sure one way or the other, everything is defined
-        $this->getLogger()->debug("Bedrock::Bedrock( {$this->host}, {$this->port}, {$this->failoverHost}, {$this->failoverPort} )");
-        if (!$this->host || !$this->port || !$this->failoverHost || !$this->failoverPort) {
-            throw new BedrockError('Failed to construct Bedrock object');
-        }
-    }
-
-    public function __destruct()
-    {
-        @socket_close($this->socket);
+        return $this->stats;
     }
 
     /**
@@ -129,12 +199,13 @@ class Client implements LoggerAwareInterface
      * @param string $body    Request body (optional)
      *
      * @return array JSON response, or null on error
+     * @throws BedrockError
      */
     public function call($method, $headers = [], $body = '')
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
-        $this->getLogger()->info("Starting a bedrock request", ['command' => $method, 'headers' => $headers]);
+        $this->logger->info('Bedrock\Client - Starting a request', ['command' => $method, 'headers' => $headers]);
 
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
@@ -168,34 +239,45 @@ class Client implements LoggerAwareInterface
         $rawRequest .= "\r\n";
         $rawRequest .= $body;
 
-        // Try idempotent requests up to three times, everything else only once
-        $numTries = @$headers['idempotent'] ? 3 : 1;
+        // We try 3 times, each time on a different valid server
+        $numTriesRemaining = 3;
         $response = null;
-        $lastTryException = null;
-        while($numTries-- && !$response) {
-            // Catch any connection failures and retry, but ignore non-connection failures.
+        $hostConfigs = $this->getPossibleHosts();
+        $hostName = null;
+        while($numTriesRemaining-- && !$response && count($hostConfigs)) {
+            reset($hostConfigs);
+            $hostName = key($hostConfigs);
             try {
                 // Do the request.  This is split up into separate functions so we can
                 // profile them independently -- useful when diagnosing various network
                 // conditions.
-                $this->sendRawRequest($rawRequest);
-                $response = $this->receiveRawResponse();
-
-                // Record the last error in the response as this affects how we
-                // handle errors on this command
-                if ($lastTryException) {
-                    $response['lastTryException'] = $lastTryException;
-                }
+                $this->sendRawRequest($hostName, $hostConfigs[$hostName]['port'], $rawRequest);
+                $response = $this->receiveResponse();
             } catch(ConnectionFailure $e) {
-                // Failed to connect.  Are we retrying?
-                if ($numTries) {
-                    $this->getLogger()->warning("Failed to connect, send, or receive request; retrying $numTries more times", ['message' => $e->getMessage()]);
-                    $lastTryException = $e;
+                // The error happened during connection (or before we sent any data) so we can retry it safely
+                $this->markHostAsFailed($hostName);
+                if ($numTriesRemaining) {
+                    $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numTriesRemaining, 'exception' => $e]);
                 } else {
-                    $this->getLogger()->error("Failed to connect, send, or receive request; not retrying", ['message' => $e->getMessage()]);
+                    $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
                 }
+            } catch(BedrockError $e) {
+                // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
+                $this->markHostAsFailed($hostName);
+                if ($numTriesRemaining && ($headers['idempotent'] ?? false)) {
+                    $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numTriesRemaining, 'exception' => $e]);
+                } else {
+                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    throw $e;
+                }
+            } finally {
+                array_shift($hostConfigs);
             }
+        }
+
+        if (is_null($response)) {
+            throw new ConnectionFailure('Could not connect to Bedrock hosts or failovers');
         }
 
         // Log how long this particular call took
@@ -204,7 +286,8 @@ class Client implements LoggerAwareInterface
         $clientTime     = (int) (microtime(true) - $timeStart) * 1000;
         $networkTime    = $clientTime - $serverTime;
         $waitTime       = $serverTime - $processingTime;
-        $this->getLogger()->info("Bedrock request finished", [
+        $this->logger->info('Bedrock\Client - Request finished', [
+            'host' => $hostName,
             'command' => $method,
             'jsonCode' => isset($response['codeLine']) ? $response['codeLine'] : null,
             'duration' => $clientTime,
@@ -218,247 +301,232 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * What is the last commit count of the node we talked to.
+     * Sends the request on a new socket, if a previous one existed, it closes the connection first.
      *
-     * This is used to ensure if we make a subsequent request to a different
-     * node in the same session, that the node waits until it is at least as
-     * "fresh" as the node we originally queried.
-     *
-     *  @var null|string
+     * @throws ConnectionFailure When the failure is before sending any data to the server
+     * @throws BedrockError When we already sent some data
      */
-    private $commitCount = null;
-
-    /**
-     * Existing socket, if any.  It's reused each time, if possible.
-     *
-     *  @var null|resource
-     */
-    private $socket = null;
-
-    /**
-     * The PID that opened this socket.  This class is designed to be used in a
-     * script that forks, so we need to avoid multiple processes using the same
-     * socket by accident.
-     *
-     *  @var null|int
-     */
-    private $socketPID = null;
-
-    /**
-     * Hostname we attempt to connect to first.
-     *
-     *  @var null|string
-     */
-    private $host = null;
-
-    /**
-     * Port we attempt to connect to first.
-     *
-     *  @var null|int
-     */
-    private $port = null;
-
-    /**
-     * Hostname we attempt if the first didn't work.
-     *
-     *  @var null|string
-     */
-    private $failoverHost = null;
-
-    /**
-     * Port we attempt if the first didn't work.
-     *
-     *  @var null|int
-     */
-    private $failoverPort = null;
-
-    /**
-     * @var array
-     */
-    private static $config = [];
-
-    /**
-     * @var LoggerInterface
-     */
-    private $logger;
-
-    /**
-     * @var StatsInterface
-     */
-    private $stats;
-
-    /**
-     * @var string The bedrock write consistency we want to use.
-     */
-    private $writeConsistency;
-
-    /**
-     * Create and connect a socket (with failover).
-     */
-    private function reconnect()
+    private function sendRawRequest(string $host, int $port, string $rawRequest)
     {
-        // If we already have a socket and our PID hasn't changed (eg, we haven't forked), use that
-        if ($this->socket && $this->socketPID == posix_getpid()) {
-            $this->getLogger()->debug('Reusing existing socket');
-
-            return;
-        }
-        $this->getLogger()->debug('Opening new socket');
-
+        $this->logger->info('Bedrock\Client - Opening new socket', ['host' => $host]);
         // Try to connect to the requested host
-        $this->socketPID = posix_getpid();
+        if ($this->socket) {
+            socket_close($this->socket);
+            $this->socket = null;
+        }
         $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
 
         // Make sure we succeed to create a socket
         if ($this->socket === false) {
             $socketError = socket_strerror(socket_last_error());
-            throw new ConnectionFailure("Could not connect to Bedrock primary or failover $socketError");
+            throw new ConnectionFailure("Could not connect to create socket: $socketError");
         }
 
-        // Configure this socket and connect to the primary host, failing over if necessary
-        socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->sendTimeout, 'usec' => 0]);
+        // Configure this socket and try to connect to it
+        socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => 0]);
         socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
-        if (!(@socket_connect($this->socket, $this->host, $this->port))) {
-            // Connection to the primary host failed; try the failover
-            $socketError = socket_strerror(socket_last_error($this->socket));
-            $this->getLogger()->info("Failed to connect to '{$this->host}' ($socketError), trying failover...");
-            if (!(@socket_connect($this->socket, $this->failoverHost, $this->failoverPort))) {
-                // Connection to both the main host and the failover failed!
-                $socketError = socket_strerror(socket_last_error($this->socket));
-                throw new ConnectionFailure("Could not connect to Bedrock primary host ({$this->host}) or failover ({$this->failoverHost}): $socketError");
-            }
+        @socket_connect($this->socket, $host, $port);
+        $socketErrorCode = socket_last_error($this->socket);
+        socket_clear_error($this->socket);
+        if ($socketErrorCode) {
+            $socketError = socket_strerror($socketErrorCode);
+            throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
+        }
+
+        // Send the information to the socket
+        $bytesSent = socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
+
+        // Failed to send anything
+        if ($bytesSent === false) {
+            $socketErrorCode = socket_last_error();
+            $socketError  = socket_strerror($socketErrorCode);
+            throw new ConnectionFailure("Failed to send request to bedrock host $host:$port. Error: $socketErrorCode $socketError");
+        }
+
+        // We sent something; can't retry or else we might double-send the same request. Let's make sure we sent the
+        // whole thing, else there's a problem.
+        if ($bytesSent != strlen($rawRequest)) {
+            $this->logger->info('Bedrock\Client - Could not send the whole request', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
+            throw new BedrockError("Sent partial request to bedrock host $host:$port");
         }
     }
 
-    /**
-     * Sends the request on the existing socket, if possible, else it reconnects.
-     *
-     * @param string $rawRequest
-     *
-     * @throws BedrockError
-     */
-    private function sendRawRequest($rawRequest)
+    private function getPossibleHosts()
     {
-        // Try up to 3 times, reconnecting each time
-        $attempts = 0;
-        while (++$attempts < 3) {
-            // Reconnect (if necessary) and send
-            $this->reconnect();
-            $bytesSent = socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
-            if ($bytesSent === false) {
-                // Failed to send anything, let's try again (if we haven't exceeded our retry limit)
-                $errorCode = socket_last_error();
-                $errorMsg  = socket_strerror($errorCode);
-                $this->getLogger()->warning('Bedrock socket_send error', [
-                    'code' => $errorCode,
-                    'msg' => $errorMsg,
-                    'attempts' => $attempts,
-                ]);
+        // We get the host configs from the APC cache. Then, we check the configuration there with the passed
+        // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
+        // is so that we don't keep the old cache after changing the hosts or failover configuration.
+        if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING)) {
+            $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
+            $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
+            $this->logger->info('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
 
-                // Free the socket on the system
-                socket_close($this->socket);
-                $this->socket = null;
-            } else {
-                // We sent something; can't retry else we might double-send the same request.  Let's make sure we sent the
-                // whole thing, else there's a problem.
-                if ($bytesSent == strlen($rawRequest)) {
-                    // Cool, we sent the whole thing.
-                    return;
-                } else {
-                    // Partial send -- abort
-                    throw new BedrockError('Sent partial request to Bedrock, aborting.');
-                }
+            // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
+            $cachedHostsAndPorts = [];
+            foreach ($cachedHostConfigs as $hostName => $config) {
+                $cachedHostsAndPorts[$hostName] = $config['port'];
+            }
+            asort($cachedHostsAndPorts);
+            $uncachedHostsAndPort = [];
+            foreach (array_merge($this->mainHostConfigs, $this->failoverHostConfigs) as $hostName => $config) {
+                $uncachedHostsAndPort[$hostName] = $config['port'];
+            }
+            asort($uncachedHostsAndPort);
+            if ($cachedHostsAndPorts !== $uncachedHostsAndPort) {
+                $cachedHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
+                $this->logger->info('Bedrock\Client - APC store host configs', array_keys($cachedHostConfigs));
+                apcu_store($apcuKey, $cachedHostConfigs);
+            }
+        } else {
+            $cachedHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
+        }
+
+        // Get one main host and all the failovers, then remove any of them that we know already failed.
+        // Assemble the list of servers we'll try, in order.  First, pick one of the main hosts. We pick randomly
+        // because we want to equally balance each server across all of its local databases. This allows us to have an
+        // unequal number of servers and databases in a given datacenter. Also, we only pick one (versus trying both)
+        // because if our first attempt fails we want to equally balance across *all* databases -- including the remote
+        // ones. Otherwise if a database node goes down, the other databases in the same datacenter would get more load
+        // (whereas this approach ensures the load is spread evenly across all).
+        $failoverHostNames = array_keys($this->failoverHostConfigs);
+        shuffle($failoverHostNames);
+        $mainHostName = array_rand($this->mainHostConfigs);
+        $hostNames = array_merge([$mainHostName], $failoverHostNames);
+
+        $nonBlackListedHosts = [];
+        foreach ($hostNames as $hostName) {
+            $blackListedUntil = $cachedHostConfigs[$hostName]['blacklistedUntil'] ?? null;
+            if (!$blackListedUntil || $blackListedUntil < time()) {
+                $nonBlackListedHosts[$hostName] = $cachedHostConfigs[$hostName];
             }
         }
 
-        // Failed after three attempts
-        throw new BedrockError("Failed to send request to Bedrock after $attempts, aborting.");
-    }
+        $this->getLogger()->info('Bedrock\Client - Possible hosts', ['nonBlacklistedHosts' => array_keys($nonBlackListedHosts)]);
 
-    /**
-     * Receives a little bit more data.
-     *
-     * @return string The new data received.
-     *
-     * @throws ConnectionFailure
-     */
-    private function recv()
-    {
-        // Get more data from the socket
-        $buf = null;
-        $numRecv = @socket_recv($this->socket, $buf, 1024 * 1024, 0); // Read up to 1MB per call
-        if ($numRecv === false) {
-            $errorCode = socket_last_error();
-            $errorMsg = socket_strerror($errorCode);
-            throw new ConnectionFailure("Socket read failed: '$errorMsg' #$errorCode");
-        } elseif ($numRecv <= 0) {
-            throw new ConnectionFailure("Socket read failed: no data returned");
-        }
-
-        return $buf;
+        return $nonBlackListedHosts;
     }
 
     /**
      * Receives and parses the response.
      *
-     * @return array Response object including 'code', 'codeLine', 'headers', and 'body'
+     * @return array Response object including 'code', 'codeLine', 'headers', `size` and 'body'
+     * @throws BedrockError
      */
-    private function receiveRawResponse()
+    private function receiveResponse()
     {
-        // We'll populate this object with the results
-        $response = [];
+        // Make sure bedrock is returning something https://github.com/Expensify/Expensify/issues/11010
+        if (@socket_recv($this->socket, $buf, self::PACKET_LENGTH, MSG_PEEK) === false) {
+            throw new BedrockError('Socket failed to read data');
+        }
 
-        // First, receive the headers -- until we get \r\n\r\n
-        $rawResponse = '';
+        $totalDataReceived = 0;
+        $responseHeaders = null;
+        $responseLength = null;
+        $response = '';
+        $dataOnSocket = '';
+        $codeLine = null;
+
+        // Read the data on the socket block by block until we got them all
         do {
-            // Get a little more
-            $rawResponse .= $this->recv();
-            $headerEnd = strpos($rawResponse, "\r\n\r\n");
-        } while ($headerEnd === false);
+            $sizeDataOnSocket = @socket_recv($this->socket, $dataOnSocket, self::PACKET_LENGTH, 0);
+            if ($sizeDataOnSocket === false) {
+                $errorCode = socket_last_error($this->socket);
+                $errorMsg  = socket_strerror($errorCode);
+                throw new BedrockError("Error receiving data: $errorCode - $errorMsg");
+            }
+            if ($sizeDataOnSocket === 0 || strlen($dataOnSocket) === 0) {
+                throw new BedrockError('Bedrock response was empty');
+            }
+            $totalDataReceived += $sizeDataOnSocket;
+            $response .= $dataOnSocket;
 
-        // Separate the headers from the body
-        $rawResponseHeaders = substr($rawResponse, 0, $headerEnd);
-        $rawResponseBody    = substr($rawResponse, $headerEnd + 4);
+            // The first time are reading data from the socket, we need to extract the headers
+            // to be able to get the size of the response
+            // It is use to know when to stop to read data from the socket
+            if ($responseLength === null && strpos($response, self::HEADER_DELIMITER) !== false) {
+                $dataOffset = strpos($response, self::HEADER_DELIMITER);
+                $responseHeadersStr = substr($response, 0, $dataOffset + strlen(self::HEADER_DELIMITER));
+                $responseHeaderLines = explode(self::HEADER_FIELD_SEPARATOR, $responseHeadersStr);
+                $codeLine = array_shift($responseHeaderLines);
+                $responseHeaders = $this->extractResponseHeaders($responseHeaderLines);
+                $responseLength = (int) $responseHeaders['Content-Length'];
+                $response = substr($response, $dataOffset + strlen(self::HEADER_DELIMITER));
+            }
+        } while (is_null($responseLength) || strlen($response) < $responseLength);
 
-        // Parse the headers.  Take the first line as the code, the rest as name/value pairs.  In the
-        $responseHeaderLines = explode("\r\n", $rawResponseHeaders);
-        $response['codeLine'] = array_shift($responseHeaderLines);
-        $response['code']     = intval($response['codeLine']);
-        $response['headers']  = [];
-        foreach ($responseHeaderLines as $responseHeaderLine) {
-            $nameValue = explode(':', $responseHeaderLine);
-            if (count($nameValue) != 2) {
-                $this->getLogger()->warning('Malformed response header, ignoring.', ['responseHeaderLine' => $responseHeaderLine]);
-            } else {
-                $response['headers'][ trim($nameValue[0]) ] = trim($nameValue[1]);
+        // If we received the commitCount, then save it for future requests. This is useful if for some reason we
+        // change the bedrock node we are talking to.
+        if (isset($responseHeaders["commitCount"])) {
+            $this->commitCount = $responseHeaders["commitCount"];
+        }
+
+        return [
+            'headers' => $responseHeaders,
+            'body'    => $this->parseRawBody($responseHeaders, $response),
+            'size'    => $totalDataReceived,
+            'codeLine' => $codeLine,
+            'code' => intval($codeLine),
+        ];
+    }
+
+    /**
+     * Parse a raw response from bedrock.
+     *
+     * @return array the decoded json, or null on error
+     * @throws BedrockError
+     */
+    private function parseRawBody(array $headers, string $body)
+    {
+        // Detect if we are using Gzip (TODO: can we remove this?)
+        if (isset($responseHeaders['Content-Encoding']) && $headers['Content-Encoding'] === 'gzip') {
+            $body = gzdecode($body);
+            if ($body === false) {
+                throw new BedrockError('Could not gzip decode bedrock response');
+            }
+        } else {
+            // Who knows why we need to trim in this case?
+            $body = trim($body);
+        }
+
+        if (!$body) {
+            return [];
+        }
+
+        $json = json_decode($body, true);
+        // json_decode will return null if it cannot decode the string
+        if (is_null($json)) {
+            // This will remove unwanted characters.
+            // Check http://stackoverflow.com/a/20845642 and http://www.php.net/chr for details
+            for ($i = 0; $i <= 31; $i++) {
+                $body = str_replace(chr($i), '', $body);
+            }
+            $jsonStr = str_replace(chr(127), '', $body);
+
+            // We've seen occurrences of this happen when the string is not UTF-8. Forcing it fixes it.
+            // See https://github.com/Expensify/Expensify/issues/21805 for example.
+            $json = json_decode(mb_convert_encoding($jsonStr, 'UTF-8', 'UTF-8'), true);
+            if (is_null($json)) {
+                throw new BedrockError('Could not parse JSON from bedrock');
             }
         }
 
-        // Capture the latest commit count
-        if (isset($response['headers']['commitCount'])) {
-            $this->commitCount = $response['headers']['commitCount'];
+        return $json;
+    }
+
+    private function extractResponseHeaders(array $responseHeaderLines)
+    {
+        $responseHeaders = [];
+        foreach ($responseHeaderLines as $responseHeaderLine) {
+            // Try to split this line
+            $nameValue = explode(":", $responseHeaderLine);
+            if (count($nameValue) === 2) {
+                $responseHeaders[ trim($nameValue[0]) ] = trim($nameValue[1]);
+            } else if (strlen($responseHeaderLine)) {
+                $this->logger->warning('Bedrock\Client - Malformed response header, ignoring.', ['responseHeaderLine' => $responseHeaderLine]);
+            }
         }
 
-        // Get the content length, and then keep receiving more body until we get the full length
-        $contentLength = isset($response['headers']['Content-Length']) ? $response['headers']['Content-Length'] : 0;
-        $this->getLogger()->debug("Received '$response[codeLine]', waiting for $contentLength bytes");
-        while (strlen($rawResponseBody) < $contentLength) {
-            $rawResponseBody .= $this->recv();
-        }
-        if (strlen($rawResponseBody) != $contentLength) {
-            $this->getLogger()->warning('Server sent more content than expected, ignoring.', [
-                'Content-Length' => $contentLength,
-                'bodyLength' => strlen($rawResponseBody),
-                'response' => $rawResponseBody,
-            ]);
-        }
-
-        // If there is a body, let's parse it
-        $response['rawBody'] = $rawResponseBody;
-        $response['body']    = strlen($rawResponseBody) ? json_decode($rawResponseBody, true) : [];
-
-        // Done!
-        return $response;
+        return $responseHeaders;
     }
 
     /**
@@ -474,5 +542,22 @@ class Client implements LoggerAwareInterface
         $encoding = mb_detect_encoding($str) ?: 'UTF-8';
 
         return iconv($encoding, 'UTF-8//IGNORE', $str);
+    }
+
+    /**
+     * When a host fails, we blacklist that server for a certain amount of time, so we don't send requests to it when we
+     * know it's down. The blacklist time is a random amount of time between 1 second and the maxBlackListTimeout
+     * configuration.
+     */
+    private function markHostAsFailed(string $host)
+    {
+        $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
+        if (!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) {
+            $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
+            $hostConfigs = apcu_fetch($apcuKey);
+            $hostConfigs[$host]['blacklistedUntil'] = $blacklistedUntil;
+            apcu_store($apcuKey, $hostConfigs);
+        }
+        $this->logger->info('Bedrock\Client - Marking server as failed', ['host' => $host, 'time' => date('Y-m-d H:i:s', $blacklistedUntil)]);
     }
 }

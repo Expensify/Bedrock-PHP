@@ -17,7 +17,7 @@ use Expensify\Bedrock\LocalDB;
  * After N cycle in the loop, we exit
  * If the versionWatchFile modified time changes, we stop processing new jobs and exit after finishing all running jobs.
  *
- * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--host=<host> --port=<port> --failoverHost=<host> --failoverPort=<port> --maxIterations=<iteration> --versionWatchFile=<file> --writeConsistency=<consistency>  --enableLoadHandler --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle]`
+ * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--maxIterations=<iteration> --versionWatchFile=<file> --writeConsistency=<consistency>  --enableLoadHandler --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle]`
  */
 
 // Verify it's being started correctly
@@ -30,14 +30,14 @@ if (php_sapi_name() !== "cli") {
 }
 
 // Parse the command line and verify the required settings are provided
-$options = getopt('', ['host::', 'port::', 'failoverHost::', 'failoverPort::', 'maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle']);
+$options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle']);
 
 // Store parent ID to determine if we should continue forking
 $thisPID = getmypid();
 
 $workerPath = @$options['workerPath'];
 if (!$workerPath) {
-    echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --host=<host> --port=<port> --maxIterations=<iteration> --writeConsistency=<consistency>  --enableLoadHandler --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle]\r\n";
+    echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --maxIterations=<iteration> --writeConsistency=<consistency>  --enableLoadHandler --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle]\r\n";
     exit(1);
 }
 
@@ -53,10 +53,10 @@ $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD l
 $target = $minSafeJobs;
 
 // Configure the Bedrock client with these command-line options
-Client::configure($options);
+$bedrock = new Client($options);
 
 // Prepare to use the host logger, if configured
-$logger = Client::getLogger();
+$logger = $bedrock->getLogger();
 $logger->info('Starting BedrockWorkerManager', ['maxIterations' => $maxIterations]);
 
 // Set up the database for the AIMD load handler.
@@ -82,7 +82,7 @@ $versionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile)
 
 // Wrap everything in a general exception handler so we can handle error
 // conditions as gracefully as possible.
-$stats = Client::getStats();
+$stats = $bedrock->getStats();
 try {
     // Validate details now that we have exception handling
     if (!is_dir($workerPath)) {
@@ -91,9 +91,6 @@ try {
     if ($maxLoad <= 0) {
         throw new Exception('--maxLoad must be greater than zero');
     }
-
-    // Connect to Bedrock -- it'll reconnect if necessary
-    $bedrock = new Client();
     $jobs = new Jobs($bedrock);
 
     // If --maxIterations is set, loop a finite number of times and then self

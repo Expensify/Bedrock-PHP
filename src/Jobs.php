@@ -110,7 +110,7 @@ class Jobs extends Plugin
         }
 
         if ($responseCode === 405) {
-            throw new IllegalAction("Cannot perform `$method` on job $job in a running state");
+            throw new IllegalAction("Cannot perform `$method` on job $job");
         }
 
         if ($responseCode === 502) {

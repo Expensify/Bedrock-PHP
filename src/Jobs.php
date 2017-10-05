@@ -192,19 +192,12 @@ class Jobs extends Plugin
      * Waits for a match (if requested) and atomically dequeues exactly one job.
      *
      * @param string $name
-     * @param int    $timeout (optional)
      *
      * @return array Containing all job details
      */
-    public function getJob($name, $timeout = 0)
+    public function getJob($name)
     {
         $headers = ["name" => $name];
-        if ($timeout) {
-            // Add the timeout
-            $headers["Connection"] = "wait";
-            $headers["timeout"]    = $timeout;
-            $headers["idempotent"] = true;
-        }
 
         return $this->call("GetJob", $headers);
     }
@@ -214,23 +207,15 @@ class Jobs extends Plugin
      *
      * @param string $name
      * @param int    $numResults
-     * @param int    $timeout (optional)
      *
      * @return array Containing all job details
      */
-    public function getJobs(string $name, int $numResults, int $timeout = 0) : array
+    public function getJobs(string $name, int $numResults) : array
     {
         $headers = [
             "name" => $name,
             "numResults" => $numResults,
         ];
-
-        if ($timeout) {
-            // Add the timeout
-            $headers["Connection"] = "wait";
-            $headers["timeout"]    = $timeout;
-            $headers["idempotent"] = true;
-        }
 
         return $this->call("GetJobs", $headers);
     }

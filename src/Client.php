@@ -93,7 +93,7 @@ class Client implements LoggerAwareInterface
      */
     private $maxBlackListTimeout;
 
-    /** 
+    /**
      * @var string The last host we successfully used.
      */
     private $lastHost = '';
@@ -194,6 +194,14 @@ class Client implements LoggerAwareInterface
         }
 
         return $this->stats;
+    }
+
+    /**
+     * Returns the last host successfully used.
+     */
+    public function getLastHost(): string
+    {
+        return $this->lastHost;
     }
 
     /**

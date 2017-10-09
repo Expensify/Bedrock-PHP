@@ -93,7 +93,7 @@ class Client implements LoggerAwareInterface
      */
     private $maxBlackListTimeout;
 
-    /**
+    /** 
      * @var string The last host we successfully used.
      */
     private $lastHost = '';

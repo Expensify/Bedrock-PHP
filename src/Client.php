@@ -94,6 +94,11 @@ class Client implements LoggerAwareInterface
     private $maxBlackListTimeout;
 
     /**
+     * @var string The last host we successfully used.
+     */
+    private $lastHost = '';
+
+    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
@@ -200,6 +205,7 @@ class Client implements LoggerAwareInterface
      *
      * @return array JSON response, or null on error
      * @throws BedrockError
+     * @throws ConnectionFailure
      */
     public function call($method, $headers = [], $body = '')
     {
@@ -216,6 +222,7 @@ class Client implements LoggerAwareInterface
         if (isset($GLOBALS['REQUEST_ID'])) {
             $headers['requestID'] = $GLOBALS['REQUEST_ID'];
         }
+        $headers['lastIP'] = $_SERVER['REMOTE_ADDR'] ?? null;
 
         // Set the write consistency
         if ($this->writeConsistency) {
@@ -247,6 +254,7 @@ class Client implements LoggerAwareInterface
         while($numTriesRemaining-- && !$response && count($hostConfigs)) {
             reset($hostConfigs);
             $hostName = key($hostConfigs);
+            $this->lastHost = $hostName;
             try {
                 // Do the request.  This is split up into separate functions so we can
                 // profile them independently -- useful when diagnosing various network

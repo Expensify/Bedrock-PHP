@@ -132,11 +132,11 @@ class Jobs extends Plugin
      * @param array|null  $data        (optional)
      * @param string|null $firstRun    (optional)
      * @param string|null $repeat      (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
-     * @param bool        $unique      Do we want only one job with this name to exist?
-     * @param int         $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
+     * @param bool|null   $unique      (optional) Do we want only one job with this name to exist?
+     * @param int|null    $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
-     * @param string      $connection  (optional) Specify 'Connection' header using constants defined in this class.
-     * @param string|null $retryAfter  (optional) Specify when does this job need to be retried
+     * @param string|null $connection  (optional) Specify 'Connection' header using constants defined in this class.
+     * @param string|null $retryAfter  (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
      *
      * @return array Containing "jobID"
      */
@@ -158,7 +158,7 @@ class Jobs extends Plugin
                 // If the name of the job has to be unique, Bedrock will return any existing job that exists with the
                 // given name instead of making a new one, which essentially makes the command idempotent.
                 'idempotent'  => $unique,
-                'retryAfter'  => $retryAfter
+                'retryAfter'  => $retryAfter,
             ]
         );
 

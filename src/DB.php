@@ -31,11 +31,9 @@ class DB extends Plugin
      * Executes a single SQL query.
      *
      * @param string $sql The query to run
-     *
-     * @return Response
      * @deprecated Use read or write methods instead.
      */
-    public function query($sql)
+    public function query($sql): Response
     {
         if (preg_match('/^\s*SELECT.*/i', $sql)) {
             return $this->read($sql);
@@ -45,24 +43,16 @@ class DB extends Plugin
 
     /**
      * Executes a single read SQL query.
-     *
-     * @param string $sql The query to run
-     *
-     * @return Response
      */
-    public function read($sql)
+    public function read(string $sql): Response
     {
         return $this->_runQuery($sql, true);
     }
 
     /**
-     * Executes a write read SQL query.
-     *
-     * @param string $sql The query to run
-     *
-     * @return Response
+     * Executes a write SQL query.
      */
-    public function write($sql)
+    public function write(string $sql): Response
     {
         return $this->_runQuery($sql, false);
     }

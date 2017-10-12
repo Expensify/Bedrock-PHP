@@ -31,44 +31,26 @@ class DB extends Plugin
      * Executes a single SQL query.
      *
      * @param string $sql The query to run
-     * @deprecated Use read or write methods instead.
+     * @deprecated Use run method instead.
      */
     public function query($sql): Response
     {
         if (preg_match('/^\s*SELECT.*/i', $sql)) {
-            return $this->read($sql);
+            return $this->run($sql, true);
         }
-        return $this->write($sql);
-    }
-
-    /**
-     * Executes a single read SQL query.
-     */
-    public function read(string $sql): Response
-    {
-        return $this->_runQuery($sql, true);
-    }
-
-    /**
-     * Executes a write SQL query.
-     */
-    public function write(string $sql): Response
-    {
-        return $this->_runQuery($sql, false);
+        return $this->run($sql, false);
     }
 
     /**
      * Executes an SQL query.
      *
      * @param string $sql The query to run
-     * @param bool $idempotent Is this command idempotent? Writes usually aren't.
-     *
-     * @return Response
+     * @param bool $idempotent Is this command idempotent? If the command is run twice is the final result the same?
      *
      * @throws FailedQuery
      * @throws UnknownError
      */
-    private function _runQuery(string $sql, bool $idempotent)
+    public function run(string $sql, bool $idempotent): Response
     {
         $sql = substr($sql, -1) === ";" ? $sql : $sql.";";
         $response = new Response($this->client->call(

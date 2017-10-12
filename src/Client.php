@@ -35,17 +35,17 @@ class Client implements LoggerAwareInterface
     private static $defaultConfig = [];
 
     /**
+     *  @var string[] The last commit count of the node we talked to, keyed by the cluster name. This is used to ensure
+     * if we make a subsequent request to a different node in the same session, that the node waits until it is at least
+     * up to date with the commits as the node we originally queried.
+     */
+    private static $commitCount = [];
+
+    /**
      * @var null|string Name of the bedrock cluster we are talking to. If you have more than one bedrock cluster, you
      * can pass in different names for them in order to have separate statistics collected and caches of failed servers.
      */
     private $clusterName = null;
-
-    /**
-     *  @var null|string The last commit count of the node we talked to. This is used to ensure if we make a subsequent
-     * request to a different node in the same session, that the node waits until it is at least up to date with the
-     * commits as the node we originally queried.
-     */
-    private $commitCount = null;
 
     /**
      *  @var null|resource Existing socket.
@@ -219,11 +219,10 @@ class Client implements LoggerAwareInterface
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
-        $this->logger->info('Bedrock\Client - Starting a request', ['command' => $method, 'headers' => $headers]);
 
         // Include the last CommitCount, if we have one
-        if ($this->commitCount) {
-            $headers['commitCount']  = $this->commitCount;
+        if (isset(self::$commitCount[$this->clusterName])) {
+            $headers['commitCount']  = self::$commitCount[$this->clusterName];
         }
 
         // Include the requestID for logging purposes
@@ -236,6 +235,12 @@ class Client implements LoggerAwareInterface
         if ($this->writeConsistency) {
             $headers['writeConsistency'] = $this->writeConsistency;
         }
+
+        $this->logger->info('Bedrock\Client - Starting a request', [
+            'command' => $method,
+            'clusterName' => $this->clusterName,
+            'headers' => $headers,
+        ]);
 
         // Construct the request
         $rawRequest = "$method\r\n";
@@ -473,7 +478,7 @@ class Client implements LoggerAwareInterface
         // If we received the commitCount, then save it for future requests. This is useful if for some reason we
         // change the bedrock node we are talking to.
         if (isset($responseHeaders["commitCount"])) {
-            $this->commitCount = $responseHeaders["commitCount"];
+            self::$commitCount[$this->clusterName] = $responseHeaders["commitCount"];
         }
 
         return [

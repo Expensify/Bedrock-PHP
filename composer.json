@@ -21,7 +21,8 @@
     },
     "require-dev": {
         "etsy/phan": "0.8.6",
-        "expensify/php-libs": "0.2.74"
+        "expensify/php-libs": "0.2.74",
+        "friendsofphp/php-cs-fixer": "^2.5"
     },
     "autoload": {
         "psr-4": {

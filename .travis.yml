@@ -1,0 +1,16 @@
+language: php
+php:
+    - '7.0.16'
+
+install:
+  - ./tools/phan-setup.sh
+
+script:
+    - ./tools/style.php
+    - ./tools/phan.php
+
+notifications:
+    email:
+        on_success: never
+
+sudo: false

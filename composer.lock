@@ -4,8 +4,8 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
         "This file is @generated automatically"
     ],
-    "hash": "f9a60f2794b717e16845c343f533caca",
-    "content-hash": "73207086b60d336434724a2d2c1359c0",
+    "hash": "d0f1beb7ef58f8c4d1e3c4d2e02de56c",
+    "content-hash": "53c639c63dc9f632aff98efccafabfcd",
     "packages": [
         {
             "name": "psr/log",
@@ -55,7 +55,275 @@
             "time": "2016-09-19 16:02:08"
         }
     ],
-    "packages-dev": [],
+    "packages-dev": [
+        {
+            "name": "etsy/phan",
+            "version": "0.8.6",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/phan/phan.git",
+                "reference": "e6ee68b7bf97a22acec2cb5a8d441153ab54b3bd"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/phan/phan/zipball/e6ee68b7bf97a22acec2cb5a8d441153ab54b3bd",
+                "reference": "e6ee68b7bf97a22acec2cb5a8d441153ab54b3bd",
+                "shasum": ""
+            },
+            "require": {
+                "ext-ast": "^0.1.4",
+                "php": "~7.0.0 || ~7.1.0",
+                "symfony/console": "~2.3|~3.0"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^6.2.1"
+            },
+            "bin": [
+                "phan",
+                "phan_client",
+                "tocheckstyle"
+            ],
+            "type": "project",
+            "autoload": {
+                "psr-4": {
+                    "Phan\\": "src/Phan"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Rasmus Lerdorf"
+                },
+                {
+                    "name": "Andrew S. Morrison"
+                }
+            ],
+            "description": "A static analyzer for PHP",
+            "keywords": [
+                "analyzer",
+                "php",
+                "static"
+            ],
+            "abandoned": "phan/phan",
+            "time": "2017-08-15 19:39:40"
+        },
+        {
+            "name": "expensify/PHP-Libs",
+            "version": "0.2.74",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Expensify/PHP-Libs.git",
+                "reference": "176ef1a03f697521e7d0eb8b972d5a3d54c7a678"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "2.5.0",
+                "phpunit/phpunit": "4.8.4"
+            },
+            "bin": [
+                "tools/php-style-fixer"
+            ],
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Expensify\\Libs\\": "src"
+                }
+            },
+            "authors": [
+                {
+                    "name": "Ionatan Wiznia",
+                    "email": "ionatan@expensify.com"
+                }
+            ],
+            "description": "Common PHP libs",
+            "time": "2017-10-09 20:06:38"
+        },
+        {
+            "name": "symfony/console",
+            "version": "v3.3.10",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/symfony/console.git",
+                "reference": "116bc56e45a8e5572e51eb43ab58c769a352366c"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/symfony/console/zipball/116bc56e45a8e5572e51eb43ab58c769a352366c",
+                "reference": "116bc56e45a8e5572e51eb43ab58c769a352366c",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^5.5.9|>=7.0.8",
+                "symfony/debug": "~2.8|~3.0",
+                "symfony/polyfill-mbstring": "~1.0"
+            },
+            "conflict": {
+                "symfony/dependency-injection": "<3.3"
+            },
+            "require-dev": {
+                "psr/log": "~1.0",
+                "symfony/config": "~3.3",
+                "symfony/dependency-injection": "~3.3",
+                "symfony/event-dispatcher": "~2.8|~3.0",
+                "symfony/filesystem": "~2.8|~3.0",
+                "symfony/process": "~2.8|~3.0"
+            },
+            "suggest": {
+                "psr/log": "For using the console logger",
+                "symfony/event-dispatcher": "",
+                "symfony/filesystem": "",
+                "symfony/process": ""
+            },
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "3.3-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Symfony\\Component\\Console\\": ""
+                },
+                "exclude-from-classmap": [
+                    "/Tests/"
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Fabien Potencier",
+                    "email": "fabien@symfony.com"
+                },
+                {
+                    "name": "Symfony Community",
+                    "homepage": "https://symfony.com/contributors"
+                }
+            ],
+            "description": "Symfony Console Component",
+            "homepage": "https://symfony.com",
+            "time": "2017-10-02 06:42:24"
+        },
+        {
+            "name": "symfony/debug",
+            "version": "v3.3.10",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/symfony/debug.git",
+                "reference": "eb95d9ce8f18dcc1b3dfff00cb624c402be78ffd"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/symfony/debug/zipball/eb95d9ce8f18dcc1b3dfff00cb624c402be78ffd",
+                "reference": "eb95d9ce8f18dcc1b3dfff00cb624c402be78ffd",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^5.5.9|>=7.0.8",
+                "psr/log": "~1.0"
+            },
+            "conflict": {
+                "symfony/http-kernel": ">=2.3,<2.3.24|~2.4.0|>=2.5,<2.5.9|>=2.6,<2.6.2"
+            },
+            "require-dev": {
+                "symfony/http-kernel": "~2.8|~3.0"
+            },
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "3.3-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Symfony\\Component\\Debug\\": ""
+                },
+                "exclude-from-classmap": [
+                    "/Tests/"
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Fabien Potencier",
+                    "email": "fabien@symfony.com"
+                },
+                {
+                    "name": "Symfony Community",
+                    "homepage": "https://symfony.com/contributors"
+                }
+            ],
+            "description": "Symfony Debug Component",
+            "homepage": "https://symfony.com",
+            "time": "2017-10-02 06:42:24"
+        },
+        {
+            "name": "symfony/polyfill-mbstring",
+            "version": "v1.5.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/symfony/polyfill-mbstring.git",
+                "reference": "7c8fae0ac1d216eb54349e6a8baa57d515fe8803"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/symfony/polyfill-mbstring/zipball/7c8fae0ac1d216eb54349e6a8baa57d515fe8803",
+                "reference": "7c8fae0ac1d216eb54349e6a8baa57d515fe8803",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.3.3"
+            },
+            "suggest": {
+                "ext-mbstring": "For best performance"
+            },
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "1.5-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Symfony\\Polyfill\\Mbstring\\": ""
+                },
+                "files": [
+                    "bootstrap.php"
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Nicolas Grekas",
+                    "email": "p@tchwork.com"
+                },
+                {
+                    "name": "Symfony Community",
+                    "homepage": "https://symfony.com/contributors"
+                }
+            ],
+            "description": "Symfony polyfill for the Mbstring extension",
+            "homepage": "https://symfony.com",
+            "keywords": [
+                "compatibility",
+                "mbstring",
+                "polyfill",
+                "portable",
+                "shim"
+            ],
+            "time": "2017-06-14 15:44:48"
+        }
+    ],
     "aliases": [],
     "minimum-stability": "stable",
     "stability-flags": [],

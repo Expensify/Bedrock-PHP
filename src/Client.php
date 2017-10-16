@@ -422,6 +422,10 @@ class Client implements LoggerAwareInterface
             }
         }
 
+        if (empty($nonBlackListedHosts)) {
+            $this->getLogger()->info('Bedrock\Client - All possible hosts have been blacklisted, using full list instead');
+            $nonBlackListedHosts = $cachedHostConfigs;
+        }
         $this->getLogger()->info('Bedrock\Client - Possible hosts', ['nonBlacklistedHosts' => array_keys($nonBlackListedHosts)]);
 
         return $nonBlackListedHosts;

@@ -4,6 +4,8 @@ php:
 
 install:
   - ./tools/phan-setup.sh
+  - composer self-update
+  - composer install --prefer-dist --no-interaction --dev
 
 script:
     - ./tools/style.php

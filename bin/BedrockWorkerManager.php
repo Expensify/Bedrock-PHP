@@ -402,19 +402,9 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
  */
 function checkVersionFile(string $versionWatchFile): bool
 {
-     // Watch a version file that will cause us to automatically shut
-     // down if it changes.  This enables triggering a restart if new
-     // PHP is deployed.
-     //
-     // Note: php's filemtime results are cached, so we need to clear
-     //       that cache or we'll be getting a stale modified time.
-     clearstatcache(true, $versionWatchFile);
-     $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;
-     $versionChanged = $versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp;
-
-    if ($versionChanged) {
-        $logger->info('Version watch file changed, stop processing new jobs');
-    }
+    clearstatcache(true, $versionWatchFile);
+    $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;
+    $versionChanged = $versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp;
 
     return $versionChanged;
 }

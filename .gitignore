@@ -1,5 +1,8 @@
 vendor/*
 !vendor/expensify/
+!vendor/bin/
+vendor/bin/*
+!vendor/bin/php-style-fixer
 .idea/
 .php_cs.cache
 composer.json-e

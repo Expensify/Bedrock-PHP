@@ -20,7 +20,8 @@
         "psr/log": "1.0.1"
     },
     "require-dev": {
-        "etsy/phan": "0.8.6"
+        "etsy/phan": "0.8.6",
+        "friendsofphp/php-cs-fixer": "^2.7"
     },
     "autoload": {
         "psr-4": {

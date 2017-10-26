@@ -4,7 +4,6 @@ function test(string $a, int $b)
 {
 
 
-
     return;
 }
 

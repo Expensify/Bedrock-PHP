@@ -1,0 +1,14 @@
+#!/bin/sh
+# php-cs-fixer expects it's first parameter to be the command name
+COMMAND=$1; shift
+DIR=`git rev-parse --show-toplevel`
+REPO_NAME=`basename $DIR`
+
+if [ "$REPO_NAME" = "PHP-Libs" ]
+then
+    # Use local .php_cs for PHP-Libs
+    php $DIR/vendor/bin/php-cs-fixer $COMMAND --config $DIR/.php_cs "$@"
+else
+    # Use vendor .php_cs for other repos
+    php $DIR/vendor/bin/php-cs-fixer $COMMAND --config $DIR/vendor/expensify/PHP-Libs/.php_cs "$@"
+fi

@@ -7,7 +7,7 @@ spl_autoload_register('_expensify_bedrockphp_autoload');
 /**
  * Custom class autloader. PHP5 is in da house.
  *
- * @param String $className
+ * @param string $className
  */
 function _expensify_bedrockphp_autoload($className)
 {

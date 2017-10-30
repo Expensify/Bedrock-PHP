@@ -31,20 +31,34 @@ class DB extends Plugin
      * Executes a single SQL query.
      *
      * @param string $sql The query to run
+     * @deprecated Use run method instead.
+     */
+    public function query($sql): Response
+    {
+        if (preg_match('/^\s*SELECT.*/i', $sql)) {
+            return $this->run($sql, true);
+        }
+        return $this->run($sql, false);
+    }
+
+    /**
+     * Executes an SQL query.
      *
-     * @return Response
+     * @param string $sql The query to run
+     * @param bool $idempotent Is this command idempotent? If the command is run twice is the final result the same?
      *
      * @throws FailedQuery
      * @throws UnknownError
      */
-    public function query($sql)
+    public function run(string $sql, bool $idempotent): Response
     {
         $sql = substr($sql, -1) === ";" ? $sql : $sql.";";
         $response = new Response($this->client->call(
-            "Query",
+            'Query',
             [
-                "query"  => $sql,
-                "format" => "json",
+                'query' => $sql,
+                'format' => "json",
+                'idempotent' => $idempotent,
             ]
         ));
 

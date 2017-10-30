@@ -101,19 +101,6 @@ class Jobs extends Plugin
 
         $this->client->getStats()->counter('bedrockJob.call.response.'.$method.$responseCode);
 
-        if ($responseCode!=200 && @$response['lastTryException']) {
-            // We had a connection failure last time around, so let's ignore
-            // any non-200 requests this time.  Either it worked and this error
-            // is a false alarm, or it didn't work and the next command will
-            // fail.  Either way, we can't know at this moment if this is a
-            // real error so just log the problem and hope it gets sorted out.
-            $lastError = $response['lastTryException']->getMessage();
-            $this->client->getLogger()->warning("Retried a command and got a potentially benign error: '$lastError'");
-            $responseCode = 200;
-            $response['code'] = 200;
-        }
-            
-
         if ($responseCode === 402) {
             throw new MalformedAttribute("Malformed attribute. Job :$job, message: $codeLine");
         }
@@ -123,7 +110,7 @@ class Jobs extends Plugin
         }
 
         if ($responseCode === 405) {
-            throw new IllegalAction("Cannot perform `$method` on job $job in a running state");
+            throw new IllegalAction("Cannot perform `$method` on job $job");
         }
 
         if ($responseCode === 502) {
@@ -145,14 +132,15 @@ class Jobs extends Plugin
      * @param array|null  $data        (optional)
      * @param string|null $firstRun    (optional)
      * @param string|null $repeat      (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
-     * @param bool        $unique      Do we want only one job with this name to exist?
-     * @param int         $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
+     * @param bool|null   $unique      (optional) Do we want only one job with this name to exist?
+     * @param int|null    $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
-     * @param string      $connection  (optional) Specify 'Connection' header using constants defined in this class.
+     * @param string|null $connection  (optional) Specify 'Connection' header using constants defined in this class.
+     * @param string|null $retryAfter  (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
 
@@ -169,7 +157,8 @@ class Jobs extends Plugin
                 'Connection'  => $connection,
                 // If the name of the job has to be unique, Bedrock will return any existing job that exists with the
                 // given name instead of making a new one, which essentially makes the command idempotent.
-                'idempotent'  => $unique
+                'idempotent'  => $unique,
+                'retryAfter'  => $retryAfter,
             ]
         );
 
@@ -205,19 +194,12 @@ class Jobs extends Plugin
      * Waits for a match (if requested) and atomically dequeues exactly one job.
      *
      * @param string $name
-     * @param int    $timeout (optional)
      *
      * @return array Containing all job details
      */
-    public function getJob($name, $timeout = 0)
+    public function getJob($name)
     {
         $headers = ["name" => $name];
-        if ($timeout) {
-            // Add the timeout
-            $headers["Connection"] = "wait";
-            $headers["timeout"]    = $timeout;
-            $headers["idempotent"] = true;
-        }
 
         return $this->call("GetJob", $headers);
     }
@@ -227,23 +209,15 @@ class Jobs extends Plugin
      *
      * @param string $name
      * @param int    $numResults
-     * @param int    $timeout (optional)
      *
      * @return array Containing all job details
      */
-    public function getJobs(string $name, int $numResults, int $timeout = 0) : array
+    public function getJobs(string $name, int $numResults) : array
     {
         $headers = [
             "name" => $name,
             "numResults" => $numResults,
         ];
-
-        if ($timeout) {
-            // Add the timeout
-            $headers["Connection"] = "wait";
-            $headers["timeout"]    = $timeout;
-            $headers["idempotent"] = true;
-        }
 
         return $this->call("GetJobs", $headers);
     }
@@ -414,7 +388,7 @@ class Jobs extends Plugin
 
             return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection);
         } catch (Exception $e) {
-            Client::getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
+            $bedrock->getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
 
             return [];
         }

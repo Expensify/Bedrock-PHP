@@ -16,6 +16,7 @@ return [
         'bin/',
         'tools/',
         'vendor/',
+        'lib/',
     ],
     'file_list' => [
     ],

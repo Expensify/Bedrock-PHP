@@ -8,6 +8,10 @@ if [ "$REPO_NAME" = "PHP-Libs" ]
 then
     # Use local .php_cs for PHP-Libs
     php $DIR/vendor/bin/php-cs-fixer $COMMAND --config $DIR/.php_cs "$@"
+elif [ "$REPO_NAME" = "Bedrock-PHP" ]
+then
+    # Use local .php_cs for Bedrock-PHP
+    php $DIR/vendor/bin/php-cs-fixer $COMMAND --config $DIR/lib/.php_cs "$@"
 else
     # Use vendor .php_cs for other repos
     php $DIR/vendor/bin/php-cs-fixer $COMMAND --config $DIR/vendor/expensify/PHP-Libs/.php_cs "$@"

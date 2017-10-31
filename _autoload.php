@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 require realpath(dirname(__FILE__)).'/vendor/autoload.php';

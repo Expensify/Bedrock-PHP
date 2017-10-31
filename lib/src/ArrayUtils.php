@@ -445,7 +445,7 @@ class ArrayUtils
      *
      * @param array $array
      *
-     * @return array
+     * @return array|bool
      */
     public static function deepSortByKey(array &$array)
     {

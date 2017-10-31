@@ -64,7 +64,7 @@ class PHPStyler extends CommandLine
             if ($gitRepoName === 'PHP-Libs') {
                 // For PHP-Libs, we use the local file.
                 $fixerCmd = "$dir/tools/php-style-fixer fix --diff $file";
-            } else if ($gitRepoName === 'Bedrock-PHP') {
+            } elseif ($gitRepoName === 'Bedrock-PHP') {
                 // For Bedrock-PHP, we use a local file.
                 $fixerCmd = "$dir/lib/tools/php-style-fixer fix --diff $file";
             } else {

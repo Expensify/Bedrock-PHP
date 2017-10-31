@@ -36,24 +36,22 @@ class ArrayUtils
         }
 
         foreach ($array1 as $key => $value) {
-
             // If one value from $arrayX, compare with the corresponding value in $arrayY
-            if (is_array($array1[ $key ]) || is_array($array2[ $key ])) {
-
+            if (is_array($array1[$key]) || is_array($array2[$key])) {
                 // If one of the two is not an array, at least one value differs
-                if (!is_array($array2[ $key ]) || !is_array($array2[ $key ])) {
+                if (!is_array($array2[$key]) || !is_array($array2[$key])) {
                     return false;
                 }
 
                 // Call arrays_equal recursively on the two array values
-                if (!self::arraysAreEqual($array1[ $key ], $array2[ $key ])) {
+                if (!self::arraysAreEqual($array1[$key], $array2[$key])) {
                     return false;
                 }
             }
 
             // The value is not an array, use simple equals
             else {
-                if ($array1[ $key ] != $array2[ $key ]) {
+                if ($array1[$key] != $array2[$key]) {
                     return false;
                 }
             }
@@ -355,13 +353,13 @@ class ArrayUtils
         if ((is_numeric($excludeList) || is_string($excludeList)) &&
             isset($input[$excludeList])
         ) {
-            unset($input[ $excludeList ]);
+            unset($input[$excludeList]);
         } elseif (is_array($excludeList)) {
             foreach ($excludeList as $excludeKey) {
                 if ((is_numeric($excludeKey) || is_string($excludeKey)) &&
                     isset($input[$excludeKey])
                 ) {
-                    unset($input[ $excludeKey ]);
+                    unset($input[$excludeKey]);
                 }
             }
         } else {

@@ -13,7 +13,7 @@ function _expensify_bedrockphp_autoload($className)
 {
     // Autoload file in the vendor PHP-Libs directory
     $classPathArray = explode('\\', $className);
-    $filename = realpath(dirname(__FILE__)).'/vendor/expensify/PHP-Libs/src/'.str_replace("_", DIRECTORY_SEPARATOR, $classPathArray[count($classPathArray) - 1]).'.php';
+    $filename = realpath(dirname(__FILE__)).'/lib/src/'.str_replace("_", DIRECTORY_SEPARATOR, $classPathArray[count($classPathArray) - 1]).'.php';
     if (is_readable($filename)) {
         require $filename;
 

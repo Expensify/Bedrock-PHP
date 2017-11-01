@@ -73,13 +73,13 @@ class PHPStyler extends CommandLine
             }
             $fileResult = $this->eexec($fixerCmd, true);
 
-            $fileOK = false;
+            $fileOK = true;
             foreach ($fileResult as $index => $line) {
                 // When a file is fixed, it outputs `   1) File.php` and this is the only way we have to detect if
                 // something was fixed or not as the linter only exits with an error exit code when the fixer actually
                 // fails (not when it fixes something).
-                if (!preg_match('/^\W*1\)/', $line)) {
-                    $fileOK = true;
+                if (preg_match('/^\W*1\)/', $line)) {
+                    $fileOK = false;
                 }
             }
 

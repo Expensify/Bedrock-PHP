@@ -23,7 +23,7 @@ class PhanAnalyzer extends CommandLine
     /**
      * Analyzes the code.
      *
-     * @return array true if all is good, false if errors were found.
+     * @return bool true if all is good, false if errors were found.
      */
     public function analyze()
     {

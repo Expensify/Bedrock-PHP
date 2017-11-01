@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
@@ -114,6 +116,14 @@ try {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
 
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
+                $logger->info('Version watch file changed, stop processing new jobs');
+
+                // We break out of this loop and the outer one too. We don't want to process anything more,
+                // just wait for child processes to finish.
+                break 2;
+            }
+
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
             list($safeToStartANewJob, $target) = safeToStartANewJob($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $debugThrottle, $logger);
@@ -129,15 +139,7 @@ try {
         // Poll the server until we successfully get a job
         $response = null;
         while (!$response) {
-            // Watch a version file that will cause us to automatically shut
-            // down if it changes.  This enables triggering a restart if new
-            // PHP is deployed.
-            //
-            // Note: php's filemtime results are cached, so we need to clear
-            //       that cache or we'll be getting a stale modified time.
-            clearstatcache(true, $versionWatchFile);
-            $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;
-            if ($versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp) {
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -386,4 +388,22 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
 
     // Don't authorize BWM to call GetJobs
     return [false, $target];
+}
+
+/**
+ *
+ * Watch a version file that will cause us to automatically shut
+ * down if it changes.  This enables triggering a restart if new
+ * PHP is deployed.
+ *
+ * Note: php's filemtime results are cached, so we need to clear
+ *       that cache or we'll be getting a stale modified time.
+ */
+function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimestamp): bool
+{
+    clearstatcache(true, $versionWatchFile);
+    $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;
+    $versionChanged = $versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp;
+
+    return $versionChanged;
 }

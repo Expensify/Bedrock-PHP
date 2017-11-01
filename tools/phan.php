@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 declare(strict_types=1);
-require realpath(dirname(__FILE__)).'/../_autoload.php';
+require realpath(dirname(__FILE__)).'/vendor/autoload.php';
 use Expensify\Libs\PhanAnalyzer;
 
 $analyzer = new PhanAnalyzer($_SERVER['TRAVIS_BRANCH']);

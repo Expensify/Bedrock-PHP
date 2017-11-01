@@ -72,12 +72,14 @@ class PHPStyler extends CommandLine
                 $fixerCmd = "$dir/vendor/bin/php-style-fixer fix --diff $file";
             }
             $fileResult = $this->eexec($fixerCmd, true);
-            $fileOK = !ArrayUtils::some($fileResult, function (string $line) {
-                // When a file is fixed, it outputs `   1) File.php` and this is the only way we have to detect if
-                // something was fixed or not as the linter only exits with an error exit code when the fixer actually
-                // fails (not when it fixes something).
-                return preg_match('/^\W*1\)/', $line);
-            });
+
+            $fileOK = false;
+            foreach ($fileResult as $index => $line) {
+                if (preg_match('/^\W*1\)/', $line)) {
+                    $fileOK = true;
+                }
+            }
+
             $lintedFiles[] = [$file, $fileOK, join(PHP_EOL, $fileResult)];
             $lintOK = $lintOK && $fileOK;
         }

@@ -116,7 +116,7 @@ try {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
 
-            if (checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -139,7 +139,7 @@ try {
         // Poll the server until we successfully get a job
         $response = null;
         while (!$response) {
-            if (checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,

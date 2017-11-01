@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
@@ -114,7 +116,7 @@ try {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
 
-            if (checkVersionFile()) {
+            if (checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -137,7 +139,7 @@ try {
         // Poll the server until we successfully get a job
         $response = null;
         while (!$response) {
-            if (checkVersionFile()) {
+            if (checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -397,7 +399,7 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
  * Note: php's filemtime results are cached, so we need to clear
  *       that cache or we'll be getting a stale modified time.
  */
-function checkVersionFile(string $versionWatchFile): bool
+function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimestamp): bool
 {
     clearstatcache(true, $versionWatchFile);
     $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;

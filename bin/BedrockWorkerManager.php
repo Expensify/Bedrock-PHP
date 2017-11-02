@@ -386,6 +386,8 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
         $logger->info("Jobs are slowing down, halving the target", ['newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
     }
 
+    $logger->info("Not queueing job, number of running jobs is above the target", ['numActive' => $numActive, 'target' => $target]);
+
     // Don't authorize BWM to call GetJobs
     return [false, $target];
 }

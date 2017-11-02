@@ -308,7 +308,6 @@ try {
             $logger->warning("Failed to get job");
         }
     }
-
 } catch (Exception $e) {
     $message = $e->getMessage();
     $logger->alert('BedrockWorkerManager.php exited abnormally', ['exception' => $e]);

@@ -390,7 +390,8 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
     }
 
     // Don't authorize BWM to call GetJobs
-    $logger->info("Not queueing job, number of running jobs is above the target", ['numActive' => $numActive, 'target' => $target]);
+    $logger->info("Not queueing job, number of running jobs is above the target", ['newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
+
     return [false, $target];
 }
 

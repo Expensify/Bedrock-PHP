@@ -4,6 +4,7 @@ namespace Expensify\Bedrock;
 
 use Expensify\Bedrock\Exceptions\DB\FailedQuery;
 use Expensify\Bedrock\Exceptions\DB\UnknownError;
+use Expensify\Bedrock\Exceptions\Timeout;
 use Expensify\Bedrock\DB\Response;
 
 /**
@@ -26,6 +27,13 @@ class DB extends Plugin
      * @var int
      */
     const CODE_QUERY_FAILED = 502;
+
+    /**
+     * Query timed out
+     *
+     * @var int
+     */
+    const CODE_QUERY_TIMEOUT = 555;
 
     /**
      * Executes a single SQL query.
@@ -64,6 +72,10 @@ class DB extends Plugin
 
         if ($response->getCode() === self::CODE_QUERY_FAILED) {
             throw new FailedQuery("Query failed: {$response->getError()}");
+        }
+
+        if ($response->getCode() === self::CODE_QUERY_TIMEOUT) {
+            throw new Timeout("Query timeoout: {$response->getError()}");
         }
 
         if ($response->getCode() !== self::CODE_OK) {

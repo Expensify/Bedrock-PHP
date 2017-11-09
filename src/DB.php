@@ -2,10 +2,10 @@
 
 namespace Expensify\Bedrock;
 
+use Expensify\Bedrock\DB\Response;
 use Expensify\Bedrock\Exceptions\DB\FailedQuery;
 use Expensify\Bedrock\Exceptions\DB\UnknownError;
 use Expensify\Bedrock\Exceptions\Timeout;
-use Expensify\Bedrock\DB\Response;
 
 /**
  * Encapsulates the built-in DB plugin for Bedrock.
@@ -39,6 +39,7 @@ class DB extends Plugin
      * Executes a single SQL query.
      *
      * @param string $sql The query to run
+     *
      * @deprecated Use run method instead.
      */
     public function query($sql): Response
@@ -52,8 +53,8 @@ class DB extends Plugin
     /**
      * Executes an SQL query.
      *
-     * @param string $sql The query to run
-     * @param bool $idempotent Is this command idempotent? If the command is run twice is the final result the same?
+     * @param string $sql        The query to run
+     * @param bool   $idempotent Is this command idempotent? If the command is run twice is the final result the same?
      *
      * @throws FailedQuery
      * @throws UnknownError

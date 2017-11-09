@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
@@ -114,6 +116,14 @@ try {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
 
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
+                $logger->info('Version watch file changed, stop processing new jobs');
+
+                // We break out of this loop and the outer one too. We don't want to process anything more,
+                // just wait for child processes to finish.
+                break 2;
+            }
+
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
             list($safeToStartANewJob, $target) = safeToStartANewJob($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $debugThrottle, $logger);
@@ -129,15 +139,7 @@ try {
         // Poll the server until we successfully get a job
         $response = null;
         while (!$response) {
-            // Watch a version file that will cause us to automatically shut
-            // down if it changes.  This enables triggering a restart if new
-            // PHP is deployed.
-            //
-            // Note: php's filemtime results are cached, so we need to clear
-            //       that cache or we'll be getting a stale modified time.
-            clearstatcache(true, $versionWatchFile);
-            $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;
-            if ($versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp) {
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -236,6 +238,7 @@ try {
                     $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler) {
                         $worker = new $workerName($bedrock, $job);
                         $childPID = getmypid();
+                        $localJobID = 0;
 
                         // Open the DB connection after the fork in the child process.
                         if ($enableLoadHandler) {
@@ -302,10 +305,9 @@ try {
         } elseif ($response['code'] == 303) {
             $logger->info("No job found, retrying.");
         } else {
-            $logger->warning("Failed to get job", ['codeLine' => $job['codeLine']]);
+            $logger->warning("Failed to get job");
         }
     }
-
 } catch (Exception $e) {
     $message = $e->getMessage();
     $logger->alert('BedrockWorkerManager.php exited abnormally', ['exception' => $e]);
@@ -331,11 +333,12 @@ $logger->info('Stopped BedrockWorkerManager');
  *
  * @return array First value is whether or not it is safe to start a new job, second is an updated $target value.
  */
-function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $enableLoadHandler, bool $debugThrottle, Psr\Log\LoggerInterface $logger) : array
+function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $enableLoadHandler, bool $debugThrottle, Psr\Log\LoggerInterface $logger): array
 {
     // Allow for disabling of the load handler.
     if (!$enableLoadHandler) {
         $logger->info("Load handler not enabled");
+
         return [true, $target];
     }
 
@@ -344,6 +347,7 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
     if ($numActive < $target) {
         // Still in a safe zone, don't worry about load
         $logger->info("Safe to start new job", ["numActive" => $numActive, "target" => $target]);
+
         return [true, $target];
     }
 
@@ -353,6 +357,7 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
         // Wait until we finish at least two batches of our target so we can evaluate its speed,
         // before expanding the batch.
         $logger->info("Haven't finished two batches of target, not queuing job", ["numActive" => $numActive, "target" => $target]);
+
         return [false, $target];
     }
 
@@ -378,12 +383,31 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
 
         // Authorize one more job given that we've just increased the target by one.
         return [true, $target];
-    } else if ($newBatchAverageTime > $maxSafeTime || $newBatchAverageTime < 1.5 * $oldBatchAverageTime) {
+    } elseif ($newBatchAverageTime > $maxSafeTime || $newBatchAverageTime < 1.5 * $oldBatchAverageTime) {
         // Things seem to be slowing down, pull our target back a lot
         $target = max(floor($target / 2), $minSafeJobs);
         $logger->info("Jobs are slowing down, halving the target", ['newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
     }
 
     // Don't authorize BWM to call GetJobs
+    $logger->info("Not queueing job, number of running jobs is above the target", ['newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
+
     return [false, $target];
+}
+
+/**
+ * Watch a version file that will cause us to automatically shut
+ * down if it changes.  This enables triggering a restart if new
+ * PHP is deployed.
+ *
+ * Note: php's filemtime results are cached, so we need to clear
+ *       that cache or we'll be getting a stale modified time.
+ */
+function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimestamp): bool
+{
+    clearstatcache(true, $versionWatchFile);
+    $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;
+    $versionChanged = $versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp;
+
+    return $versionChanged;
 }

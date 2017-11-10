@@ -29,7 +29,7 @@ class Client implements LoggerAwareInterface
     const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
-     * @var array This is a default configuration applied to all instances of this class. They can be overriden in the
+     * @var array This is a default configuration applied to all instances of this class. They can be overridden in the
      * constructor.
      */
     private static $defaultConfig = [];
@@ -94,6 +94,11 @@ class Client implements LoggerAwareInterface
     private $maxBlackListTimeout;
 
     /**
+     * @var bool Set this to true to add a `mockRequest` header to all outgoing requests.
+     */
+   private $mockRequests;
+
+    /**
      * @var string The last host we successfully used.
      */
     private $lastHost = '';
@@ -129,6 +134,17 @@ class Client implements LoggerAwareInterface
         $this->stats = $config['stats'];
         $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
+
+        // If the caller explicitly set `mockRequests`, use that value.
+        if (isset($config['mockReqests'])) {
+            $this->mockRequests = $config['mockReqests'];
+        } else {
+            // otherwise pull from the request headers.
+            $requestHeaders = getallheaders();
+            if (isset($requestHeaders['X-Mock-Request'])) {
+                $this->mockRequests = true;
+            }
+        }
 
         // Make sure we have at least one host configured
         $this->logger->debug('Bedrock\Client - Constructed', ['clusterName' => $this->clusterName, 'mainHostConfigs' => $this->mainHostConfigs, 'failoverHostConfigs' => $this->failoverHostConfigs]);
@@ -234,6 +250,11 @@ class Client implements LoggerAwareInterface
         // Set the write consistency
         if ($this->writeConsistency) {
             $headers['writeConsistency'] = $this->writeConsistency;
+        }
+
+        // Add mock request header if set.
+        if ($this->mockRequests) {
+            $headers['mockRequest'] = true;
         }
 
         $this->logger->info('Bedrock\Client - Starting a request', [

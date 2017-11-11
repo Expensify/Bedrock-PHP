@@ -522,10 +522,10 @@ class Client implements LoggerAwareInterface
      *
      * @throws BedrockError
      */
-    private function parseRawBody(array $headers, string $body)
+    private function parseRawBody(array? $headers, string? $body)
     {
         // Detect if we are using Gzip (TODO: can we remove this?)
-        if (isset($responseHeaders['Content-Encoding']) && $headers['Content-Encoding'] === 'gzip') {
+        if (isset($headers['Content-Encoding']) && $headers['Content-Encoding'] === 'gzip') {
             $body = gzdecode($body);
             if ($body === false) {
                 throw new BedrockError('Could not gzip decode bedrock response');

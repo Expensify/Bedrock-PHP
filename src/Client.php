@@ -30,7 +30,7 @@ class Client implements LoggerAwareInterface
 
     /**
      * @var array This is a default configuration applied to all instances of this class. They can be overridden in the
-     * constructor.
+     *            constructor.
      */
     private static $defaultConfig = [];
 
@@ -43,7 +43,7 @@ class Client implements LoggerAwareInterface
 
     /**
      * @var null|string Name of the bedrock cluster we are talking to. If you have more than one bedrock cluster, you
-     * can pass in different names for them in order to have separate statistics collected and caches of failed servers.
+     *                  can pass in different names for them in order to have separate statistics collected and caches of failed servers.
      */
     private $clusterName = null;
 
@@ -96,7 +96,7 @@ class Client implements LoggerAwareInterface
     /**
      * @var bool Set this to true to add a `mockRequest` header to all outgoing requests.
      */
-   private $mockRequests;
+    private $mockRequests;
 
     /**
      * @var string The last host we successfully used.
@@ -108,17 +108,17 @@ class Client implements LoggerAwareInterface
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
      * @param array $config Configuration to use, can have all of these:
-     * string               clusterName         Name of the bedrock cluster. This is used to separate requests made to
-     *                                          different bedrock clusters.
-     * array|null           mainHostConfigs     List of hosts to attempt first
-     * array|null           failovers           List of hosts to use as failovers
-     * int|null             connectionTimeout   Timeout to use when connecting
-     * int|null             readTimeout         Timeout to use when reading
-     * LoggerInterface|null logger              Class to use for logging
-     * StatsInterface|null  stats               Class to use for statistics tracking
-     * string|null          writeConsistency    The bedrock write consistency we want to use
-     * int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up
-     *                                          to this amount of seconds.
+     *                      string               clusterName         Name of the bedrock cluster. This is used to separate requests made to
+     *                      different bedrock clusters.
+     *                      array|null           mainHostConfigs     List of hosts to attempt first
+     *                      array|null           failovers           List of hosts to use as failovers
+     *                      int|null             connectionTimeout   Timeout to use when connecting
+     *                      int|null             readTimeout         Timeout to use when reading
+     *                      LoggerInterface|null logger              Class to use for logging
+     *                      StatsInterface|null  stats               Class to use for statistics tracking
+     *                      string|null          writeConsistency    The bedrock write consistency we want to use
+     *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up
+     *                      to this amount of seconds.
      *
      * @throws BedrockError
      */
@@ -190,8 +190,6 @@ class Client implements LoggerAwareInterface
      * Sets a logger instance on the object.
      *
      * @param LoggerInterface $logger
-     *
-     * @return null
      */
     public function setLogger(LoggerInterface $logger)
     {
@@ -206,7 +204,7 @@ class Client implements LoggerAwareInterface
     public function getStats()
     {
         if (is_string($this->stats)) {
-            $this->stats = new $this->stats;
+            $this->stats = new $this->stats();
         }
 
         return $this->stats;
@@ -228,6 +226,7 @@ class Client implements LoggerAwareInterface
      * @param string $body    Request body (optional)
      *
      * @return array JSON response, or null on error
+     *
      * @throws BedrockError
      * @throws ConnectionFailure
      */
@@ -285,7 +284,7 @@ class Client implements LoggerAwareInterface
         $response = null;
         $hostConfigs = $this->getPossibleHosts();
         $hostName = null;
-        while($numTriesRemaining-- && !$response && count($hostConfigs)) {
+        while ($numTriesRemaining-- && !$response && count($hostConfigs)) {
             reset($hostConfigs);
             $hostName = key($hostConfigs);
             $this->lastHost = $hostName;
@@ -295,7 +294,7 @@ class Client implements LoggerAwareInterface
                 // conditions.
                 $this->sendRawRequest($hostName, $hostConfigs[$hostName]['port'], $rawRequest);
                 $response = $this->receiveResponse();
-            } catch(ConnectionFailure $e) {
+            } catch (ConnectionFailure $e) {
                 // The error happened during connection (or before we sent any data) so we can retry it safely
                 $this->markHostAsFailed($hostName);
                 if ($numTriesRemaining) {
@@ -304,7 +303,7 @@ class Client implements LoggerAwareInterface
                     $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
                 }
-            } catch(BedrockError $e) {
+            } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $this->markHostAsFailed($hostName);
                 if ($numTriesRemaining && ($headers['idempotent'] ?? false)) {
@@ -346,7 +345,7 @@ class Client implements LoggerAwareInterface
      * Sends the request on a new socket, if a previous one existed, it closes the connection first.
      *
      * @throws ConnectionFailure When the failure is before sending any data to the server
-     * @throws BedrockError When we already sent some data
+     * @throws BedrockError      When we already sent some data
      */
     private function sendRawRequest(string $host, int $port, string $rawRequest)
     {
@@ -456,6 +455,7 @@ class Client implements LoggerAwareInterface
      * Receives and parses the response.
      *
      * @return array Response object including 'code', 'codeLine', 'headers', `size` and 'body'
+     *
      * @throws BedrockError
      */
     private function receiveResponse()
@@ -519,6 +519,7 @@ class Client implements LoggerAwareInterface
      * Parse a raw response from bedrock.
      *
      * @return array the decoded json, or null on error
+     *
      * @throws BedrockError
      */
     private function parseRawBody(array $headers, string $body)
@@ -566,8 +567,8 @@ class Client implements LoggerAwareInterface
             // Try to split this line
             $nameValue = explode(":", $responseHeaderLine);
             if (count($nameValue) === 2) {
-                $responseHeaders[ trim($nameValue[0]) ] = trim($nameValue[1]);
-            } else if (strlen($responseHeaderLine)) {
+                $responseHeaders[trim($nameValue[0])] = trim($nameValue[1]);
+            } elseif (strlen($responseHeaderLine)) {
                 $this->logger->warning('Bedrock\Client - Malformed response header, ignoring.', ['responseHeaderLine' => $responseHeaderLine]);
             }
         }
@@ -579,6 +580,7 @@ class Client implements LoggerAwareInterface
      * Converts a string to UTF8.
      *
      * @param string $str
+     *
      * @return string
      */
     private static function toUTF8($str)

@@ -130,11 +130,25 @@ class Response implements JsonSerializable, Countable
     /**
      * Get the rows returned.
      *
+     * @param bool $assoc Do we want to return each row keyed by the column name? If not, they will be keyed by index.
      * @return array[]
      */
-    public function getRows()
+    public function getRows(bool $assoc = false): array
     {
-        return $this->getFromContainer(['body', 'rows'], []);
+        $rows = $this->getFromContainer(['body', 'rows'], []);
+        if (!$assoc) {
+            return $rows;
+        }
+        $results = [];
+        $headers = $this->getHeaders();
+        foreach ($rows as $row) {
+            $result = [];
+            foreach ($headers as $index => $header) {
+                $result[$header] = $row[$index];
+            }
+            $results[] = $result;
+        }
+        return $results;
     }
 
     /**

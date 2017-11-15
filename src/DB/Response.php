@@ -2,8 +2,8 @@
 
 namespace Expensify\Bedrock\DB;
 
-use JsonSerializable;
 use Countable;
+use JsonSerializable;
 
 /**
  * Base class for Bedrock plugins.
@@ -131,6 +131,7 @@ class Response implements JsonSerializable, Countable
      * Get the rows returned.
      *
      * @param bool $assoc Do we want to return each row keyed by the column name? If not, they will be keyed by index.
+     *
      * @return array[]
      */
     public function getRows(bool $assoc = false): array

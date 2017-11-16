@@ -308,7 +308,7 @@ try {
             $logger->warning("Failed to get job");
         }
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $message = $e->getMessage();
     $logger->alert('BedrockWorkerManager.php exited abnormally', ['exception' => $e]);
     echo "Error: $message\r\n";
@@ -362,7 +362,6 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
     }
 
     // Calculate the speed of the last 2 batches to see if we're speeding up or slowing down
-    $oldBatchAverageTime = 0;
     $oldBatchTimes = $localDB->read("SELECT CAST(STRFTIME('%s', ended) - STRFTIME('%s', started) AS int) FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;");
     $oldBatchAverageTime = array_sum($oldBatchTimes) / count($oldBatchTimes);
     $newBatchAverageTime = $localDB->read("SELECT SUM(CAST(STRFTIME('%s', ended) - strftime('%s', started) AS int)) / count(*) FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;")[0];
@@ -385,7 +384,7 @@ function safeToStartANewJob(LocalDB $localDB, int $target, int $maxSafeTime, int
         return [true, $target];
     } elseif ($newBatchAverageTime > $maxSafeTime || $newBatchAverageTime < 1.5 * $oldBatchAverageTime) {
         // Things seem to be slowing down, pull our target back a lot
-        $target = max(floor($target / 2), $minSafeJobs);
+        $target = intval(max(floor($target / 2), $minSafeJobs));
         $logger->info("Jobs are slowing down, halving the target", ['newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
     }
 

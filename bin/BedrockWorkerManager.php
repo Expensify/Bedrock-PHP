@@ -280,6 +280,11 @@ try {
 
                         // The forked worker process is all done.
                         $stats->counter('bedrockJob.finish.'.$job['name']);
+
+                        // This is a long running process, child and parent share the socket cache because it's stored
+                        // in a static variable, so here we make sure that we close the sockets used by the child
+                        // process so we don't keep them open till the parent process finishes.
+                        Client::closeSocketsForPID();
                         exit(1);
                     } else {
                         // Reopen the DB connection in the parent thread.

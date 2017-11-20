@@ -68,7 +68,6 @@ if ($enableLoadHandler) {
     $localDB->open();
     $query = 'CREATE TABLE IF NOT EXISTS localJobs (
         localJobID integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-        pid integer NOT NULL,
         jobID integer NOT NULL,
         jobName text NOT NULL,
         started text NOT NULL,
@@ -203,6 +202,13 @@ try {
                         'workerFileName' => $workerFilename,
                     ]);
 
+                    $localJobID = 0;
+
+                    // Open the DB connection after the fork in the child process.
+                    if ($enableLoadHandler) {
+                        $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).");");
+                        $localJobID = $localDB->getLastInsertedRowID();
+                    }
                     // Close DB connection before forking.
                     if ($enableLoadHandler) {
                         $localDB->close();
@@ -232,17 +238,8 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler) {
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID) {
                             $worker = new $workerName($bedrock, $job);
-                            $childPID = getmypid();
-                            $localJobID = 0;
-
-                            // Open the DB connection after the fork in the child process.
-                            if ($enableLoadHandler) {
-                                $localDB->open();
-                                $localDB->write("INSERT INTO localJobs (pid, jobID, jobName, started) VALUES ($childPID, {$job['jobID']}, '{$job['name']}', DATETIME('now'));");
-                                $localJobID = $localDB->getLastInsertedRowID();
-                            }
                             try {
                                 // Run the worker.  If it completes successfully, finish the job.
                                 $worker->run();
@@ -273,7 +270,9 @@ try {
                                 $jobs->failJob($job['jobID']);
                             } finally {
                                 if ($enableLoadHandler) {
-                                    $localDB->write("UPDATE localJobs SET ended=DATETIME('now') WHERE localJobID=$localJobID;");
+                                    $localDB->open();
+                                    $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;");
+                                    $localDB->close();
                                 }
                             }
                         });
@@ -360,9 +359,10 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
     }
 
     // Calculate the speed of the last 2 batches to see if we're speeding up or slowing down
-    $oldBatchTimes = $localDB->read("SELECT CAST(STRFTIME('%s', ended) - STRFTIME('%s', started) AS int) FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;");
+    $oldBatchTimes = $localDB->read("SELECT ended - started FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;");
     $oldBatchAverageTime = array_sum($oldBatchTimes) / count($oldBatchTimes);
-    $newBatchAverageTime = $localDB->read("SELECT SUM(CAST(STRFTIME('%s', ended) - strftime('%s', started) AS int)) / count(*) FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;")[0];
+    $newBatchTimes = $localDB->read("SELECT ended - started FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;");
+    $newBatchAverageTime = array_sum($newBatchTimes) / count($newBatchTimes);
     if (($newBatchAverageTime < $maxSafeTime || $newBatchAverageTime < 1.1 * $oldBatchAverageTime) && $numActive <= $target) {
         // The new batch is going fast enough that we don't really care, or if we do care,
         // it's going roughly the same speed as the batch before.  This suggests that we

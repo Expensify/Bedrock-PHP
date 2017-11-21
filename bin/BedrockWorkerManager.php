@@ -240,7 +240,7 @@ try {
                             // Open the DB connection after the fork in the child process.
                             if ($enableLoadHandler) {
                                 $localDB->open();
-                                $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).");");
+                                $localDB->write("INSERT INTO localJobs (pid, jobID, jobName, started) VALUES ($childPID, {$job['jobID']}, '{$job['name']}', ".microtime(true).");");
                                 $localJobID = $localDB->getLastInsertedRowID();
                             }
                             try {

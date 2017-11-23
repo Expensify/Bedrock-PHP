@@ -289,7 +289,7 @@ class Client implements LoggerAwareInterface
             reset($hostConfigs);
             $numRetriesLeft = count($hostConfigs) - 1;
 
-            // If we already have a socket for this pid and cluster, then we first try to reuse it
+            // If we already have a socket for this instance, then we first try to reuse it
             if ($this->socket) {
                 $hostName = $this->lastHost;
             } else {

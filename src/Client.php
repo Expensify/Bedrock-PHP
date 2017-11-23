@@ -35,16 +35,21 @@ class Client implements LoggerAwareInterface
     private static $defaultConfig = [];
 
     /**
-     *  @var string[] The last commit count of the node we talked to, keyed by the cluster name. This is used to ensure
-     *                if we make a subsequent request to a different node in the same session, that the node waits until it is at least
-     *                up to date with the commits as the node we originally queried.
+     * @var Client[] An array of all instances of this class that were created, one per different config passed.
      */
-    private static $commitCount = [];
+    private static $instances = [];
 
     /**
-     *  @var array Existing sockets. This array is keyed by cluster name, inside it has an array with hostName and socket.
+     *  @var string The last commit count of the node we talked to. This is used to ensure if we make a subsequent
+     *              request to a different node in the same session, that the node waits until it is at least
+     *              up to date with the commits as the node we originally queried.
      */
-    private static $sockets = [];
+    private $commitCount = '';
+
+    /**
+     *  @var resource|null Socket to the server.
+     */
+    private $socket = null;
 
     /**
      * @var null|string Name of the bedrock cluster we are talking to. If you have more than one bedrock cluster, you
@@ -115,7 +120,7 @@ class Client implements LoggerAwareInterface
      *
      * @throws BedrockError
      */
-    public function __construct(array $config = [])
+    private function __construct(array $config = [])
     {
         $config = array_merge(self::$defaultConfig, $config);
         $this->clusterName = $config['clusterName'];
@@ -136,12 +141,30 @@ class Client implements LoggerAwareInterface
     }
 
     /**
+     * Returns an instance of this class for the specified configuration. It will return the same instance if the same
+     * configuration was passed, unless clearInstancesAfterFork is called.
+     */
+    public static function get(array $config = []): Client
+    {
+        $config = array_merge(self::$defaultConfig, $config);
+        ksort($config);
+        $hash = sha1(print_r($config, true));
+        if (isset(self::$instances[$hash])) {
+            return self::$instances[$hash];
+        }
+        $instance = new Client($config);
+        self::$instances[$hash] = $instance;
+
+        return $instance;
+    }
+
+    /**
      * After forking, you need to call this method to make sure the forks don't share the same socket and instead open
      * a new connection.
      */
-    public static function clearSocketsAfterFork()
+    public static function clearInstancesAfterFork()
     {
-        self::$sockets = [];
+        self::$instances = [];
     }
 
     /**
@@ -221,8 +244,8 @@ class Client implements LoggerAwareInterface
         $timeStart = microtime(true);
 
         // Include the last CommitCount, if we have one
-        if (isset(self::$commitCount[$this->clusterName])) {
-            $headers['commitCount']  = self::$commitCount[$this->clusterName];
+        if ($this->commitCount) {
+            $headers['commitCount']  = $this->commitCount;
         }
 
         // Include the requestID for logging purposes
@@ -267,9 +290,8 @@ class Client implements LoggerAwareInterface
             $numRetriesLeft = count($hostConfigs) - 1;
 
             // If we already have a socket for this pid and cluster, then we first try to reuse it
-            $reusingSocket = isset(self::$sockets[$this->clusterName]);
-            if ($reusingSocket) {
-                $hostName = self::$sockets[$this->clusterName]['hostName'];
+            if ($this->socket) {
+                $hostName = $this->lastHost;
             } else {
                 $hostName = key($hostConfigs);
                 $this->lastHost = $hostName;
@@ -340,23 +362,21 @@ class Client implements LoggerAwareInterface
     {
         // Try to connect to the requested host
         $pid = getmypid();
-        $socket = self::$sockets[$this->clusterName]['socket'] ?? null;
-        if (!$socket) {
+        if (!$this->socket) {
             $this->logger->info('Bedrock\Client - Opening new socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
-            $socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
+            $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
 
             // Make sure we succeed to create a socket
-            if ($socket === false) {
+            if ($this->socket === false) {
                 $socketError = socket_strerror(socket_last_error());
                 throw new ConnectionFailure("Could not connect to create socket: $socketError");
             }
-            self::$sockets[$this->clusterName] = ['hostName' => $host, 'socket' => $socket];
 
             // Configure this socket and try to connect to it
-            socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => 0]);
-            socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
-            @socket_connect($socket, $host, $port);
-            $socketErrorCode = socket_last_error($socket);
+            socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => 0]);
+            socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
+            @socket_connect($this->socket, $host, $port);
+            $socketErrorCode = socket_last_error($this->socket);
             if ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
@@ -364,10 +384,10 @@ class Client implements LoggerAwareInterface
         } else {
             $this->logger->info('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
         }
-        socket_clear_error($socket);
+        socket_clear_error($this->socket);
 
         // Send the information to the socket
-        $bytesSent = socket_send($socket, $rawRequest, strlen($rawRequest), MSG_EOF);
+        $bytesSent = socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
 
         // Failed to send anything
         if ($bytesSent === false) {
@@ -453,8 +473,7 @@ class Client implements LoggerAwareInterface
     private function receiveResponse()
     {
         // Make sure bedrock is returning something https://github.com/Expensify/Expensify/issues/11010
-        $socket = self::$sockets[$this->clusterName]['socket'];
-        if (@socket_recv($socket, $buf, self::PACKET_LENGTH, MSG_PEEK) === false) {
+        if (@socket_recv($this->socket, $buf, self::PACKET_LENGTH, MSG_PEEK) === false) {
             throw new BedrockError('Socket failed to read data');
         }
 
@@ -467,9 +486,9 @@ class Client implements LoggerAwareInterface
 
         // Read the data on the socket block by block until we got them all
         do {
-            $sizeDataOnSocket = @socket_recv($socket, $dataOnSocket, self::PACKET_LENGTH, 0);
+            $sizeDataOnSocket = @socket_recv($this->socket, $dataOnSocket, self::PACKET_LENGTH, 0);
             if ($sizeDataOnSocket === false) {
-                $errorCode = socket_last_error($socket);
+                $errorCode = socket_last_error($this->socket);
                 $errorMsg  = socket_strerror($errorCode);
                 throw new BedrockError("Error receiving data: $errorCode - $errorMsg");
             }
@@ -496,7 +515,7 @@ class Client implements LoggerAwareInterface
         // If we received the commitCount, then save it for future requests. This is useful if for some reason we
         // change the bedrock node we are talking to.
         if (isset($responseHeaders["commitCount"])) {
-            self::$commitCount[$this->clusterName] = $responseHeaders["commitCount"];
+            $this->commitCount = $responseHeaders["commitCount"];
         }
 
         return [
@@ -603,9 +622,9 @@ class Client implements LoggerAwareInterface
         $this->logger->info('Bedrock\Client - Marking server as failed', ['host' => $host, 'time' => date('Y-m-d H:i:s', $blacklistedUntil)]);
 
         // Since there was a problem with the host and we want to talk to a different one, we close and clear the socket.
-        if (isset(self::$sockets[$this->clusterName])) {
-            @socket_close(self::$sockets[$this->clusterName]['socket']);
-            unset(self::$sockets[$this->clusterName]);
+        if ($this->socket) {
+            @socket_close($this->socket);
+            $this->socket = null;
         }
     }
 }

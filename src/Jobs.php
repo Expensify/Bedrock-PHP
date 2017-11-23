@@ -383,7 +383,7 @@ class Jobs extends Plugin
     public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT)
     {
         try {
-            $bedrock = new Client();
+            $bedrock = Client::get();
             $jobs = new self($bedrock);
 
             return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection);

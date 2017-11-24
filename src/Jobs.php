@@ -174,7 +174,7 @@ class Jobs extends Plugin
      *
      * @return array - contain the jobIDs with the unique identifier of the created jobs
      */
-    public function createJobs(array $jobs) : array
+    public function createJobs(array $jobs): array
     {
         $this->client->getLogger()->info("Create jobs", ['jobs' => $jobs]);
 
@@ -212,7 +212,7 @@ class Jobs extends Plugin
      *
      * @return array Containing all job details
      */
-    public function getJobs(string $name, int $numResults) : array
+    public function getJobs(string $name, int $numResults): array
     {
         $headers = [
             "name" => $name,
@@ -225,9 +225,9 @@ class Jobs extends Plugin
     /**
      * Updates the data associated with a job.
      *
-     * @param int   $jobID
-     * @param array $data
-     * @param string $repeat      (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param int    $jobID
+     * @param array  $data
+     * @param string $repeat (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
      *
      * @return array
      */
@@ -271,12 +271,12 @@ class Jobs extends Plugin
      *
      * @return array
      */
-    public function cancelJob(int $jobID) : array
+    public function cancelJob(int $jobID): array
     {
         return $this->call(
             "CancelJob",
             [
-                "jobID" => $jobID
+                "jobID" => $jobID,
             ]
         );
     }
@@ -382,8 +382,8 @@ class Jobs extends Plugin
      */
     public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT)
     {
+        $bedrock = Client::getInstance();
         try {
-            $bedrock = Client::get();
             $jobs = new self($bedrock);
 
             return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection);

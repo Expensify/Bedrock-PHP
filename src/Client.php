@@ -144,7 +144,7 @@ class Client implements LoggerAwareInterface
      * Returns an instance of this class for the specified configuration. It will return the same instance if the same
      * configuration was passed, unless clearInstancesAfterFork is called.
      */
-    public static function get(array $config = []): Client
+    public static function getInstance(array $config = []): Client
     {
         $config = array_merge(self::$defaultConfig, $config);
         ksort($config);
@@ -152,7 +152,7 @@ class Client implements LoggerAwareInterface
         if (isset(self::$instances[$hash])) {
             return self::$instances[$hash];
         }
-        $instance = new Client($config);
+        $instance = new self($config);
         self::$instances[$hash] = $instance;
 
         return $instance;

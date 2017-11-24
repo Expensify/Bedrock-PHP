@@ -56,7 +56,7 @@ $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD l
 $target = $minSafeJobs;
 
 // Configure the Bedrock client with these command-line options
-$bedrock = Client::get($options);
+$bedrock = Client::getInstance($options);
 
 // Prepare to use the host logger, if configured
 $logger = $bedrock->getLogger();

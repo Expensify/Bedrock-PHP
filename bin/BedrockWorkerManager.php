@@ -56,7 +56,7 @@ $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD l
 $target = $minSafeJobs;
 
 // Configure the Bedrock client with these command-line options
-$bedrock = new Client($options);
+$bedrock = Client::getInstance($options);
 
 // Prepare to use the host logger, if configured
 $logger = $bedrock->getLogger();
@@ -214,6 +214,10 @@ try {
                         $errorMessage = pcntl_strerror(pcntl_get_last_error());
                         throw new Exception("Unable to fork because '$errorMessage', aborting.");
                     } elseif ($pid == 0) {
+                        // We forked, so we need to make sure the bedrock client opens new sockets inside this for,
+                        // instead of reusing the ones created by the parent process.
+                        Client::clearInstancesAfterFork();
+
                         // If we are using a global REQUEST_ID, reset it to indicate this is a new process.
                         if (isset($GLOBALS['REQUEST_ID'])) {
                             // Reset the REQUEST_ID and re-log the line so we see

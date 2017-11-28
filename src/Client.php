@@ -199,6 +199,7 @@ class Client implements LoggerAwareInterface
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
+            'mockReqests' => false,
         ], self::$defaultConfig, $config);
     }
 

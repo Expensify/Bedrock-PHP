@@ -17,6 +17,7 @@ return PhpCsFixer\Config::create()
         'ordered_imports' => true,
         'no_break_comment' => false,
         'binary_operator_spaces' => ['align_double_arrow' => null, 'align_equals' => null],
+        'blank_line_before_statement' => false,
     ])
     ->setUsingCache(true)
     ->setFinder($finder)

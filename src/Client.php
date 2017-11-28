@@ -139,8 +139,8 @@ class Client implements LoggerAwareInterface
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
 
         // If the caller explicitly set `mockRequests`, use that value.
-        if (isset($config['mockReqests'])) {
-            $this->mockRequests = $config['mockReqests'];
+        if (isset($config['mockRequests'])) {
+            $this->mockRequests = $config['mockRequests'];
         } else {
             // otherwise pull from the request headers.
             $requestHeaders = getallheaders();
@@ -199,7 +199,6 @@ class Client implements LoggerAwareInterface
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
-            'mockReqests' => false,
         ], self::$defaultConfig, $config);
     }
 

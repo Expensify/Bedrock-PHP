@@ -344,8 +344,8 @@ class Client implements LoggerAwareInterface
             } finally {
                 // We remove the host we just used from the possible hosts to use, in case we are retrying
                 $hostConfigs = array_filter($hostConfigs, function ($possibleHost) use ($hostName) {
-                    return $possibleHost === $hostName;
-                });
+                    return $possibleHost !== $hostName;
+                }, ARRAY_FILTER_USE_KEY);
             }
         }
 

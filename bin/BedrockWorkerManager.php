@@ -217,6 +217,8 @@ try {
                         // We forked, so we need to make sure the bedrock client opens new sockets inside this for,
                         // instead of reusing the ones created by the parent process.
                         Client::clearInstancesAfterFork();
+                        $bedrockWorker = Client::getInstance($options);
+                        $jobsWorker = new Jobs($bedrockWorker);
 
                         // If we are using a global REQUEST_ID, reset it to indicate this is a new process.
                         if (isset($GLOBALS['REQUEST_ID'])) {
@@ -236,8 +238,8 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler) {
-                            $worker = new $workerName($bedrock, $job);
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrockWorker, $jobsWorker, $job, $extraParams, $logger, $localDB, $enableLoadHandler) {
+                            $worker = new $workerName($bedrockWorker, $job);
                             $childPID = getmypid();
                             $localJobID = 0;
 
@@ -257,7 +259,7 @@ try {
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
                                 ]);
-                                $jobs->finishJob($job['jobID'], $worker->getData());
+                                $jobsWorker->finishJob($job['jobID'], $worker->getData());
                             } catch (RetryableException $e) {
                                 // Worker had a recoverable failure; retry again later.
                                 $logger->info("Job could not complete, retrying.", [
@@ -265,7 +267,7 @@ try {
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
                                 ]);
-                                $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
+                                $jobsWorker->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
                             } catch (Throwable $e) {
                                 $logger->alert("Job failed with errors, exiting.", [
                                     'name' => $job['name'],
@@ -274,7 +276,7 @@ try {
                                     'exception' => $e,
                                 ]);
                                 // Worker had a fatal error -- mark as failed.
-                                $jobs->failJob($job['jobID']);
+                                $jobsWorker->failJob($job['jobID']);
                             } finally {
                                 if ($enableLoadHandler) {
                                     $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;");

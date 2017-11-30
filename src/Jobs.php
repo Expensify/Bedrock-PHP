@@ -144,6 +144,11 @@ class Jobs extends Plugin
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
 
+        // Add a unique identifier to job names so we can retry creating in case of network failure.
+        if (!$unique) {
+            $name .= uniqid("job", true);
+        }
+
         $response = $this->call(
             'CreateJob',
             [
@@ -151,7 +156,7 @@ class Jobs extends Plugin
                 'data'        => $data,
                 'firstRun'    => $firstRun,
                 'repeat'      => $repeat,
-                'unique'      => $unique,
+                'unique'      => true,
                 'priority'    => $priority,
                 'parentJobID' => $parentJobID,
                 'Connection'  => $connection,

@@ -99,6 +99,11 @@ class Client implements LoggerAwareInterface
     private $maxBlackListTimeout;
 
     /**
+     * @var bool Set this to true to add a `mockRequest` header to all outgoing requests.
+     */
+    private $mockRequests;
+
+    /**
      * @var string The last host we successfully used.
      */
     private $lastHost = '';
@@ -133,6 +138,17 @@ class Client implements LoggerAwareInterface
         $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
 
+        // If the caller explicitly set `mockRequests`, use that value.
+        if (isset($config['mockRequests'])) {
+            $this->mockRequests = $config['mockRequests'];
+        } elseif (function_exists('getallheaders')) {
+            // otherwise pull from the request headers.
+            $requestHeaders = getallheaders();
+            if (isset($requestHeaders['X-Mock-Request'])) {
+                $this->mockRequests = true;
+            }
+        }
+
         // Make sure we have at least one host configured
         $this->logger->debug('Bedrock\Client - Constructed', ['clusterName' => $this->clusterName, 'mainHostConfigs' => $this->mainHostConfigs, 'failoverHostConfigs' => $this->failoverHostConfigs]);
         if (empty($this->mainHostConfigs)) {
@@ -142,13 +158,16 @@ class Client implements LoggerAwareInterface
 
     /**
      * Returns an instance of this class for the specified configuration. It will return the same instance if the same
-     * configuration was passed, unless clearInstancesAfterFork is called.
+     * configuration was passed (not counting the logger and stats params), unless clearInstancesAfterFork is called.
      */
     public static function getInstance(array $config = []): Client
     {
         $config = array_merge(self::$defaultConfig, $config);
         ksort($config);
-        $hash = sha1(print_r($config, true));
+        $configForHash = $config;
+        unset($configForHash['logger']);
+        unset($configForHash['stats']);
+        $hash = sha1(print_r($configForHash, true));
         if (isset(self::$instances[$hash])) {
             return self::$instances[$hash];
         }
@@ -259,6 +278,11 @@ class Client implements LoggerAwareInterface
             $headers['writeConsistency'] = $this->writeConsistency;
         }
 
+        // Add mock request header if set.
+        if ($this->mockRequests) {
+            $headers['mockRequest'] = true;
+        }
+
         $this->logger->info('Bedrock\Client - Starting a request', [
             'command' => $method,
             'clusterName' => $this->clusterName,
@@ -323,8 +347,8 @@ class Client implements LoggerAwareInterface
             } finally {
                 // We remove the host we just used from the possible hosts to use, in case we are retrying
                 $hostConfigs = array_filter($hostConfigs, function ($possibleHost) use ($hostName) {
-                    return $possibleHost === $hostName;
-                });
+                    return $possibleHost !== $hostName;
+                }, ARRAY_FILTER_USE_KEY);
             }
         }
 

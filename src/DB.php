@@ -47,11 +47,12 @@ class DB extends Plugin
      *
      * @param string $sql        The query to run
      * @param bool   $idempotent Is this command idempotent? If the command is run twice is the final result the same?
+     * @param int    $timeout    Time in microseconds, defaults to 60 seconds
      *
      * @throws FailedQuery
      * @throws UnknownError
      */
-    public function run(string $sql, bool $idempotent): Response
+    public function run(string $sql, bool $idempotent, int $timeout = 60000000): Response
     {
         $sql = substr($sql, -1) === ";" ? $sql : $sql.";";
         $response = new Response($this->client->call(
@@ -60,6 +61,7 @@ class DB extends Plugin
                 'query' => $sql,
                 'format' => "json",
                 'idempotent' => $idempotent,
+                'timeout' => $timeout,
             ]
         ));
 

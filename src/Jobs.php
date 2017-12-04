@@ -146,7 +146,7 @@ class Jobs extends Plugin
 
         // Add a unique identifier to job names so we can retry creating in case of network failure.
         if (!$unique) {
-            $name .= uniqid("job", true);
+            $name .= "?uuid=".uniqid("job", true);
         }
 
         $response = $this->call(

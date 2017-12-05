@@ -137,12 +137,18 @@ class Jobs extends Plugin
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
      * @param string|null $connection  (optional) Specify 'Connection' header using constants defined in this class.
      * @param string|null $retryAfter  (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
+     * @param bool        $appendUUID  (optional) Whether the job should have a UUID appended to the name in the form of a parameter.
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null, $appendUUID = false)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
+
+        // Add a unique identifier to job names so we can retry creating in case of network failure.
+        if (!$appendUUID) {
+            $name .= "?uuid=".uniqid("job", true);
+        }
 
         $response = $this->call(
             'CreateJob',

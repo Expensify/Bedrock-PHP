@@ -182,6 +182,7 @@ try {
             // in each environment looking for each path.
             $jobsToRun = $response['body']['jobs'];
             foreach ($jobsToRun as $job) {
+                $localJobID = 0;
                 if ($enableLoadHandler) {
                     $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).");");
                     $localJobID = $localDB->getLastInsertedRowID();

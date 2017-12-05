@@ -68,7 +68,6 @@ if ($enableLoadHandler) {
     $localDB->open();
     $query = 'CREATE TABLE IF NOT EXISTS localJobs (
         localJobID integer PRIMARY KEY AUTOINCREMENT NOT NULL,
-        pid integer NOT NULL,
         jobID integer NOT NULL,
         jobName text NOT NULL,
         started text NOT NULL,
@@ -183,6 +182,11 @@ try {
             // in each environment looking for each path.
             $jobsToRun = $response['body']['jobs'];
             foreach ($jobsToRun as $job) {
+                $localJobID = 0;
+                if ($enableLoadHandler) {
+                    $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).");");
+                    $localJobID = $localDB->getLastInsertedRowID();
+                }
                 $parts = explode('/', $job['name']);
                 $jobParts = explode('?', $job['name']);
                 $extraParams = count($jobParts) > 1 ? $jobParts[1] : null;
@@ -238,17 +242,10 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrockWorker, $jobsWorker, $job, $extraParams, $logger, $localDB, $enableLoadHandler) {
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrockWorker, $jobsWorker, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID) {
                             $worker = new $workerName($bedrockWorker, $job);
-                            $childPID = getmypid();
-                            $localJobID = 0;
 
                             // Open the DB connection after the fork in the child process.
-                            if ($enableLoadHandler) {
-                                $localDB->open();
-                                $localDB->write("INSERT INTO localJobs (pid, jobID, jobName, started) VALUES ($childPID, {$job['jobID']}, '{$job['name']}', ".microtime(true).");");
-                                $localJobID = $localDB->getLastInsertedRowID();
-                            }
                             try {
                                 // Run the worker.  If it completes successfully, finish the job.
                                 $worker->run();
@@ -279,7 +276,9 @@ try {
                                 $jobsWorker->failJob($job['jobID']);
                             } finally {
                                 if ($enableLoadHandler) {
+                                    $localDB->open();
                                     $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;");
+                                    $localDB->close();
                                 }
                             }
                         });

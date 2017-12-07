@@ -76,6 +76,9 @@ if ($enableLoadHandler) {
     CREATE INDEX IF NOT EXISTS localJobsLocalJobID ON localJobs (localJobID);
     PRAGMA journal_mode = WAL;';
     $localDB->write($query);
+
+    // Clear out any jobs that have been stuck open.
+    $localDB->write("DELETE FROM localJobs WHERE ended IS NULL;");
 }
 
 // If --versionWatch is enabled, begin watching a version file for changes

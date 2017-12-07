@@ -76,9 +76,6 @@ if ($enableLoadHandler) {
     CREATE INDEX IF NOT EXISTS localJobsLocalJobID ON localJobs (localJobID);
     PRAGMA journal_mode = WAL;';
     $localDB->write($query);
-
-    // Clear out any jobs that have been stuck open.
-    $localDB->write("DELETE FROM localJobs WHERE ended IS NULL;");
 }
 
 // If --versionWatch is enabled, begin watching a version file for changes
@@ -385,6 +382,9 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
         // this is very useful data to keep while debugging to analyze our throttle behavior.
         if (!$debugThrottle) {
             $localDB->write("DELETE FROM localJobs WHERE localJobID IN (SELECT localJobID FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT -1 OFFSET $target * 2);");
+
+            // Clear out any jobs that have been stuck open.
+            $localDB->write("DELETE FROM localJobs WHERE ended IS NULL;");
         }
 
         // Authorize one more job given that we've just increased the target by one.

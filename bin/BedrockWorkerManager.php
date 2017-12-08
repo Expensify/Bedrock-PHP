@@ -56,7 +56,7 @@ $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD l
 $target = $minSafeJobs;
 
 // Configure the Bedrock client with these command-line options
-$bedrock = Client::getInstance($options);
+$bedrock = Client::getInstance();
 
 // Prepare to use the host logger, if configured
 $logger = $bedrock->getLogger();
@@ -219,9 +219,13 @@ try {
                         throw new Exception("Unable to fork because '$errorMessage', aborting.");
                     } elseif ($pid == 0) {
                         // We forked, so we need to make sure the bedrock client opens new sockets inside this for,
-                        // instead of reusing the ones created by the parent process.
+                        // instead of reusing the ones created by the parent process. But we also want to make sure we
+                        // keep the same commitCount because we need the finishJob call below to run in a server that has
+                        // the commit of the GetJobs call above or the job we are trying to finish might be in QUEUED state.
+                        $commitCount = Client::getInstance()->commitCount;
                         Client::clearInstancesAfterFork();
-                        $bedrockWorker = Client::getInstance($options);
+                        $bedrockWorker = Client::getInstance();
+                        $bedrockWorker->commitCount = $commitCount;
                         $jobsWorker = new Jobs($bedrockWorker);
 
                         // If we are using a global REQUEST_ID, reset it to indicate this is a new process.

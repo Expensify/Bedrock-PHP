@@ -422,9 +422,12 @@ class Client implements LoggerAwareInterface
 
         // We sent something; can't retry or else we might double-send the same request. Let's make sure we sent the
         // whole thing, else there's a problem.
-        if ($bytesSent != strlen($rawRequest)) {
+        if ($bytesSent < strlen($rawRequest)) {
             $this->logger->info('Bedrock\Client - Could not send the whole request', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
-            throw new BedrockError("Sent partial request to bedrock host $host:$port");
+            throw new ConnectionFailure("Sent partial request to bedrock host $host:$port");
+        } elseif ($bytesSent > strlen($rawRequest)) {
+            $this->logger->info('Bedrock\Client - sent more data than needed', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
+            throw new BedrockError("Sent more content than expected to host $host:$port");
         }
     }
 

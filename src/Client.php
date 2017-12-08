@@ -10,6 +10,8 @@ use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
+define('TRAVIS_RUNNING', isset($_SERVER['TRAVIS_COMMIT']));
+
 /**
  * Client for communicating with bedrock.
  */

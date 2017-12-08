@@ -20,6 +20,13 @@ class DB extends Plugin
     const CODE_OK = 200;
 
     /**
+     * Failed query response code.
+     *
+     * @var int
+     */
+     const CODE_QUERY_FAILED = 502;
+
+    /**
      * Executes a single SQL query.
      *
      * @param string $sql The query to run
@@ -55,6 +62,10 @@ class DB extends Plugin
                 'timeout' => $timeout,
             ]
         ));
+
+        if ($response->getCode() === self::CODE_QUERY_FAILED) {
+            throw new BedrockError($response->getCodeLine()." - ".$response->getError(), $response->getCode());
+        }
 
         if ($response->getCode() !== self::CODE_OK) {
             throw new BedrockError($response->getCodeLine(), $response->getCode());

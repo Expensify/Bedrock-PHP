@@ -601,7 +601,7 @@ class Client implements LoggerAwareInterface
         $responseHeaders = [];
         foreach ($responseHeaderLines as $responseHeaderLine) {
             // Try to split this line
-            $nameValue = explode(":", $responseHeaderLine);
+            $nameValue = explode(":", $responseHeaderLine, 2);
             if (count($nameValue) === 2) {
                 $responseHeaders[trim($nameValue[0])] = trim($nameValue[1]);
             } elseif (strlen($responseHeaderLine)) {

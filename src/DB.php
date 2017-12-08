@@ -24,7 +24,7 @@ class DB extends Plugin
      *
      * @var int
      */
-     const CODE_QUERY_FAILED = 502;
+    const CODE_QUERY_FAILED = 502;
 
     /**
      * Executes a single SQL query.

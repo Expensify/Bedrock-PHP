@@ -40,11 +40,11 @@ class Client implements LoggerAwareInterface
     private static $instances = [];
 
     /**
-     *  @var int The last commit count of the node we talked to. This is used to ensure if we make a subsequent
-     *           request to a different node in the same session, that the node waits until it is at least
-     *           up to date with the commits as the node we originally queried.
+     *  @var ?int The last commit count of the node we talked to. This is used to ensure if we make a subsequent
+     *            request to a different node in the same session, that the node waits until it is at least
+     *            up to date with the commits as the node we originally queried.
      */
-    public $commitCount = '';
+    public $commitCount = null;
 
     /**
      *  @var resource|null Socket to the server.

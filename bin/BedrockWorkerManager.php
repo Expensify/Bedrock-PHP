@@ -222,9 +222,9 @@ try {
                         // the commit of the GetJobs call above or the job we are trying to finish might be in QUEUED state.
                         $commitCount = Client::getInstance()->commitCount;
                         Client::clearInstancesAfterFork();
-                        $bedrockWorker = Client::getInstance();
-                        $bedrockWorker->commitCount = $commitCount;
-                        $jobsWorker = new Jobs($bedrockWorker);
+                        $bedrock = Client::getInstance();
+                        $bedrock->commitCount = $commitCount;
+                        $jobs = new Jobs($bedrock);
 
                         // If we are using a global REQUEST_ID, reset it to indicate this is a new process.
                         if (isset($GLOBALS['REQUEST_ID'])) {
@@ -244,8 +244,8 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrockWorker, $jobsWorker, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID) {
-                            $worker = new $workerName($bedrockWorker, $job);
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID) {
+                            $worker = new $workerName($bedrock, $job);
 
                             // Open the DB connection after the fork in the child process.
                             try {
@@ -258,7 +258,7 @@ try {
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
                                 ]);
-                                $jobsWorker->finishJob($job['jobID'], $worker->getData());
+                                $jobs->finishJob($job['jobID'], $worker->getData());
                             } catch (RetryableException $e) {
                                 // Worker had a recoverable failure; retry again later.
                                 $logger->info("Job could not complete, retrying.", [
@@ -266,7 +266,7 @@ try {
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
                                 ]);
-                                $jobsWorker->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
+                                $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
                             } catch (Throwable $e) {
                                 $logger->alert("Job failed with errors, exiting.", [
                                     'name' => $job['name'],
@@ -275,7 +275,7 @@ try {
                                     'exception' => $e,
                                 ]);
                                 // Worker had a fatal error -- mark as failed.
-                                $jobsWorker->failJob($job['jobID']);
+                                $jobs->failJob($job['jobID']);
                             } finally {
                                 if ($enableLoadHandler) {
                                     $localDB->open();

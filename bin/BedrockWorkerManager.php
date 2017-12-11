@@ -54,8 +54,6 @@ $maxSafeTime = intval($options['maxSafeTime'] ?? 0); // The maximum job time bef
 $debugThrottle = isset($options['debugThrottle']); // Set to true to maintain a debug history
 $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD load handler
 $target = $minSafeJobs;
-
-// Configure the Bedrock client with these command-line options
 $bedrock = Client::getInstance();
 
 // Prepare to use the host logger, if configured

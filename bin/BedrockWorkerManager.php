@@ -59,9 +59,9 @@ $target = $minSafeJobs;
 $bedrock = Client::getInstance($options);
 
 // Prepare to use the host logger and stats client, if configured
-$stats = $bedrock->getStats();
 $logger = $bedrock->getLogger();
 $logger->info('Starting BedrockWorkerManager', ['maxIterations' => $maxIterations]);
+$stats = $bedrock->getStats();
 
 // Set up the database for the AIMD load handler.
 $localDB = new LocalDB($pathToDB, $logger, $stats);
@@ -118,7 +118,7 @@ try {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
 
-            if ($versionWatchFile && $stats->benchmark('bedrockWorkerManager.checkVersionFile', checkVersionFile($versionWatchFile, $versionWatchFileTimestamp))) {
+            if ($versionWatchFile && $stats->benchmark('bedrockWorkerManager.checkVersionFile', function() use ($versionWatchFile, $versionWatchFileTimestamp) { return checkVersionFile($versionWatchFile, $versionWatchFileTimestamp); })) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -128,7 +128,7 @@ try {
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            list($jobsToQueue, $target) = $stats->benchmark('bedrockerWorkerManager.getNumberOfJobsToQueue', getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger));
+            list($jobsToQueue, $target) = $stats->benchmark('bedrockerWorkerManager.getNumberOfJobsToQueue', function() use ($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats) { return getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats); });
             if ($load < $maxLoad && $jobsToQueue > 0) {
                 $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 break;
@@ -146,7 +146,7 @@ try {
         // Poll the server until we successfully get a job
         $response = null;
         while (!$response) {
-            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
+            if ($versionWatchFile && $stats->benchmark('bedrockWorkerManager.checkVersionFile', function() use ($versionWatchFile, $versionWatchFileTimestamp) { return checkVersionFile($versionWatchFile, $versionWatchFileTimestamp); })) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -193,7 +193,7 @@ try {
             foreach ($jobsToRun as $job) {
                 $localJobID = 0;
                 if ($enableLoadHandler) {
-                    $stats->benchmark('bedrockWorkerManager.db.write.insert', $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).");"));
+                    $stats->benchmark('bedrockWorkerManager.db.write.insert', function() use ($localDB, $job) { $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).");"); });
                     $localJobID = $localDB->getLastInsertedRowID();
                 }
                 $parts = explode('/', $job['name']);
@@ -221,7 +221,7 @@ try {
                         $localDB->close();
                     }
                     pcntl_signal(SIGCHLD, SIG_IGN);
-                    $pid = $stats->benchmark('bedrockWorkerManager.fork', pcntl_fork());
+                    $pid = $stats->benchmark('bedrockWorkerManager.fork', function () { return pcntl_fork(); });
                     if ($pid == -1) {
                         // Something went wrong, couldn't fork
                         $errorMessage = pcntl_strerror(pcntl_get_last_error());
@@ -251,7 +251,7 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrockWorker, $jobsWorker, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID) {
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrockWorker, $jobsWorker, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats) {
                             $worker = new $workerName($bedrockWorker, $job);
 
                             // Open the DB connection after the fork in the child process.
@@ -286,7 +286,7 @@ try {
                             } finally {
                                 if ($enableLoadHandler) {
                                     $localDB->open();
-                                    $stats->benchmark('bedrockWorkerManager.db.write.update', $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;"));
+                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function() use ($localDB, $localJobID) { $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;"); });
                                     $localDB->close();
                                 }
                             }
@@ -345,7 +345,7 @@ $logger->info('Stopped BedrockWorkerManager');
  *
  * @return array First value how many jobs it is safe to queue, second is an updated $target value.
  */
-function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $enableLoadHandler, int $maxJobsForSingleRun, bool $debugThrottle, Psr\Log\LoggerInterface $logger): array
+function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $enableLoadHandler, int $maxJobsForSingleRun, bool $debugThrottle, Psr\Log\LoggerInterface $logger, $stats): array
 {
     // Allow for disabling of the load handler.
     if (!$enableLoadHandler) {
@@ -355,7 +355,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
     }
 
     // Have we hit our target job count?
-    $numActive = $stats->benchmark('bedrockWorkerManager.db.read.activeJobs', $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0]);
+    $numActive = $stats->benchmark('bedrockWorkerManager.db.read.activeJobs', function() use ($localDB) { return $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0]; });
     if ($numActive < $target) {
         // Still in a safe zone, don't worry about load
         $logger->info("Safe to start new job", ["numberOfJobsToQueue" => $target - $numActive, "numActive" => $numActive, "target" => $target]);
@@ -364,7 +364,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
     }
 
     // We're at or over our target; do we have enough data to evaluate the speed?
-    $numFinished = $stats->benchmark('bedrockWorkerManager.db.read.completeJobs', $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NOT NULL;')[0]);
+    $numFinished = $stats->benchmark('bedrockWorkerManager.db.read.completeJobs', function() use ($localDB) { return $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NOT NULL;')[0]; });
     if ($numFinished < $target * 2) {
         // Wait until we finish at least two batches of our target so we can evaluate its speed,
         // before expanding the batch.
@@ -374,9 +374,9 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
     }
 
     // Calculate the speed of the last 2 batches to see if we're speeding up or slowing down
-    $oldBatchTimes = $stats->benchmark('bedrockWorkerManager.db.read.oldBatchTimes', $localDB->read("SELECT ended - started FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;"));
+    $oldBatchTimes = $stats->benchmark('bedrockWorkerManager.db.read.oldBatchTimes', function() use ($localDB, $target) { return $localDB->read("SELECT ended - started FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;"); });
     $oldBatchAverageTime = array_sum($oldBatchTimes) / count($oldBatchTimes);
-    $newBatchTimes = $stats->benchmark('bedrockWorkerManager.db.read.newBatchTimes', $localDB->read("SELECT ended - started FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;"));
+    $newBatchTimes = $stats->benchmark('bedrockWorkerManager.db.read.newBatchTimes', function() use ($localDB, $target) { return $localDB->read("SELECT ended - started FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;"); });
     $newBatchAverageTime = array_sum($newBatchTimes) / count($newBatchTimes);
     if (($newBatchAverageTime < $maxSafeTime || $newBatchAverageTime < 1.1 * $oldBatchAverageTime) && $numActive <= $target) {
         // The new batch is going fast enough that we don't really care, or if we do care,
@@ -390,7 +390,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
         // look farther back than that and don't want to accumulate data infinitely.  However,
         // this is very useful data to keep while debugging to analyze our throttle behavior.
         if (!$debugThrottle) {
-            $stats->benchmark('bedrockWorkerManager.db.write.deleteOldJobs', $localDB->write("DELETE FROM localJobs WHERE localJobID IN (SELECT localJobID FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT -1 OFFSET $target * 2);"));
+            $stats->benchmark('bedrockWorkerManager.db.write.deleteOldJobs', function() use ($localDB, $target) { $localDB->write("DELETE FROM localJobs WHERE localJobID IN (SELECT localJobID FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT -1 OFFSET $target * 2);"); });
         }
 
         // Authorize one more job given that we've just increased the target by one.

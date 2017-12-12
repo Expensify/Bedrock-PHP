@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Expensify\Bedrock;
 
 use Exception;
-use Expensify\Bedrock\Stats\StatsInterface;
 use Psr\Log\LoggerInterface;
 use SQLite3;
 
@@ -26,7 +25,7 @@ class LocalDB
     /**
      * Creates a localDB object and sets the file location.
      */
-    public function __construct(string $location, LoggerInterface $logger, StatsInterface $stats)
+    public function __construct(string $location, LoggerInterface $logger, $stats)
     {
         $this->location = $location;
         $this->logger = $logger;

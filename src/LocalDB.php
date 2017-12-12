@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Expensify\Bedrock;
 
 use Exception;
+use Expensify\Bedrock\Stats\StatsInterface;
 use Psr\Log\LoggerInterface;
 use SQLite3;
 
@@ -25,10 +26,11 @@ class LocalDB
     /**
      * Creates a localDB object and sets the file location.
      */
-    public function __construct(string $location, LoggerInterface $logger)
+    public function __construct(string $location, LoggerInterface $logger, StatsInterface $stats)
     {
         $this->location = $location;
         $this->logger = $logger;
+        $this->stats = $stats;
     }
 
     /**
@@ -36,9 +38,11 @@ class LocalDB
      */
     public function open() {
         if (!isset($this->handle)) {
+            $startTime = microtime(true);
             $this->handle = new SQLite3($this->location);
             $this->handle->busyTimeout(15000);
             $this->handle->enableExceptions(true);
+            $this->stats->timer('bedrockWorkerManager.db.open', microtime(true) - $startTime);
         }
     }
 
@@ -48,8 +52,10 @@ class LocalDB
     public function close()
     {
         if (isset($this->handle)) {
+            $startTime = microtime(true);
             $this->handle->close();
             unset($this->handle);
+            $this->stats->timer('bedrockWorkerManager.db.close', microtime(true) - $startTime);
         }
     }
 

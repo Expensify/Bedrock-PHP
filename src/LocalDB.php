@@ -72,6 +72,7 @@ class LocalDB
     public function read(string $query)
     {
         $result = null;
+        $returnValue = null;
         while (true) {
             try {
                 $result = $this->handle->query($query);

@@ -22,8 +22,13 @@ class LocalDB
     /** @var LoggerInterface $logger */
     private $logger;
 
+    /** @var Stats\StatsInterface */
+    private $stats;
+
     /**
      * Creates a localDB object and sets the file location.
+     *
+     * @param Stats\StatsInterface $stats
      */
     public function __construct(string $location, LoggerInterface $logger, $stats)
     {
@@ -35,7 +40,8 @@ class LocalDB
     /**
      * Opens a DB connection.
      */
-    public function open() {
+    public function open()
+    {
         if (!isset($this->handle)) {
             $startTime = microtime(true);
             $this->handle = new SQLite3($this->location);
@@ -66,7 +72,7 @@ class LocalDB
     public function read(string $query)
     {
         $result = null;
-        while(true) {
+        while (true) {
             try {
                 $result = $this->handle->query($query);
                 break;
@@ -92,7 +98,7 @@ class LocalDB
      */
     public function write(string $query)
     {
-        while(true) {
+        while (true) {
             try {
                 $this->handle->query($query);
                 break;

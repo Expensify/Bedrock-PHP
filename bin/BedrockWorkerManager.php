@@ -128,7 +128,7 @@ try {
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            list($jobsToQueue, $target) = getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger);
+            list($jobsToQueue, $target) = $stats->benchmark('bedrockerWorkerManager.getNumberOfJobsToQueue', getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger));
             if ($load < $maxLoad && $jobsToQueue > 0) {
                 $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 break;
@@ -221,7 +221,7 @@ try {
                         $localDB->close();
                     }
                     pcntl_signal(SIGCHLD, SIG_IGN);
-                    $pid = $stats->benchmark("bedrockWorkerManager.fork", pcntl_fork());
+                    $pid = $stats->benchmark('bedrockWorkerManager.fork', pcntl_fork());
                     if ($pid == -1) {
                         // Something went wrong, couldn't fork
                         $errorMessage = pcntl_strerror(pcntl_get_last_error());

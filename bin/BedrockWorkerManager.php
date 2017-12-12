@@ -383,8 +383,8 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
         if (!$debugThrottle) {
             $localDB->write("DELETE FROM localJobs WHERE localJobID IN (SELECT localJobID FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT -1 OFFSET $target * 2);");
 
-            // Clear out any jobs that have been stuck open.
-            $localDB->write("DELETE FROM localJobs WHERE ended IS NULL;");
+            // Clear out any jobs that have been stuck open for longer than an hour.
+            $localDB->write("DELETE FROM localJobs WHERE ended IS NULL and started<".microtime(true) - 3600.";");
         }
 
         // Authorize one more job given that we've just increased the target by one.

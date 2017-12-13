@@ -68,12 +68,12 @@ class LocalDB
     /**
      * Runs a read query on a local database.
      *
-     * @return array
+     * @return ?array
      */
     public function read(string $query)
     {
         $result = null;
-        $returnValue = [];
+        $returnValue = null;
         while (true) {
             try {
                 $result = $this->handle->query($query);
@@ -92,7 +92,7 @@ class LocalDB
             $returnValue = $result->fetchArray(SQLITE3_NUM);
         }
 
-        return $returnValue ?? [];
+        return $returnValue;
     }
 
     /**

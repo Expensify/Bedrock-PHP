@@ -43,7 +43,7 @@ class LocalDB
     public function open()
     {
         if (!isset($this->handle)) {
-            $this->stats->benchmark('bedrockWorkerManager.db.open', function() {
+            $this->stats->benchmark('bedrockWorkerManager.db.open', function () {
                 $this->handle = new SQLite3($this->location);
                 $this->handle->busyTimeout(15000);
                 $this->handle->enableExceptions(true);
@@ -57,7 +57,7 @@ class LocalDB
     public function close()
     {
         if (isset($this->handle)) {
-            $this->stats->benchmark('bedrockWorkerManager.db.close', function() {
+            $this->stats->benchmark('bedrockWorkerManager.db.close', function () {
                 $startTime = microtime(true);
                 $this->handle->close();
                 unset($this->handle);
@@ -68,11 +68,12 @@ class LocalDB
     /**
      * Runs a read query on a local database.
      *
-     * @return array|null
+     * @return array
      */
     public function read(string $query)
     {
         $result = null;
+        $returnValue = [];
         while (true) {
             try {
                 $result = $this->handle->query($query);
@@ -91,7 +92,7 @@ class LocalDB
             $returnValue = $result->fetchArray(SQLITE3_NUM);
         }
 
-        return $returnValue ?? null;
+        return $returnValue;
     }
 
     /**

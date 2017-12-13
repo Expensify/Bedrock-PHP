@@ -43,11 +43,11 @@ class LocalDB
     public function open()
     {
         if (!isset($this->handle)) {
-            $startTime = microtime(true);
-            $this->handle = new SQLite3($this->location);
-            $this->handle->busyTimeout(15000);
-            $this->handle->enableExceptions(true);
-            $this->stats->timer('bedrockWorkerManager.db.open', microtime(true) - $startTime);
+            $this->stats->benchmark('bedrockWorkerManager.db.open', function() {
+                $this->handle = new SQLite3($this->location);
+                $this->handle->busyTimeout(15000);
+                $this->handle->enableExceptions(true);
+            });
         }
     }
 
@@ -57,10 +57,11 @@ class LocalDB
     public function close()
     {
         if (isset($this->handle)) {
-            $startTime = microtime(true);
-            $this->handle->close();
-            unset($this->handle);
-            $this->stats->timer('bedrockWorkerManager.db.close', microtime(true) - $startTime);
+            $this->stats->benchmark('bedrockWorkerManager.db.close', function() {
+                $startTime = microtime(true);
+                $this->handle->close();
+                unset($this->handle);
+            });
         }
     }
 
@@ -72,7 +73,6 @@ class LocalDB
     public function read(string $query)
     {
         $result = null;
-        $returnValue = null;
         while (true) {
             try {
                 $result = $this->handle->query($query);

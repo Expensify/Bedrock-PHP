@@ -107,8 +107,8 @@ try {
         $iteration++;
         $logger->info("Loop iteration", ['iteration' => $iteration]);
 
-        $isFirstTry = true;
         // Step One wait for resources to free up
+        $isFirstTry = true;
         while (true) {
             $childProcesses = [];
             // Get the latest load
@@ -138,6 +138,7 @@ try {
             }
         }
 
+        // Check to see if BWM was able to get jobs on the first attempt. If not, it would add a full second each time it failed, skewing the timer numbers.
         if ($isFirstTry) {
             $stats->timer("bedrockWorkerManager.fullLoop", microtime(true) - $loopStartTime);
         }
@@ -164,9 +165,8 @@ try {
             }
         }
 
-        $loopStartTime = microtime(true);
-
         // Found a job
+        $loopStartTime = microtime(true);
         if ($response['code'] == 200) {
             // BWM jobs are '/' separated names, the last component of which
             // indicates the name of the worker to instantiate to execute this

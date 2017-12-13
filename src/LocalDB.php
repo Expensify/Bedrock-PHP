@@ -92,7 +92,7 @@ class LocalDB
             $returnValue = $result->fetchArray(SQLITE3_NUM);
         }
 
-        return $returnValue;
+        return $returnValue ?? [];
     }
 
     /**

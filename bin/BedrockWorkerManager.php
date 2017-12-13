@@ -116,7 +116,7 @@ try {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
 
-            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp, $stats)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -145,7 +145,7 @@ try {
         // Poll the server until we successfully get a job
         $response = null;
         while (!$response) {
-            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp)) {
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp, $stats)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -417,8 +417,10 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
  *
  * Note: php's filemtime results are cached, so we need to clear
  *       that cache or we'll be getting a stale modified time.
+ *
+ * @param Stats\StatsInterface $stats
  */
-function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimestamp): bool
+function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimestamp, $stats): bool
 {
     return $stats->benchmark('bedrockWorkerManager.checkVersionFile', function () use ($versionWatchFile, $versionWatchFileTimestamp) {
         clearstatcache(true, $versionWatchFile);

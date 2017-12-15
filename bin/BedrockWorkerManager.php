@@ -126,10 +126,11 @@ try {
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            list($jobsToQueue, $target) = $stats->benchmark('bedrockerWorkerManager.getNumberOfJobsToQueue', function () use ($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats) { return getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats); });
+            list($jobsToQueue, $target) = $stats->benchmark('bedrockWorkerManager.getNumberOfJobsToQueue', function () use ($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats) { return getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats); });
             if ($load < $maxLoad && $jobsToQueue > 0) {
                 $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                $stats->counter('bedrockWorkerManager.targetJobs', $target);
+                $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $target);
+                $stats->timer('bedrockWorkerManager.targetJobs', $target);
                 break;
             } else {
                 $logger->info('Not safe to start a new job, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);

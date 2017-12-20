@@ -640,6 +640,7 @@ class Client implements LoggerAwareInterface
      * know it's down. The blacklist time is a random amount of time between 1 second and the maxBlackListTimeout
      * configuration.
      * We also close and clear the socket from the cache, so we don't reuse it.
+     *
      * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
      */
     private function markHostAsFailed(string $host)

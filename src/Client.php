@@ -10,8 +10,6 @@ use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
-define('TRAVIS_RUNNING', isset($_SERVER['TRAVIS_COMMIT']));
-
 /**
  * Client for communicating with bedrock.
  */
@@ -430,6 +428,9 @@ class Client implements LoggerAwareInterface
         }
     }
 
+    /**
+     * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
+     */
     private function getPossibleHosts()
     {
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
@@ -635,6 +636,7 @@ class Client implements LoggerAwareInterface
      * know it's down. The blacklist time is a random amount of time between 1 second and the maxBlackListTimeout
      * configuration.
      * We also close and clear the socket from the cache, so we don't reuse it.
+     * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
      */
     private function markHostAsFailed(string $host)
     {

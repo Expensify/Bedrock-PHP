@@ -71,7 +71,8 @@ if ($enableLoadHandler) {
         jobID integer NOT NULL,
         jobName text NOT NULL,
         started text NOT NULL,
-        ended text
+        ended text,
+        retryAfter text
     );
     CREATE INDEX IF NOT EXISTS localJobsLocalJobID ON localJobs (localJobID);
     PRAGMA journal_mode = WAL;';
@@ -185,6 +186,7 @@ try {
             // in each environment looking for each path.
             $jobsToRun = $response['body']['jobs'];
             foreach ($jobsToRun as $job) {
+                Log::info("JOB JOB JOB: ".json_encode($job));
                 $localJobID = 0;
                 if ($enableLoadHandler) {
                     $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).");");

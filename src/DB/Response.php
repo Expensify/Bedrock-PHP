@@ -117,6 +117,11 @@ class Response implements JsonSerializable, Countable
         return (int) $this->getFromContainer('code');
     }
 
+    public function getCodeLine(): string
+    {
+        return $this->getFromContainer('codeLine');
+    }
+
     /**
      * Get the headers (column names).
      *

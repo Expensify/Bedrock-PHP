@@ -22,23 +22,32 @@ class LocalDB
     /** @var LoggerInterface $logger */
     private $logger;
 
+    /** @var Stats\StatsInterface */
+    private $stats;
+
     /**
      * Creates a localDB object and sets the file location.
+     *
+     * @param Stats\StatsInterface $stats
      */
-    public function __construct(string $location, LoggerInterface $logger)
+    public function __construct(string $location, LoggerInterface $logger, $stats)
     {
         $this->location = $location;
         $this->logger = $logger;
+        $this->stats = $stats;
     }
 
     /**
      * Opens a DB connection.
      */
-    public function open() {
+    public function open()
+    {
         if (!isset($this->handle)) {
-            $this->handle = new SQLite3($this->location);
-            $this->handle->busyTimeout(15000);
-            $this->handle->enableExceptions(true);
+            $this->stats->benchmark('bedrockWorkerManager.db.open', function () {
+                $this->handle = new SQLite3($this->location);
+                $this->handle->busyTimeout(15000);
+                $this->handle->enableExceptions(true);
+            });
         }
     }
 
@@ -48,20 +57,24 @@ class LocalDB
     public function close()
     {
         if (isset($this->handle)) {
-            $this->handle->close();
-            unset($this->handle);
+            $this->stats->benchmark('bedrockWorkerManager.db.close', function () {
+                $startTime = microtime(true);
+                $this->handle->close();
+                unset($this->handle);
+            });
         }
     }
 
     /**
      * Runs a read query on a local database.
      *
-     * @return array|null
+     * @return array
      */
     public function read(string $query)
     {
         $result = null;
-        while(true) {
+        $returnValue = [];
+        while (true) {
             try {
                 $result = $this->handle->query($query);
                 break;
@@ -79,7 +92,7 @@ class LocalDB
             $returnValue = $result->fetchArray(SQLITE3_NUM);
         }
 
-        return $returnValue ?? null;
+        return $returnValue ?? [];
     }
 
     /**
@@ -87,7 +100,7 @@ class LocalDB
      */
     public function write(string $query)
     {
-        while(true) {
+        while (true) {
             try {
                 $this->handle->query($query);
                 break;

@@ -3,8 +3,7 @@
 namespace Expensify\Bedrock;
 
 use Expensify\Bedrock\DB\Response;
-use Expensify\Bedrock\Exceptions\DB\FailedQuery;
-use Expensify\Bedrock\Exceptions\DB\UnknownError;
+use Expensify\Bedrock\Exceptions\BedrockError;
 
 /**
  * Encapsulates the built-in DB plugin for Bedrock.
@@ -49,8 +48,7 @@ class DB extends Plugin
      * @param bool   $idempotent Is this command idempotent? If the command is run twice is the final result the same?
      * @param int    $timeout    Time in microseconds, defaults to 60 seconds
      *
-     * @throws FailedQuery
-     * @throws UnknownError
+     * @throws BedrockError
      */
     public function run(string $sql, bool $idempotent, int $timeout = 60000000): Response
     {
@@ -66,11 +64,11 @@ class DB extends Plugin
         ));
 
         if ($response->getCode() === self::CODE_QUERY_FAILED) {
-            throw new FailedQuery("Query failed: {$response->getError()}");
+            throw new BedrockError($response->getCodeLine()." - ".$response->getError(), $response->getCode());
         }
 
         if ($response->getCode() !== self::CODE_OK) {
-            throw new UnknownError("Unknown error: {$response->getError()}");
+            throw new BedrockError($response->getCodeLine(), $response->getCode());
         }
 
         return $response;

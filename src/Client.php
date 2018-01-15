@@ -40,11 +40,11 @@ class Client implements LoggerAwareInterface
     private static $instances = [];
 
     /**
-     *  @var string The last commit count of the node we talked to. This is used to ensure if we make a subsequent
-     *              request to a different node in the same session, that the node waits until it is at least
-     *              up to date with the commits as the node we originally queried.
+     *  @var ?int The last commit count of the node we talked to. This is used to ensure if we make a subsequent
+     *            request to a different node in the same session, that the node waits until it is at least
+     *            up to date with the commits as the node we originally queried.
      */
-    private $commitCount = '';
+    public $commitCount = null;
 
     /**
      *  @var resource|null Socket to the server.
@@ -370,6 +370,7 @@ class Client implements LoggerAwareInterface
             'net' => $networkTime,
             'wait' => $waitTime,
             'proc' => $processingTime,
+            'commitCount' => $this->commitCount,
         ]);
 
         // Done!
@@ -422,12 +423,18 @@ class Client implements LoggerAwareInterface
 
         // We sent something; can't retry or else we might double-send the same request. Let's make sure we sent the
         // whole thing, else there's a problem.
-        if ($bytesSent != strlen($rawRequest)) {
+        if ($bytesSent < strlen($rawRequest)) {
             $this->logger->info('Bedrock\Client - Could not send the whole request', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
-            throw new BedrockError("Sent partial request to bedrock host $host:$port");
+            throw new ConnectionFailure("Sent partial request to bedrock host $host:$port");
+        } elseif ($bytesSent > strlen($rawRequest)) {
+            $this->logger->info('Bedrock\Client - sent more data than needed', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
+            throw new BedrockError("Sent more content than expected to host $host:$port");
         }
     }
 
+    /**
+     * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
+     */
     private function getPossibleHosts()
     {
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
@@ -601,7 +608,7 @@ class Client implements LoggerAwareInterface
         $responseHeaders = [];
         foreach ($responseHeaderLines as $responseHeaderLine) {
             // Try to split this line
-            $nameValue = explode(":", $responseHeaderLine);
+            $nameValue = explode(":", $responseHeaderLine, 2);
             if (count($nameValue) === 2) {
                 $responseHeaders[trim($nameValue[0])] = trim($nameValue[1]);
             } elseif (strlen($responseHeaderLine)) {
@@ -633,6 +640,8 @@ class Client implements LoggerAwareInterface
      * know it's down. The blacklist time is a random amount of time between 1 second and the maxBlackListTimeout
      * configuration.
      * We also close and clear the socket from the cache, so we don't reuse it.
+     *
+     * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
      */
     private function markHostAsFailed(string $host)
     {

@@ -134,7 +134,7 @@ try {
                 break;
             } else {
                 $logger->info('Not safe to start a new job, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                $localDB->write('DELETE FROM localJobID FROM localJobs WHERE started<'.$microtime(true) + 60 * 60 .' AND ended IS NULL;');
+                $localDB->write('DELETE FROM localJobID FROM localJobs WHERE started<'.microtime(true) + 60 * 60 .' AND ended IS NULL;');
                 $isFirstTry = false;
                 sleep(1);
             }

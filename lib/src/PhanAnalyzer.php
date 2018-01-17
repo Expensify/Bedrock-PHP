@@ -1,6 +1,6 @@
 <?php
 
-namespace Expensify\Libs;
+namespace Expensify\BedrockLibs;
 
 /**
  * This file is use by our CI system to do a code static analysis with Phan.
@@ -35,7 +35,6 @@ class PhanAnalyzer extends CommandLine
 
         $this->checkoutBranch($this->branch);
 
-        Travis::fold("start", "phan.analyze");
         Travis::timeStart();
         echo 'Analyze PHP using Phan'.PHP_EOL;
         $changedFiles = $this->eexec("git diff master...{$this->branch} --name-status | egrep \"^[A|M].*\\.php$\" | cut -f 2");
@@ -52,7 +51,6 @@ class PhanAnalyzer extends CommandLine
             }
         }
         Travis::timeFinish();
-        Travis::fold("end", "phan.analyze");
 
         return $lintOK;
     }

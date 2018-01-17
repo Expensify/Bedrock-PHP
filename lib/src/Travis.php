@@ -1,6 +1,6 @@
 <?php
 
-namespace Expensify\Libs;
+namespace Expensify\BedrockLibs;
 
 /**
  * Class Travis. Utility functions to format output for travis.

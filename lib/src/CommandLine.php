@@ -1,6 +1,6 @@
 <?php
 
-namespace Expensify\Libs;
+namespace Expensify\BedrockLibs;
 
 /**
  * This file contains some common methods for scripts that run in the command line.

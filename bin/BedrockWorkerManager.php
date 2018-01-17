@@ -134,7 +134,7 @@ try {
                 break;
             } else {
                 $logger->info('Not safe to start a new job, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                $localDB->write('DELETE FROM localJobID FROM localJobs WHERE started<'.microtime(true) + 60 * 60 .' AND ended IS NULL;');
+                $localDB->write('DELETE FROM localJobs WHERE started<'.(microtime(true) + 60 * 60).' AND ended IS NULL;');
                 $isFirstTry = false;
                 sleep(1);
             }
@@ -192,10 +192,9 @@ try {
             // in each environment looking for each path.
             $jobsToRun = $response['body']['jobs'];
             foreach ($jobsToRun as $job) {
-                $logger->info(json_encode($job));
                 $localJobID = 0;
                 if ($enableLoadHandler) {
-                    $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job) { $localDB->write("INSERT INTO localJobs (jobID, jobName, started, retryAfter) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).";"); });
+                    $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job) { $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).");"); });
                     $localJobID = $localDB->getLastInsertedRowID();
                 }
                 $parts = explode('/', $job['name']);

@@ -3,13 +3,13 @@ php:
     - '7.0.16'
 
 install:
-  - ./tools/phan-setup.sh
+  - ./ci/phan-setup.sh
   - composer self-update
   - composer install --prefer-dist --no-interaction --dev
 
 script:
-    - ./tools/style.php
-    - ./tools/phan.php
+    - ./ci/style.php
+    - ./ci/phan.php
 
 notifications:
     email:

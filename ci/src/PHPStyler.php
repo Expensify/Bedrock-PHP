@@ -1,6 +1,6 @@
 <?php
 
-namespace Expensify\BedrockLibs;
+namespace Expensify\Bedrock\CI;
 
 /**
  * This file is use by our CI system to make sure the committed files match the Expensify style guide.
@@ -50,6 +50,7 @@ class PHPStyler extends CommandLine
 
         Travis::foldCall("lint.php", $PHPLintCommand);
 
+        Travis::fold("start", "style.php");
         Travis::timeStart();
         echo 'Enforce PHP style'.PHP_EOL;
         $output = $this->getModifiedFiles($this->branch);
@@ -82,6 +83,7 @@ class PHPStyler extends CommandLine
         }
 
         Travis::timeFinish();
+        Travis::fold("end", "style.php");
 
         if (!$lintOK) {
             return false;

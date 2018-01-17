@@ -3,7 +3,7 @@
 
 declare(strict_types=1);
 require realpath(dirname(__FILE__)).'/../vendor/autoload.php';
-use Expensify\BedrockLibs\PHPStyler;
+use Expensify\Bedrock\CI\PHPStyler;
 
 $styler = new PHPStyler($_SERVER['TRAVIS_BRANCH'], $_SERVER['TRAVIS_COMMIT']);
 $valid = $styler->check();

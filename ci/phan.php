@@ -2,7 +2,7 @@
 <?php
 declare(strict_types=1);
 require realpath(dirname(__FILE__)).'/../vendor/autoload.php';
-use Expensify\Libs\PhanAnalyzer;
+use Expensify\Bedrock\CI\PhanAnalyzer;
 
 $analyzer = new PhanAnalyzer($_SERVER['TRAVIS_BRANCH']);
 if ($analyzer->analyze()) {

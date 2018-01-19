@@ -1,6 +1,6 @@
 <?php
 
-namespace Expensify\Libs;
+namespace Expensify\Bedrock\CI;
 
 /**
  * This file is use by our CI system to do a code static analysis with Phan.

@@ -588,7 +588,7 @@ class Client implements LoggerAwareInterface
             // This will remove unwanted characters.
             // Check http://stackoverflow.com/a/20845642 and http://www.php.net/chr for details
             for ($i = 0; $i <= 31; $i++) {
-                $body = str_replace(chr($i), '', $body);
+                $body = str_replace(chr($i), "#$i", $body);
             }
             $jsonStr = str_replace(chr(127), '', $body);
 

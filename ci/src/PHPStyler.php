@@ -1,6 +1,6 @@
 <?php
 
-namespace Expensify\Libs;
+namespace Expensify\Bedrock\CI;
 
 /**
  * This file is use by our CI system to make sure the committed files match the Expensify style guide.
@@ -61,18 +61,8 @@ class PHPStyler extends CommandLine
         foreach ($output as $file) {
             echo "Linting $file... ".PHP_EOL;
 
-            if ($gitRepoName === 'PHP-Libs') {
-                // For PHP-Libs, we use the local file.
-                $fixerCmd = "$dir/tools/php-style-fixer fix --diff $file";
-            } elseif ($gitRepoName === 'Bedrock-PHP') {
-                // For Bedrock-PHP, we use a local file.
-                $fixerCmd = "$dir/lib/tools/php-style-fixer fix --diff $file";
-            } else {
-                // For other repos, we use the published binary (from this repo)
-                $fixerCmd = "$dir/vendor/bin/php-style-fixer fix --diff $file";
-            }
+            $fixerCmd = "$dir/lib/tools/php-style-fixer fix --diff $file";
             $fileResult = $this->eexec($fixerCmd, true);
-
             $fileOK = true;
             foreach ($fileResult as $index => $line) {
                 // When a file is fixed, it outputs `   1) File.php` and this is the only way we have to detect if
@@ -82,7 +72,6 @@ class PHPStyler extends CommandLine
                     $fileOK = false;
                 }
             }
-
             $lintedFiles[] = [$file, $fileOK, join(PHP_EOL, $fileResult)];
             $lintOK = $lintOK && $fileOK;
         }

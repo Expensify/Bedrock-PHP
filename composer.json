@@ -25,8 +25,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Expensify\\Bedrock\\": "src",
-            "Expensify\\Libs\\": "lib/src"
+            "Expensify\\Bedrock\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Expensify\\Bedrock\\CI\\": "ci/src"
         }
     },
     "bin": [

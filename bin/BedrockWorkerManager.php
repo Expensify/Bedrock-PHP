@@ -290,7 +290,12 @@ try {
                             } finally {
                                 if ($enableLoadHandler) {
                                     $localDB->open();
-                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) { $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;"); });
+                                    $time = microtime(true);
+                                    $logger->info('Updating local db');
+                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) {
+                                        $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;");
+                                    });
+                                    $logger->info('Updating local db', ['total' => microtime(true) - $time]);
                                     $localDB->close();
                                 }
                             }

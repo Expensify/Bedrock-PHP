@@ -61,7 +61,7 @@ class PHPStyler extends CommandLine
         foreach ($output as $file) {
             echo "Linting $file... ".PHP_EOL;
 
-            $fixerCmd = "$dir/lib/tools/php-style-fixer fix --diff $file";
+            $fixerCmd = "$dir/ci/php-style-fixer fix --diff $file";
             $fileResult = $this->eexec($fixerCmd, true);
             $fileOK = true;
             foreach ($fileResult as $index => $line) {

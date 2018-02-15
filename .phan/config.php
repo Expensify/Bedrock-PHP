@@ -14,9 +14,7 @@ return [
     'directory_list' => [
         'src/',
         'bin/',
-        'tools/',
         'vendor/',
-        'lib/',
     ],
     'file_list' => [
     ],

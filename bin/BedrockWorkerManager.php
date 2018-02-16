@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Expensify\Bedrock\Client;
+use Expensify\Bedrock\Exceptions\Jobs\DoesNotExist;
+use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
 use Expensify\Bedrock\LocalDB;
@@ -269,7 +271,20 @@ try {
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
                                 ]);
-                                $jobs->finishJob($job['jobID'], $worker->getData());
+                                try {
+                                    $jobs->finishJob($job['jobID'], $worker->getData());
+                                } catch (DoesNotExist $e) {
+                                    // Job does not exist, but we know it had to exist because we were running it, so
+                                    // we assume this is happening because we retried the command in a different server
+                                    // after the first server actually ran the command (but we lost the response).
+                                    $logger->info('Failed to FinishJob we probably retried the command so it is safe to ignore', ['job' => $job, 'exception' => $e]);
+                                } catch (IllegalAction $e) {
+                                    // IllegalAction is returned when we try to finish a job not in RUNNING state (child
+                                    // jobs are put in FINISHED state when they are finished), which can happen if we
+                                    // retried the command in a different server after the first server actually ran the
+                                    // command (but we lost the response).
+                                    $logger->info('Failed to FinishJob we probably retried the command on a child job so it is safe to ignore', ['job' => $job, 'exception' => $e]);
+                                }
                             } catch (RetryableException $e) {
                                 // Worker had a recoverable failure; retry again later.
                                 $logger->info("Job could not complete, retrying.", [
@@ -277,7 +292,14 @@ try {
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
                                 ]);
-                                $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
+                                try {
+                                    $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
+                                } catch (IllegalAction $e) {
+                                    // IllegalAction is returned when we try to finish a job that's not RUNNING, this
+                                    // can happen if we retried the command in a different server
+                                    // after the first server actually ran the command (but we lost the response).
+                                    $logger->info('Failed to RetryJob we probably retried the command so it is safe to ignore', ['job' => $job, 'exception' => $e]);
+                                }
                             } catch (Throwable $e) {
                                 $logger->alert("Job failed with errors, exiting.", [
                                     'name' => $job['name'],
@@ -286,7 +308,14 @@ try {
                                     'exception' => $e,
                                 ]);
                                 // Worker had a fatal error -- mark as failed.
-                                $jobs->failJob($job['jobID']);
+                                try {
+                                    $jobs->failJob($job['jobID']);
+                                } catch (IllegalAction $e) {
+                                    // IllegalAction is returned when we try to finish a job that's not RUNNING, this
+                                    // can happen if we retried the command in a different server
+                                    // after the first server actually ran the command (but we lost the response).
+                                    $logger->info('Failed to FailJob we probably retried a repeat command so it is safe to ignore', ['job' => $job, 'exception' => $e]);
+                                }
                             } finally {
                                 if ($enableLoadHandler) {
                                     $localDB->open();

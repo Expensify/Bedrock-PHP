@@ -21,7 +21,7 @@ use Expensify\Bedrock\LocalDB;
  * After N cycle in the loop, we exit
  * If the versionWatchFile modified time changes, we stop processing new jobs and exit after finishing all running jobs.
  *
- * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--maxIterations=<iteration> --versionWatchFile=<file> --writeConsistency=<consistency>  --enableLoadHandler --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle]`
+ * Usage: `Usage: sudo -u user php ./bin/BedrockWorkerManager.php --jobName=<jobName> --workerPath=<workerPath> --maxLoad=<maxLoad> [--maxIterations=<iteration> --versionWatchFile=<file> --writeConsistency=<consistency>  --enableLoadHandler --minSafeJobs=<minSafeJobs> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle --debugLogs]`
  */
 
 // Verify it's being started correctly
@@ -34,16 +34,19 @@ if (php_sapi_name() !== "cli") {
 }
 
 // Parse the command line and verify the required settings are provided
-$options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::', 'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle']);
+$options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::', 'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'debugLogs']);
 
 // Store parent ID to determine if we should continue forking
 $thisPID = getmypid();
 
 $workerPath = @$options['workerPath'];
 if (!$workerPath) {
-    echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --maxIterations=<iteration> --writeConsistency=<consistency>  --enableLoadHandler --minSafeJobs=<minSafeJobs> --maxJobsInSingleRun=<maxJobsInSingleRun> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle]\r\n";
+    echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --maxIterations=<iteration> --writeConsistency=<consistency>  --enableLoadHandler --minSafeJobs=<minSafeJobs> --maxJobsInSingleRun=<maxJobsInSingleRun> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle -- debugLogs]\r\n";
     exit(1);
 }
+
+// Should we output debug logs?
+define('BWM_DEBUG', isset($options['debugLogs']));
 
 // Add defaults
 $jobName = $options['jobName'] ?? '*'; // Process all jobs by default
@@ -252,6 +255,7 @@ try {
                             'extraParams' => $extraParams,
                         ]);
                         $stats->counter('bedrockJob.create.'.$job['name']);
+                        echoLog('Forking '.$job['name'].' - '.$GLOBALS['REQUEST_ID']."\n");
 
                         // Include the worker now (not in the parent thread) such
                         // that we automatically pick up new versions over the
@@ -273,6 +277,7 @@ try {
                                 ]);
                                 try {
                                     $jobs->finishJob($job['jobID'], $worker->getData());
+                                    echoLog('Finishing '.$job['name'].' - '.$GLOBALS['REQUEST_ID']."\n");
                                 } catch (DoesNotExist $e) {
                                     // Job does not exist, but we know it had to exist because we were running it, so
                                     // we assume this is happening because we retried the command in a different server
@@ -294,6 +299,7 @@ try {
                                 ]);
                                 try {
                                     $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
+                                    echoLog('Retrying '.$job['name'].' - '.$GLOBALS['REQUEST_ID']."\n");
                                 } catch (IllegalAction $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
@@ -310,6 +316,7 @@ try {
                                 // Worker had a fatal error -- mark as failed.
                                 try {
                                     $jobs->failJob($job['jobID']);
+                                    echoLog('Failing '.$job['name'].' - '.$GLOBALS['REQUEST_ID']."\n");
                                 } catch (IllegalAction $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
@@ -464,4 +471,16 @@ function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimesta
 
         return $versionChanged;
     });
+}
+
+/**
+ * Simple wrapper to log information in debug mode
+ */
+function echoLog(string $log)
+{
+    if (!BWM_DEBUG) {
+        return;
+    }
+
+    echo date('Y-m-d H:i:s').' '.$log;
 }

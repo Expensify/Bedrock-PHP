@@ -194,8 +194,8 @@ try {
             $jobsToRun = $response['body']['jobs'];
             foreach ($jobsToRun as $job) {
                 $localJobID = 0;
-                $safeJobName = SQLite3::escapeString($job['name']);
                 if ($enableLoadHandler) {
+                    $safeJobName = SQLite3::escapeString($job['name']);
                     $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName) {
                         $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).");");
                     });

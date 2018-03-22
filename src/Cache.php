@@ -72,6 +72,7 @@ class Cache extends Plugin
      * Call the bedrock cache methods, and handle connection error.
      *
      * @param string $body
+     *
      * @return mixed|null
      */
     private function call(string $method, array $headers, $body = '')

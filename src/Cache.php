@@ -34,13 +34,7 @@ class Cache extends Plugin
             'key' => $name,
             'version' => $version,
         ]);
-
-        return $this->call([
-            "ReadCache",
-            [
-                "name" => $fullName,
-            ],
-        ]);
+        return $this->call("ReadCache", ["name" => $fullName]);
     }
 
     /**
@@ -71,21 +65,16 @@ class Cache extends Plugin
             $headers["name"] = "$name/";
         }
 
-        return $this->call([
-                "WriteCache",
-                $headers,
-                $value,
-        ]);
+        return $this->call("WriteCache", $headers, $value);
     }
 
     /**
      * Call the bedrock cache methods, and handle connection error.
      *
-     * @param array $parameters
-     *
+     * @param string $body
      * @return mixed|null
      */
-    private function call(array $parameters)
+    private function call(string $method, array $headers, $body = '')
     {
         if (self::$hasFailed) {
             $this->client->getLogger()->info('Skip Bedrock Cache call because we have failed before');
@@ -94,9 +83,11 @@ class Cache extends Plugin
         }
 
         try {
-            return call_user_func_array([$this->client, 'call'], $parameters);
+            return $this->client->getStats()->benchmark("bedrock.cache.$method", function () use ($method, $headers, $body) {
+                return $this->client->call($method, $headers, $body);
+            });
         } catch (ConnectionFailure $e) {
-            $this->client->getLogger()->alert('Bedrock Cache read', ['exception' => $e]);
+            $this->client->getLogger()->alert('Bedrock Cache failure', ['exception' => $e]);
             self::$hasFailed = true;
 
             return;

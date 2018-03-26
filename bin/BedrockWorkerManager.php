@@ -265,15 +265,25 @@ try {
 
                             // Open the DB connection after the fork in the child process.
                             try {
-                                // Run the worker.  If it completes successfully, finish the job.
-                                $worker->run();
+                                $logger->info("things!", ["mockRequest" => $worker->getParam("mockRequest")]);
+                                if (!$worker->getParam("mockRequest")) {
+                                    // Run the worker.  If it completes successfully, finish the job.
+                                    $worker->run();
 
-                                // Success
-                                $logger->info("Job completed successfully, exiting.", [
-                                    'name' => $job['name'],
-                                    'id' => $job['jobID'],
-                                    'extraParams' => $extraParams,
-                                ]);
+                                    // Success
+                                    $logger->info("Job completed successfully, exiting.", [
+                                        'name' => $job['name'],
+                                        'id' => $job['jobID'],
+                                        'extraParams' => $extraParams,
+                                    ]);
+                                } else {
+                                    $logger->info("Mock job, not running and marking as finished.", [
+                                        'name' => $job['name'],
+                                        'id' => $job['jobID'],
+                                        'extraParams' => $extraParams,
+                                    ]);
+                                }
+
                                 try {
                                     $jobs->finishJob($job['jobID'], $worker->getData());
                                 } catch (DoesNotExist $e) {

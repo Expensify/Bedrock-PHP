@@ -217,6 +217,7 @@ class Jobs extends Plugin
         $headers = [
             "name" => $name,
             "numResults" => $numResults,
+            "mockRequest" => true,
         ];
 
         return $this->call("GetJobs", $headers);

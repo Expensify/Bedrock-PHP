@@ -152,7 +152,7 @@ class Jobs extends Plugin
                 'firstRun'    => $firstRun,
                 'repeat'      => $repeat,
                 'unique'      => $unique,
-                'priority'    => $priority,
+                'jobPriority' => $priority,
                 'parentJobID' => $parentJobID,
                 'Connection'  => $connection,
                 // If the name of the job has to be unique, Bedrock will return any existing job that exists with the
@@ -177,6 +177,14 @@ class Jobs extends Plugin
     public function createJobs(array $jobs): array
     {
         $this->client->getLogger()->info("Create jobs", ['jobs' => $jobs]);
+
+        // We renamed the `priority` param to `jobPriority` because `priority` is a generic param of any bedrock command.
+        foreach ($jobs as $i => $job) {
+            if (isset($jobs[$i]['priority'])) {
+                $jobs[$i]['jobPriority'] = $jobs[$i]['priority'];
+                unset($jobs[$i]['priority']);
+            }
+        }
 
         $response = $this->call(
             'CreateJobs',

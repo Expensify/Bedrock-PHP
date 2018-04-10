@@ -29,6 +29,15 @@ class Client implements LoggerAwareInterface
     const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
+     * Priorities a command can have.
+     */
+    const PRIORITY_MIN = 0;
+    const PRIORITY_LOW = 250;
+    const PRIORITY_NORMAL = 500;
+    const PRIORITY_HIGH = 750;
+    const PRIORITY_MAX = 1000;
+
+    /**
      * @var array This is a default configuration applied to all instances of this class. They can be overriden in the
      *            constructor.
      */
@@ -109,6 +118,11 @@ class Client implements LoggerAwareInterface
     private $lastHost = '';
 
     /**
+     * @var int The priority to send the commands with.
+     */
+    private $commandPriority;
+
+    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
@@ -122,6 +136,7 @@ class Client implements LoggerAwareInterface
      *                      StatsInterface|null  stats               Class to use for statistics tracking
      *                      string|null          writeConsistency    The bedrock write consistency we want to use
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
+     *                      int|null             commandPriority     The priority to send the commands with
      *
      * @throws BedrockError
      */
@@ -137,6 +152,7 @@ class Client implements LoggerAwareInterface
         $this->stats = $config['stats'];
         $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
+        $this->commandPriority = $config['commandPriority'];
 
         // If the caller explicitly set `mockRequests`, use that value.
         if (isset($config['mockRequests'])) {
@@ -202,6 +218,7 @@ class Client implements LoggerAwareInterface
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
+            'commandPriority' => null,
         ], self::$defaultConfig, $config);
     }
 
@@ -281,6 +298,10 @@ class Client implements LoggerAwareInterface
         // Add mock request header if set.
         if ($this->mockRequests) {
             $headers['mockRequest'] = true;
+        }
+
+        if ($this->commandPriority) {
+            $headers['priority'] = $this->commandPriority;
         }
 
         $this->logger->info('Bedrock\Client - Starting a request', [

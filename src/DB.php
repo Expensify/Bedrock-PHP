@@ -48,20 +48,26 @@ class DB extends Plugin
      * @param bool   $idempotent Is this command idempotent? If the command is run twice is the final result the same?
      * @param int    $timeout    Time in microseconds, defaults to 60 seconds
      *
+     * @return array
      * @throws BedrockError
      */
     public function run(string $sql, bool $idempotent, int $timeout = 60000000): Response
     {
         $sql = substr($sql, -1) === ";" ? $sql : $sql.";";
-        $response = new Response($this->client->call(
-            'Query',
-            [
-                'query' => $sql,
-                'format' => "json",
-                'idempotent' => $idempotent,
-                'timeout' => $timeout,
-            ]
-        ));
+        $matches = [];
+        preg_match('/\s*(select|insert|delete|update).*/i', $sql, $matches);
+        $operation = isset($matches[1]) && in_array(strtolower($matches[1]), ['insert', 'update', 'delete', 'select']) ? strtolower($matches[1]) : 'unknown';
+        $response = $this->client->getStats()->benchmark("bedrock.db.query.$operation", function () use ($sql, $idempotent, $timeout) {
+            return new Response($this->client->call(
+                'Query',
+                [
+                    'query' => $sql,
+                    'format' => "json",
+                    'idempotent' => $idempotent,
+                    'timeout' => $timeout,
+                ]
+            ));
+        });
 
         if ($response->getCode() === self::CODE_QUERY_FAILED) {
             throw new BedrockError($response->getCodeLine()." - ".$response->getError(), $response->getCode());

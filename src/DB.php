@@ -48,8 +48,6 @@ class DB extends Plugin
      * @param bool   $idempotent Is this command idempotent? If the command is run twice is the final result the same?
      * @param int    $timeout    Time in microseconds, defaults to 60 seconds
      *
-     * @return array
-     *
      * @throws BedrockError
      */
     public function run(string $sql, bool $idempotent, int $timeout = 60000000): Response

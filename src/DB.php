@@ -49,6 +49,7 @@ class DB extends Plugin
      * @param int    $timeout    Time in microseconds, defaults to 60 seconds
      *
      * @return array
+     *
      * @throws BedrockError
      */
     public function run(string $sql, bool $idempotent, int $timeout = 60000000): Response

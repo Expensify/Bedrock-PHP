@@ -265,7 +265,6 @@ try {
 
                             // Open the DB connection after the fork in the child process.
                             try {
-                                $logger->info("things!", ["mockRequest" => $worker->getParam("mockRequest")]);
                                 if ($worker->getParam("mockRequest") !== '1') {
                                     // Run the worker.  If it completes successfully, finish the job.
                                     $worker->run();

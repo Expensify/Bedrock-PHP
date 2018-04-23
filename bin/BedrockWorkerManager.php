@@ -355,7 +355,7 @@ try {
                     $jobs->failJob($job['jobID']);
                 }
             }
-            // After starting a few jobs, wait for a couple of seconds to give time to some jobs to finish so its more
+            // After starting a few jobs, wait for a couple of seconds to give time to some jobs to finish so it's more
             // likely that we retrieve a higher number of jobs per GetJobs call.
             sleep(2);
         } elseif ($response['code'] == 303) {

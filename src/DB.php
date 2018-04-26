@@ -50,7 +50,7 @@ class DB extends Plugin
      *
      * @throws BedrockError
      */
-    public function run(string $sql, bool $idempotent, int $timeout = 60000000): Response
+    public function run(string $sql, bool $idempotent, int $timeout = 60000): Response
     {
         $sql = substr($sql, -1) === ";" ? $sql : $sql.";";
         $matches = [];

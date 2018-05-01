@@ -129,7 +129,7 @@ try {
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
             list($jobsToQueue, $target) = $stats->benchmark('bedrockWorkerManager.getNumberOfJobsToQueue', function () use ($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats) { return getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats); });
-            if ($load < $maxLoad && $jobsToQueue > 0) {
+            if ($load < $maxLoad && $jobsToQueue > 0 && $jobsToQueue >= $minSafeJobs / 2) {
                 $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $target);
                 $stats->timer('bedrockWorkerManager.targetJobs', $target);
@@ -364,9 +364,6 @@ try {
                     $jobs->failJob($job['jobID']);
                 }
             }
-            // After starting a few jobs, wait for a couple of seconds to give time to some jobs to finish so it's more
-            // likely that we retrieve a higher number of jobs per GetJobs call.
-            sleep(2);
         } elseif ($response['code'] == 303) {
             $logger->info("No job found, retrying.");
         } else {

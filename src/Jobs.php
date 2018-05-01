@@ -220,13 +220,14 @@ class Jobs extends Plugin
      *
      * @return array Containing all job details
      */
-    public function getJobs(string $name, int $numResults): array
+    public function getJobs(string $name, int $numResults, array $params = []): array
     {
         $headers = [
             "name" => $name,
             "numResults" => $numResults,
-            "mockRequest" => true,
         ];
+
+        $headers = array_merge($headers, $params);
 
         return $this->call("GetJobs", $headers);
     }

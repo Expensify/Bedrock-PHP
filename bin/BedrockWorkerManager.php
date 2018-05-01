@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Expensify\Bedrock\Client;
+use Expensify\Bedrock\Exceptions\Jobs\DoesNotExist;
+use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
 use Expensify\Bedrock\LocalDB;
@@ -127,7 +129,7 @@ try {
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
             list($jobsToQueue, $target) = $stats->benchmark('bedrockWorkerManager.getNumberOfJobsToQueue', function () use ($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats) { return getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats); });
-            if ($load < $maxLoad && $jobsToQueue > 0) {
+            if ($load < $maxLoad && $jobsToQueue > 0 && $jobsToQueue >= $minSafeJobs / 2) {
                 $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $target);
                 $stats->timer('bedrockWorkerManager.targetJobs', $target);
@@ -194,7 +196,10 @@ try {
             foreach ($jobsToRun as $job) {
                 $localJobID = 0;
                 if ($enableLoadHandler) {
-                    $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job) { $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$job['name']}', ".microtime(true).");"); });
+                    $safeJobName = SQLite3::escapeString($job['name']);
+                    $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName) {
+                        $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).");");
+                    });
                     $localJobID = $localDB->getLastInsertedRowID();
                 }
                 $parts = explode('/', $job['name']);
@@ -261,16 +266,38 @@ try {
 
                             // Open the DB connection after the fork in the child process.
                             try {
-                                // Run the worker.  If it completes successfully, finish the job.
-                                $worker->run();
+                                if ($worker->getParam("mockRequest") !== '1') {
+                                    // Run the worker.  If it completes successfully, finish the job.
+                                    $worker->run();
 
-                                // Success
-                                $logger->info("Job completed successfully, exiting.", [
-                                    'name' => $job['name'],
-                                    'id' => $job['jobID'],
-                                    'extraParams' => $extraParams,
-                                ]);
-                                $jobs->finishJob($job['jobID'], $worker->getData());
+                                    // Success
+                                    $logger->info("Job completed successfully, exiting.", [
+                                        'name' => $job['name'],
+                                        'id' => $job['jobID'],
+                                        'extraParams' => $extraParams,
+                                    ]);
+                                } else {
+                                    $logger->info("Mock job, not running and marking as finished.", [
+                                        'name' => $job['name'],
+                                        'id' => $job['jobID'],
+                                        'extraParams' => $extraParams,
+                                    ]);
+                                }
+
+                                try {
+                                    $jobs->finishJob($job['jobID'], $worker->getData());
+                                } catch (DoesNotExist $e) {
+                                    // Job does not exist, but we know it had to exist because we were running it, so
+                                    // we assume this is happening because we retried the command in a different server
+                                    // after the first server actually ran the command (but we lost the response).
+                                    $logger->info('Failed to FinishJob we probably retried the command so it is safe to ignore', ['job' => $job, 'exception' => $e]);
+                                } catch (IllegalAction $e) {
+                                    // IllegalAction is returned when we try to finish a job not in RUNNING state (child
+                                    // jobs are put in FINISHED state when they are finished), which can happen if we
+                                    // retried the command in a different server after the first server actually ran the
+                                    // command (but we lost the response).
+                                    $logger->info('Failed to FinishJob we probably retried the command on a child job so it is safe to ignore', ['job' => $job, 'exception' => $e]);
+                                }
                             } catch (RetryableException $e) {
                                 // Worker had a recoverable failure; retry again later.
                                 $logger->info("Job could not complete, retrying.", [
@@ -278,7 +305,14 @@ try {
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
                                 ]);
-                                $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
+                                try {
+                                    $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
+                                } catch (IllegalAction $e) {
+                                    // IllegalAction is returned when we try to finish a job that's not RUNNING, this
+                                    // can happen if we retried the command in a different server
+                                    // after the first server actually ran the command (but we lost the response).
+                                    $logger->info('Failed to RetryJob we probably retried the command so it is safe to ignore', ['job' => $job, 'exception' => $e]);
+                                }
                             } catch (Throwable $e) {
                                 $logger->alert("Job failed with errors, exiting.", [
                                     'name' => $job['name'],
@@ -287,11 +321,23 @@ try {
                                     'exception' => $e,
                                 ]);
                                 // Worker had a fatal error -- mark as failed.
-                                $jobs->failJob($job['jobID']);
+                                try {
+                                    $jobs->failJob($job['jobID']);
+                                } catch (IllegalAction $e) {
+                                    // IllegalAction is returned when we try to finish a job that's not RUNNING, this
+                                    // can happen if we retried the command in a different server
+                                    // after the first server actually ran the command (but we lost the response).
+                                    $logger->info('Failed to FailJob we probably retried a repeat command so it is safe to ignore', ['job' => $job, 'exception' => $e]);
+                                }
                             } finally {
                                 if ($enableLoadHandler) {
                                     $localDB->open();
-                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) { $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;"); });
+                                    $time = microtime(true);
+                                    $logger->info('Updating local db');
+                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) {
+                                        $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;");
+                                    });
+                                    $logger->info('Updating local db', ['total' => microtime(true) - $time]);
                                     $localDB->close();
                                 }
                             }

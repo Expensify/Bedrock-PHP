@@ -29,6 +29,15 @@ class Client implements LoggerAwareInterface
     const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
+     * Priorities a command can have.
+     */
+    const PRIORITY_MIN = 0;
+    const PRIORITY_LOW = 250;
+    const PRIORITY_NORMAL = 500;
+    const PRIORITY_HIGH = 750;
+    const PRIORITY_MAX = 1000;
+
+    /**
      * @var array This is a default configuration applied to all instances of this class. They can be overriden in the
      *            constructor.
      */
@@ -109,6 +118,11 @@ class Client implements LoggerAwareInterface
     private $lastHost = '';
 
     /**
+     * @var int The priority to send the commands with.
+     */
+    private $commandPriority;
+
+    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
@@ -122,6 +136,7 @@ class Client implements LoggerAwareInterface
      *                      StatsInterface|null  stats               Class to use for statistics tracking
      *                      string|null          writeConsistency    The bedrock write consistency we want to use
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
+     *                      int|null             commandPriority     The priority to send the commands with
      *
      * @throws BedrockError
      */
@@ -137,6 +152,7 @@ class Client implements LoggerAwareInterface
         $this->stats = $config['stats'];
         $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
+        $this->commandPriority = $config['commandPriority'];
 
         // If the caller explicitly set `mockRequests`, use that value.
         if (isset($config['mockRequests'])) {
@@ -202,6 +218,7 @@ class Client implements LoggerAwareInterface
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
+            'commandPriority' => null,
         ], self::$defaultConfig, $config);
     }
 
@@ -283,6 +300,10 @@ class Client implements LoggerAwareInterface
             $headers['mockRequest'] = true;
         }
 
+        if ($this->commandPriority) {
+            $headers['priority'] = $this->commandPriority;
+        }
+
         $this->logger->info('Bedrock\Client - Starting a request', [
             'command' => $method,
             'clusterName' => $this->clusterName,
@@ -307,7 +328,23 @@ class Client implements LoggerAwareInterface
         $rawRequest .= $body;
 
         $response = null;
-        $hostConfigs = $this->getPossibleHosts();
+        $preferredHost = null;
+        if (isset($headers['host'])) {
+            $preferredHost = $headers['host'];
+            unset($headers['host']);
+        }
+        $hostConfigs = $this->getPossibleHosts($preferredHost);
+
+        // If we passed a preferred host and we already had a connected socket, but to a different host and the preferred
+        // host is not blacklisted (the preferred host is returned first in the possible hosts array only when it's not blacklisted)
+        // then we close the socket in order to connect to the preferred one.
+        $closeSocketAfterRequest = false;
+        if ($preferredHost && $this->socket && key($hostConfigs) !== $this->lastHost) {
+            @socket_close($this->socket);
+            $this->socket = null;
+            $closeSocketAfterRequest = true;
+        }
+
         $hostName = null;
         while (!$response && count($hostConfigs)) {
             reset($hostConfigs);
@@ -356,10 +393,16 @@ class Client implements LoggerAwareInterface
             throw new ConnectionFailure('Could not connect to Bedrock hosts or failovers');
         }
 
+        // If we connected to a preferred host, disconnect from it so we don't send all future requests to it.
+        if ($closeSocketAfterRequest) {
+            @socket_close($this->socket);
+            $this->socket = null;
+        }
+
         // Log how long this particular call took
         $processingTime = isset($response['headers']['processTime']) ? $response['headers']['processTime'] : 0;
         $serverTime     = isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0;
-        $clientTime     = (int) (microtime(true) - $timeStart) * 1000;
+        $clientTime     = round(microtime(true) - $timeStart, 3);
         $networkTime    = $clientTime - $serverTime;
         $waitTime       = $serverTime - $processingTime;
         $this->logger->info('Bedrock\Client - Request finished', [
@@ -433,9 +476,11 @@ class Client implements LoggerAwareInterface
     }
 
     /**
+     * @param ?string $preferredHost If passed, it will prefer this host over any of the configured ones. This does not
+     *                               ensure it will use that host, but it will try to use it if its not blacklisted.
      * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
      */
-    private function getPossibleHosts()
+    private function getPossibleHosts(string $preferredHost = null)
     {
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
@@ -475,7 +520,7 @@ class Client implements LoggerAwareInterface
         $failoverHostNames = array_keys($this->failoverHostConfigs);
         shuffle($failoverHostNames);
         $mainHostName = array_rand($this->mainHostConfigs);
-        $hostNames = array_merge([$mainHostName], $failoverHostNames);
+        $hostNames = array_unique(array_merge($preferredHost ? [$preferredHost] : [], [$mainHostName], $failoverHostNames));
 
         $nonBlackListedHosts = [];
         foreach ($hostNames as $hostName) {

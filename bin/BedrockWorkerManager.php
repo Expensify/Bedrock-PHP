@@ -160,7 +160,7 @@ try {
             // Ready to get a new job
             try {
                 // Query the server for a job
-                $response = $jobs->getJobs($jobName, $jobsToQueue);
+                $response = $jobs->getJobs($jobName, $jobsToQueue, ['getMockedJobs' => true]);
             } catch (Exception $e) {
                 // Try again in 60 seconds
                 $logger->info('Problem getting job, retrying in 60s', ['message' => $e->getMessage()]);

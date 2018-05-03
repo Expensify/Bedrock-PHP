@@ -526,7 +526,10 @@ class Client implements LoggerAwareInterface
         foreach ($hostNames as $hostName) {
             $blackListedUntil = $cachedHostConfigs[$hostName]['blacklistedUntil'] ?? null;
             if (!$blackListedUntil || $blackListedUntil < time()) {
-                $nonBlackListedHosts[$hostName] = $cachedHostConfigs[$hostName];
+                // Make sure the host actually has a valid config before trying to add it to the list.
+                if (in_array($hostName, $cachedHostConfigs)) {
+                    $nonBlackListedHosts[$hostName] = $cachedHostConfigs[$hostName];
+                }
             }
         }
 

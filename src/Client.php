@@ -520,16 +520,14 @@ class Client implements LoggerAwareInterface
         $failoverHostNames = array_keys($this->failoverHostConfigs);
         shuffle($failoverHostNames);
         $mainHostName = array_rand($this->mainHostConfigs);
-        $hostNames = array_unique(array_merge($preferredHost ? [$preferredHost] : [], [$mainHostName], $failoverHostNames));
+        $preferredHost = in_array($preferredHost, $cachedHostConfigs) ? [$preferredHost] : [];
+        $hostNames = array_unique(array_merge([$preferredHost], [$mainHostName], $failoverHostNames));
 
         $nonBlackListedHosts = [];
         foreach ($hostNames as $hostName) {
             $blackListedUntil = $cachedHostConfigs[$hostName]['blacklistedUntil'] ?? null;
             if (!$blackListedUntil || $blackListedUntil < time()) {
-                // Make sure the host actually has a valid config before trying to add it to the list.
-                if (in_array($hostName, $cachedHostConfigs)) {
-                    $nonBlackListedHosts[$hostName] = $cachedHostConfigs[$hostName];
-                }
+                $nonBlackListedHosts[$hostName] = $cachedHostConfigs[$hostName];
             }
         }
 

@@ -521,7 +521,7 @@ class Client implements LoggerAwareInterface
         shuffle($failoverHostNames);
         $mainHostName = array_rand($this->mainHostConfigs);
         $preferredHost = in_array($preferredHost, $cachedHostConfigs) ? [$preferredHost] : [];
-        $hostNames = array_unique(array_merge([$preferredHost], [$mainHostName], $failoverHostNames));
+        $hostNames = array_unique(array_merge($preferredHost, [$mainHostName], $failoverHostNames));
 
         $nonBlackListedHosts = [];
         foreach ($hostNames as $hostName) {

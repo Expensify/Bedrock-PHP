@@ -31,6 +31,13 @@ class Jobs extends Plugin
     const STATE_RUNNING = "RUNNING";
 
     /**
+     * State of a job that is currently in the runqueued state.
+     *
+     * @var string
+     */
+    const STATE_RUNQUEUED = "RUNQUEUED";
+
+    /**
      * State of a job that is currently queued.
      *
      * @var string

@@ -50,12 +50,32 @@ $jobName = $options['jobName'] ?? '*'; // Process all jobs by default
 $maxLoad = floatval($options['maxLoad'] ?? 1.0); // Max load of 1.0 by default
 $maxIterations = intval($options['maxIterations'] ?? -1); // Unlimited iterations by default
 $pathToDB = $options['localJobsDBPath'] ?? '/tmp/localJobsDB.sql';
-$minSafeJobs = intval($options['minSafeJobs'] ?? 10);  // The minimum number of jobs before we start paying attention
 $maxJobsForSingleRun = intval($options['maxJobsInSingleRun'] ?? 10);
-$maxSafeTime = intval($options['maxSafeTime'] ?? 0); // The maximum job time before we start paying attention
-$debugThrottle = isset($options['debugThrottle']); // Set to true to maintain a debug history
 $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD load handler
+
+// The amount slower that jobs from one interval need to be compared to the previous steady-state value in order to
+// cause a backoff in the simultaneous jobs target.
+$backoffThreshold = floatval($options['backoffThreshold'] ?? 1.5);
+
+// If set, we don't delete old jobs from our history of calculations for the number of jobs to queue.
+$debugThrottle = isset($options['debugThrottle']);
+
+// We assume that it's always safe to run up to this many jobs. Could be called `guaranteedSafeJobCount`.
+$minSafeJobs = intval($options['minSafeJobs'] ?? 10);
+
+// If job batches take less time than this, we assume that everything is going fine. Could be called `guaranteedSafeBatchTime`.
+$maxSafeTime = intval($options['maxSafeTime'] ?? 0); // The maximum job time before we start paying attention
+
+// Internal state variables for determining the number of jobs to run at one time.
+// $target is the number of jobs that we think we can safely run at one time. It defaults to the number of jobs we've
+// decided is always safe, and is continually adjusted by `getNumberOfJobsToQueue`.
 $target = $minSafeJobs;
+// $ssthresh is the slow start threshold, a name stolen from TCP. It indicates the target at which we'll stop doing
+// fast ramp up in the number of jobs and switch to the congestion avoidance phase of AIMD. It's initially set high and
+// adjusted down to match $target when a congestion event occurs.
+$ssthresh = 1000000;
+$steadyStateDuration = 0;
+
 $bedrock = Client::getInstance();
 
 // Prepare to use the host logger and stats client, if configured
@@ -128,14 +148,18 @@ try {
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            list($jobsToQueue, $target) = $stats->benchmark('bedrockWorkerManager.getNumberOfJobsToQueue', function () use ($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats) { return getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats); });
-            if ($load < $maxLoad && $jobsToQueue > 0 && $jobsToQueue >= $minSafeJobs / 2) {
-                $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+
+            $jobsToQueue = getNumberOfJobsToQueue();
+            if ($load >= $maxLoad) {
+                $logger->info('[AIMD2] Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
+                sleep(1);
+            } else if ($jobsToQueue >= $minSafeJobs / 2) {
+                $logger->info('[AIMD2] Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $target);
                 $stats->timer('bedrockWorkerManager.targetJobs', $target);
                 break;
             } else {
-                $logger->info('Not safe to start a new job, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('[AIMD2] Not safe to start a new job, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $localDB->write('DELETE FROM localJobs WHERE started<'.(microtime(true) + 60 * 60).' AND ended IS NULL;');
                 $isFirstTry = false;
                 sleep(1);
@@ -333,9 +357,9 @@ try {
                                 if ($enableLoadHandler) {
                                     $localDB->open();
                                     $time = microtime(true);
-                                    $logger->info('Updating local db');
-                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) {
-                                        $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;");
+                                    //$logger->info('[AIMD2] Setting finish time for job.', ['localJobID' => $localJobID, 'ended' => $time]);
+                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID, $time) {
+                                        $localDB->write("UPDATE localJobs SET ended=".$time." WHERE localJobID=$localJobID;");
                                     });
                                     $logger->info('Updating local db', ['total' => microtime(true) - $time]);
                                     $localDB->close();
@@ -386,76 +410,195 @@ $logger->info('Stopped BedrockWorkerManager');
 /**
  * Determines whether or not we call GetJob and try to start a new job
  *
- * @param LocalDB                 $localDB
- * @param int                     $target            The current max number of jobs allowed.
- * @param int                     $maxSafeTime       Maximum safe average time for a batch of jobs before it cuts back.
- * @param bool                    $enableLoadHandler
- * @param int                     $minSafeJobs       A number of jobs that will always be safe to run.
- * @param bool                    $debugThrottle     If true, doesn't delete jobs from localDB
- * @param Psr\Log\LoggerInterface $logger
- *
- * @return array First value how many jobs it is safe to queue, second is an updated $target value.
+ * @return how many jobs it is safe to queue,.
  */
-function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime, int $minSafeJobs, bool $enableLoadHandler, int $maxJobsForSingleRun, bool $debugThrottle, Psr\Log\LoggerInterface $logger, $stats): array
+function getNumberOfJobsToQueue(): int
 {
+    global $enableLoadHandler, $logger, $maxJobsForSingleRun, $localDB, $minSafeJobs, $target, $ssthresh,
+    $steadyStateDuration, $backoffThreshold;
+    // Ok, here's the algorithm for this. We're always either ramping up the number of simultaneous jobs, or cutting it
+    // back. There are two methods for ramping up:
+    // 1) Slow start. This is poorly named, because it actually tries to start quickly, and ramps up exponentially.
+    // 2) Congestion avoidance. This is a slow trickle up.
+    // There's only one way to slow down. If we have a "congestion event", we cut the target number of jobs to half the
+    // currently running jobs. Note that we don't cut this to half the *target* jobs. If we have a target of 100, but
+    // only 10 jobs are running and we're slowing down, we want to run 5 jobs, not 50.
+    // 
+    // The hard part here is determining when things are "slowing down" this used to be determined by "batch size", but
+    // that's variable, and there's no guarantee that any particular jobs are finished, and so it's sort of unclear
+    // what each "batch" is actually measuring.
+    // What we have, in simplified form, is a table that looks like:
+    // JobID | runtime
+    // ------+--------
+    //     1 |      5s
+    //     2 |      7s
+    //     3 |    NULL
+    //     4 |      6s
+    //     5 |    NULL
+    // etc.
+    // There can be up to $target NULL lines in here at any given time (jobs in progress), which will be biased toward
+    // the end of the list. We also have the actual start and end time of all these jobs, so we can do things like only
+    // consider jobs that have run recently.
+    //
+    // How do we know if we're speeding up or slowing down, and how do we know when we're slowing down, if we're
+    // slowing down by enough to cut our target? We'd like to react quickly, because if we are starting to overload
+    // external systems, we'd like to react before that load starts causing other problems. It looks like most of our
+    // jobs complete within hundreds of milliseconds, and so we probably have granular enough data with job timing to
+    // get something useful out of that.
+    // We don't want to keep *too* long of a job history, because we don't want to be hampered when switching job
+    // types. I.e., we don't want to switch from processing mostly jobs that take 0.5s to mostly jobs that take 1s, and
+    // be stuck forever thinking they're slow because we're comparing to hours of data on old jobs.
+    //
+    // I like the idea of using a timing based approach here - it scales automatically to any number of jobs we're
+    // currently running, and we can guarantee a reaction time in a fixed time window, rather than across a variable
+    // length number of jobs.
+    // I'm proposing this as the fallback criteria:
+    // On each iteration, we:
+    // 1) average the duration of all jobs finished in the last 10 seconds.
+    // 2) average the duration of all jobs finished during the previous 10 seconds.
+    // 3) If either of the above numbers are 0, use the default safe number of jobs.
+    // 4) If the average duration of jobs finished in the last 10 seconds is more than N * the duration of jobs
+    //    finished in the previous 10 seconds, halve the job target. Otherwise, increase the job target.
+    //    The hard part of this is choosing the value of N. In the previous implementation, this was 1.1, which seemed
+    //    too low. I'm proposing 1.5, based on little more than it being bigger than 1.1. Some considerations here are
+    //    that we don't want this to be too slow that every little jitter in job timing causes us to halve our
+    //    throughput, but even more importantly, that we react quickly enough that we don't just allow jobs to
+    //    continually slow by Nx on every iteration. What typically happens when things back up is that they fall off a
+    //    cliff, so to speak, and the time required to complete tasks grow exponentially, so I think this might work.
+
+    // Even better, let's determine some timing for jobs that we will call the "steady state average job duration". Any
+    // time the most recent jobs finished *faster* than the previous jobs, we set the steady state duration to the
+    // average of the jobs in both groups. The idea here is that jitter up and down in job completion time is normal,
+    // and so as long as we see some jobs finishing faster than the previous ones, we assume we're on a fairly "level"
+    // line as for job timing.
+    // If we ever have a set of jobs that runs in more than N * the current steady state duration, we'll halve the
+    // target. This keeps us from slowly but steadily increasing our timing by slightly less than N on each iteration,
+    // though it's still vulnerable to edge cases (i.e., every even batch increases duration by 0.99*N, and every odd
+    // batch decreases by 0.01N).
+    // Even in this edge case, the safety valve kicks in when we've finished no jobs in 10 seconds and reset to our
+    // base target.
+    //
+    // So, on each iteration:
+    // Count the number of jobs that are currently running ($runningCount)
+    // Count the jobs that finished in the last 10 seconds, and average their timing ($lastIntervalCount, $lastIntervalAverage)
+    // Count the jobs that finished in the previous 10 seconds and average their timing ($previousIntervalCount, $previousIntervalAverage)
+    // Delete any jobs that finished more than 20 seconds ago.
+    // If either of these are 0, return the default value.
+    // If $steadyStateDuration is 0, set it to $previousIntervalAverage (to initialize it on the first run). We set it
+    // to the previous interval to avoid setting it to a value that might have only one or two data points, which could
+    // cause an immediate backoff on the first interval.
+    // If $lastIntervalAverage < $previousIntervalAverage update $steadyStateDuration.
+    // If $lastIntervalAverage > $steadyStateDuration * N:
+    //     $target = max($runningCount / 2, default min jobs)
+    //     set $ssthresh to the new $target
+    // Otherwise, increase $target by:
+    //     if $target < $ssthresh, $target += min($lastIntervalCount, $target) // Don't increase by more jobs than
+    //     finished, we shouldn't keep doubling the target if we're only actually running one job per interval.
+    //     else target += 1.
+    // return $target - $runningCount
+    // Note: the whole point of $ssthresh is to speed up quickly at the beginning, it doesn't do anything after that.
+    //
+    // Properties of the backoff algorithm we want:
+    // 1. It should be based on a relatively short history.
+    //    We don't want to be backing off perpetually because we've switched to running jobs primarily of a slower
+    //    type, that are constantly taking longer than a very long existing average.
+    // 2. It should allow for a reasonable amount of jitter. Unlike TCP packet tramsmit times, we don't expect that
+    //    subsequent jobs will take nearly exactly the same amount of time.
+    // 3. It shouldn't allow for slow "Creep up". Allowing for each job or set of jobs to take slightly longer than the
+    //    last one can result in run times slowing over time because none looks so much slower than the last the we
+    //    reduce our target.
+    // Figure out the times for the start and end of each interval.
+
     // Allow for disabling of the load handler.
     if (!$enableLoadHandler) {
-        $logger->info("Load handler not enabled");
+        $logger->info('[AIMD2] Load handler not enabled, scheduling max jobs.', ['maxJobsForSingleRun' => $maxJobsForSingleRun]);
 
-        return [$maxJobsForSingleRun, $target];
+        return $maxJobsForSingleRun;
+    }
+    $now = microtime(true);
+    $intervalDurationSeconds = 10;
+    $oneIntervalAgo = $now - $intervalDurationSeconds;
+    $twoIntervalsAgo = $oneIntervalAgo - $intervalDurationSeconds;
+
+    // Look up how many jobs are currently in progress.
+    $numActive = $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0];
+
+    // Look up how many jobs we've finished recently.
+    $q0 = 'SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended > '.$oneIntervalAgo.';';
+    $temp0 = $localDB->read($q0);
+    $lastIntervalCount = $temp0[0];
+    $lastIntervalAverage = floatval($temp0[1]);
+
+    $q1 = 'SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended > '.$twoIntervalsAgo.' AND ended < '.$oneIntervalAgo.';';
+    $temp1 = $localDB->read($q1);
+    $previousIntervalCount = $temp1[0];
+    $previousIntervalAverage = floatval($temp1[1]);
+
+    $logger->info('[AIMD2] '.$q1);
+    $logger->info('[AIMD2] Calculating number of jobs to run.', ['numActive' => $numActive,
+                                                         'lastIntervalCount' => $lastIntervalCount,
+                                                         'lastIntervalAverage' => $lastIntervalAverage,
+                                                         'previousIntervalCount' => $previousIntervalCount,
+                                                         'previousIntervalAverage' => $previousIntervalAverage,
+                                                         'oneIntervalAgo' => $oneIntervalAgo,
+                                                         'twoIntervalsAgo' => $twoIntervalsAgo]);
+
+    // Delete old stuff.
+    $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
+
+    if ($lastIntervalCount === 0) {
+        $logger->info('[AIMD2] No jobs finished this interval, returning default value.', [ 'minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
+        return $minSafeJobs; //max($target - $numActive, 0);
+    } else if ($previousIntervalCount === 0) {
+        $logger->info('[AIMD2] No jobs finished previous interval, returning default value.', ['minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
+        return $minSafeJobs; //max($target - $numActive, 0);
     }
 
-    // Have we hit our target job count?
-    $numActive = $stats->benchmark('bedrockWorkerManager.db.read.activeJobs', function () use ($localDB) { return $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0]; });
-    if ($numActive < $target) {
-        // Still in a safe zone, don't worry about load
-        $logger->info("Safe to start new job", ["numberOfJobsToQueue" => $target - $numActive, "numActive" => $numActive, "target" => $target]);
-
-        return [$target - $numActive, $target];
+    // Update steadyStateDurationif required.
+    if ($steadyStateDuration === 0 && $previousIntervalAverage > 0) {
+        $steadyStateDuration = $lastIntervalAverage;
+        $logger->info('[AIMD2] Initializing steadyStateDuration', ['steadyStateDuration' => $steadyStateDuration]);
+    } else if ($lastIntervalAverage < $previousIntervalAverage) {
+        $steadyStateDuration = (($lastIntervalAverage * $lastIntervalCount) + ($previousIntervalAverage * $previousIntervalCount)) / ($lastIntervalCount + $previousIntervalCount);
+        $logger->info('[AIMD2] updating steadyStateDuration', ['steadyStateDuration' => $steadyStateDuration]);
     }
 
-    // We're at or over our target; do we have enough data to evaluate the speed?
-    $numFinished = $stats->benchmark('bedrockWorkerManager.db.read.completeJobs', function () use ($localDB) { return $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NOT NULL;')[0]; });
-    if ($numFinished < $target * 2) {
-        // Wait until we finish at least two batches of our target so we can evaluate its speed,
-        // before expanding the batch.
-        $logger->info("Haven't finished two batches of target, not queuing job", ['numberOfJobsToQueue' => 0, 'numActive' => $numActive, 'target' => $target]);
-
-        return [0, $target];
+    // Update our target.
+    if ($lastIntervalAverage > ($steadyStateDuration * $backoffThreshold)) {
+        // Backoff
+        $oldTarget = $target;
+        $target = max(intval($target / 2), $minSafeJobs);
+        $ssthresh = $target;
+        $logger->info('[AIMD2] Backing off jobs target.', ['oldTarget' => $oldTarget,
+                                                   'target' => $target,
+                                                   'lastIntervalAverage' => $lastIntervalAverage,
+                                                   'steadyStateDuration' => $steadyStateDuration,
+                                                   'backoffThreshold' => $backoffThreshold]);
+    } else if ($target < $ssthresh) {
+        // Slow Start
+        $oldTarget = $target;
+        // Set the target to double the number of jobs we're currently running, unless that's lower than the existing
+        // target.
+        $target = max($target, $numActive *2);
+        $logger->info('[AIMD2] Slow start ramp up.', ['oldTarget' => $oldTarget,
+                                              'target' => $target,
+                                              'lastIntervalCount' => $lastIntervalCount,
+                                              'ssthresh' => $ssthresh]);
+    } else {
+        // Congestion Avoidance.
+        // Add one to the current target, but don't go past double the number of currently running jobs, and don't
+        // lower the current target.
+        $target = max($target, min($target + 1, $numActive * 2));
+        $logger->info('[AIMD2] Congestion Avoidance, incrementing target', ['target' => $target]);
     }
 
-    // Calculate the speed of the last 2 batches to see if we're speeding up or slowing down
-    $oldBatchTimes = $stats->benchmark('bedrockWorkerManager.db.read.oldBatchTimes', function () use ($localDB, $target) { return $localDB->read("SELECT ended - started FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;"); });
-    $oldBatchAverageTime = array_sum($oldBatchTimes) / count($oldBatchTimes);
-    $newBatchTimes = $stats->benchmark('bedrockWorkerManager.db.read.newBatchTimes', function () use ($localDB, $target) { return $localDB->read("SELECT ended - started FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target;"); });
-    $newBatchAverageTime = array_sum($newBatchTimes) / count($newBatchTimes);
-    if (($newBatchAverageTime < $maxSafeTime || $newBatchAverageTime < 1.1 * $oldBatchAverageTime) && $numActive <= $target) {
-        // The new batch is going fast enough that we don't really care, or if we do care,
-        // it's going roughly the same speed as the batch before.  This suggests that we
-        // haven't hit any serious bottleneck yet, so let's dial it up ever so slightly and see
-        // if speeds hold at the new target.
-        $target++;
-        $logger->info('Increasing target', ['numberOfJobsToQueue' => $target - $numActive, 'newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
+    // Now we know how many jobs we want to be running, and how many are running, so we can return the difference.
+    $numJobsToRun = max($target - $numActive, 0);
+    $logger->info('[AIMD2] Found number of jobs to run.', ['numJobsToRun' => $numJobsToRun,
+                                                   'target' => $target,
+                                                   'numActive' => $numActive]);
 
-        // Also, blow away any data from more than two batches ago, because we don't
-        // look farther back than that and don't want to accumulate data infinitely.  However,
-        // this is very useful data to keep while debugging to analyze our throttle behavior.
-        if (!$debugThrottle) {
-            $stats->benchmark('bedrockWorkerManager.db.write.deleteOldJobs', function () use ($localDB, $target) { $localDB->write("DELETE FROM localJobs WHERE localJobID IN (SELECT localJobID FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT -1 OFFSET $target * 2);"); });
-        }
-
-        // Authorize one more job given that we've just increased the target by one.
-        return [$target - $numActive, $target];
-    } elseif ($newBatchAverageTime > $maxSafeTime || $newBatchAverageTime < 1.5 * $oldBatchAverageTime) {
-        // Things seem to be slowing down, pull our target back a lot
-        $target = intval(max(floor($target / 2), $minSafeJobs));
-        $logger->info("Jobs are slowing down, halving the target", ['numberOfJobsToQueue' => $target - $numActive, 'newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
-    }
-
-    // Don't authorize BWM to call GetJobs
-    $logger->info("Not queueing job, number of running jobs is above the target", ['numberOfJobsToQueue' => $target - $numActive, 'newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
-
-    return [0, $target];
+    return $numJobsToRun;
 }
 
 /**

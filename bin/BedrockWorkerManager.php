@@ -55,7 +55,7 @@ $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD l
 
 // The amount slower that jobs from one interval need to be compared to the previous steady-state value in order to
 // cause a backoff in the simultaneous jobs target.
-$backoffThreshold = floatval($options['backoffThreshold'] ?? 1.5);
+$backoffThreshold = floatval($options['backoffThreshold'] ?? 1.25);
 
 // If set, we don't delete old jobs from our history of calculations for the number of jobs to queue.
 $debugThrottle = isset($options['debugThrottle']);
@@ -73,7 +73,8 @@ $target = $minSafeJobs;
 // $ssthresh is the slow start threshold, a name stolen from TCP. It indicates the target at which we'll stop doing
 // fast ramp up in the number of jobs and switch to the congestion avoidance phase of AIMD. It's initially set high and
 // adjusted down to match $target when a congestion event occurs.
-$ssthresh = 1000000;
+$ssthreshDefault = 1000000;
+$ssthresh = $ssthreshDefault; 
 $steadyStateDuration = 0;
 
 $bedrock = Client::getInstance();
@@ -150,17 +151,19 @@ try {
             $load = sys_getloadavg()[0];
 
             $jobsToQueue = getNumberOfJobsToQueue();
+            echo "Jobs to queue: $jobsToQueue\n";
             if ($load >= $maxLoad) {
                 $logger->info('[AIMD2] Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 sleep(1);
-            } else if ($jobsToQueue >= $minSafeJobs / 2) {
-                $logger->info('[AIMD2] Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+            } else if ($jobsToQueue > 0) {
+                // $logger->info('[AIMD2] Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $target);
                 $stats->timer('bedrockWorkerManager.targetJobs', $target);
                 break;
             } else {
-                $logger->info('[AIMD2] Not safe to start a new job, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                $localDB->write('DELETE FROM localJobs WHERE started<'.(microtime(true) + 60 * 60).' AND ended IS NULL;');
+                // $logger->info('[AIMD2] Not safe to start a new job, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+                //$localDB->write('DELETE FROM localJobs WHERE started<'.(microtime(true) + 60 * 60).' AND ended IS NULL;');
+                // TODO: The above line seems to break things.
                 $isFirstTry = false;
                 sleep(1);
             }
@@ -222,7 +225,9 @@ try {
                 if ($enableLoadHandler) {
                     $safeJobName = SQLite3::escapeString($job['name']);
                     $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName) {
-                        $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).");");
+                        $q = "INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).");";
+                        //echo $q . "\n";
+                        $localDB->write($q);
                     });
                     $localJobID = $localDB->getLastInsertedRowID();
                 }
@@ -359,7 +364,9 @@ try {
                                     $time = microtime(true);
                                     //$logger->info('[AIMD2] Setting finish time for job.', ['localJobID' => $localJobID, 'ended' => $time]);
                                     $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID, $time) {
-                                        $localDB->write("UPDATE localJobs SET ended=".$time." WHERE localJobID=$localJobID;");
+                                        $q = "UPDATE localJobs SET ended=".$time." WHERE localJobID=$localJobID;";
+                                        //echo $q . "\n";
+                                        $localDB->write($q);
                                     });
                                     $logger->info('Updating local db', ['total' => microtime(true) - $time]);
                                     $localDB->close();
@@ -415,7 +422,7 @@ $logger->info('Stopped BedrockWorkerManager');
 function getNumberOfJobsToQueue(): int
 {
     global $enableLoadHandler, $logger, $maxJobsForSingleRun, $localDB, $minSafeJobs, $target, $ssthresh,
-    $steadyStateDuration, $backoffThreshold;
+    $steadyStateDuration, $backoffThreshold, $ssthreshDefault;
     // Ok, here's the algorithm for this. We're always either ramping up the number of simultaneous jobs, or cutting it
     // back. There are two methods for ramping up:
     // 1) Slow start. This is poorly named, because it actually tries to start quickly, and ramps up exponentially.
@@ -534,7 +541,9 @@ function getNumberOfJobsToQueue(): int
     $previousIntervalCount = $temp1[0];
     $previousIntervalAverage = floatval($temp1[1]);
 
-    $logger->info('[AIMD2] '.$q1);
+    //$logger->info('[AIMD2] '.$q0);
+    //$logger->info('[AIMD2] '.$q1);
+    /*
     $logger->info('[AIMD2] Calculating number of jobs to run.', ['numActive' => $numActive,
                                                          'lastIntervalCount' => $lastIntervalCount,
                                                          'lastIntervalAverage' => $lastIntervalAverage,
@@ -542,16 +551,17 @@ function getNumberOfJobsToQueue(): int
                                                          'previousIntervalAverage' => $previousIntervalAverage,
                                                          'oneIntervalAgo' => $oneIntervalAgo,
                                                          'twoIntervalsAgo' => $twoIntervalsAgo]);
+    */
 
     // Delete old stuff.
     $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
 
     if ($lastIntervalCount === 0) {
         $logger->info('[AIMD2] No jobs finished this interval, returning default value.', [ 'minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
-        return $minSafeJobs; //max($target - $numActive, 0);
+        return max($target - $numActive, 0);
     } else if ($previousIntervalCount === 0) {
         $logger->info('[AIMD2] No jobs finished previous interval, returning default value.', ['minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
-        return $minSafeJobs; //max($target - $numActive, 0);
+        return max($target - $numActive, 0);
     }
 
     // Update steadyStateDurationif required.
@@ -559,8 +569,11 @@ function getNumberOfJobsToQueue(): int
         $steadyStateDuration = $lastIntervalAverage;
         $logger->info('[AIMD2] Initializing steadyStateDuration', ['steadyStateDuration' => $steadyStateDuration]);
     } else if ($lastIntervalAverage < $previousIntervalAverage) {
-        $steadyStateDuration = (($lastIntervalAverage * $lastIntervalCount) + ($previousIntervalAverage * $previousIntervalCount)) / ($lastIntervalCount + $previousIntervalCount);
-        $logger->info('[AIMD2] updating steadyStateDuration', ['steadyStateDuration' => $steadyStateDuration]);
+        $newSteadyStateDuration = (($lastIntervalAverage * $lastIntervalCount) + ($previousIntervalAverage * $previousIntervalCount)) / ($lastIntervalCount + $previousIntervalCount);
+        if($newSteadyStateDuration !== $steadyStateDuration) {
+            $steadyStateDuration = $newSteadyStateDuration;
+            $logger->info('[AIMD2] updating steadyStateDuration', ['steadyStateDuration' => $steadyStateDuration]);
+        }
     }
 
     // Update our target.
@@ -568,18 +581,24 @@ function getNumberOfJobsToQueue(): int
         // Backoff
         $oldTarget = $target;
         $target = max(intval($target / 2), $minSafeJobs);
-        $ssthresh = $target;
-        $logger->info('[AIMD2] Backing off jobs target.', ['oldTarget' => $oldTarget,
-                                                   'target' => $target,
-                                                   'lastIntervalAverage' => $lastIntervalAverage,
-                                                   'steadyStateDuration' => $steadyStateDuration,
-                                                   'backoffThreshold' => $backoffThreshold]);
+        // If $target has dropped all the way back to the minimum, then we'll reset $ssthresh to try and do a slow
+        // start again, otherwise we'll set $ssthresh to the current target, effectively disabling it.
+        $ssthresh = $target == $minSafeJobs ? $ssthreshDefault : $target;
+        if ($target !== $oldTarget) {
+            $logger->info('[AIMD2] Backing off jobs target.', ['oldTarget' => $oldTarget,
+                                                       'target' => $target,
+                                                       'lastIntervalAverage' => $lastIntervalAverage,
+                                                       'steadyStateDuration' => $steadyStateDuration,
+                                                       'backoffThreshold' => $backoffThreshold]);
+       }
     } else if ($target < $ssthresh) {
         // Slow Start
         $oldTarget = $target;
         // Set the target to double the number of jobs we're currently running, unless that's lower than the existing
         // target.
-        $target = max($target, $numActive *2);
+        // TODO: The amonut we adjsut by should be relative to difference in the duration. What if we can ramp up by
+        // the multiplier every interval?
+        $target = intval(max($target, $numActive * 1.25)); // 1.25 derived by experimentation.
         $logger->info('[AIMD2] Slow start ramp up.', ['oldTarget' => $oldTarget,
                                               'target' => $target,
                                               'lastIntervalCount' => $lastIntervalCount,
@@ -596,7 +615,7 @@ function getNumberOfJobsToQueue(): int
     $numJobsToRun = max($target - $numActive, 0);
     $logger->info('[AIMD2] Found number of jobs to run.', ['numJobsToRun' => $numJobsToRun,
                                                    'target' => $target,
-                                                   'numActive' => $numActive]);
+                                                   'numActive' => $numActive, 'lastIntervalCount' => $lastIntervalCount]);
 
     return $numJobsToRun;
 }

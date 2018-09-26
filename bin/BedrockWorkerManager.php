@@ -173,11 +173,7 @@ try {
             if ($load > $maxLoad) {
                 $logger->info('Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 sleep(1);
-            } elseif ($jobsToQueue > 0/*$minSafeJobs / 2*/) {
-                // The floor of half the minimum can have a huge impact on scheduling. It causes a full second wait
-                // before retrying, which means all the current jobs can finish and leave nothing happening. Disabling
-                // it leads to dramatically higher job scheduling, at the cost of a potentially higher load on the DB,
-                // but that will be rectified in an upcoming change as well.
+            } elseif ($jobsToQueue > $minSafeJobs / 2) {
                 $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $target);
                 $stats->timer('bedrockWorkerManager.targetJobs', $target);

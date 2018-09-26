@@ -38,7 +38,7 @@ $options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 
 'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::',
 'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'aimdVersion::', 'backoffThreshold::',
 'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
-'jobsToAddPerSecond::']);
+'jobsToAddPerSecond::', ]);
 
 // Store parent ID to determine if we should continue forking
 $thisPID = getmypid();
@@ -163,7 +163,7 @@ try {
             $jobsToQueue = 0;
             if ($aimdVersion === 1) {
                 list($jobsToQueue, $target) = $stats->benchmark('bedrockWorkerManager.getNumberOfJobsToQueue', function () use ($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats) { return getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats); });
-            } else if ($aimdVersion === 2) {
+            } elseif ($aimdVersion === 2) {
                 $jobsToQueue = getNumberOfJobsToQueue2();
             } else {
                 $logger->warning('Invalid AIMD Version', ['aimdVersion' => $aimdVersion]);
@@ -171,9 +171,9 @@ try {
             }
 
             if ($load > $maxLoad) {
-                $logger->info('Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]); 
+                $logger->info('Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 sleep(1);
-            } else if ($jobsToQueue > 0/*$minSafeJobs / 2*/) {
+            } elseif ($jobsToQueue > 0/*$minSafeJobs / 2*/) {
                 // The floor of half the minimum can have a huge impact on scheduling. It causes a full second wait
                 // before retrying, which means all the current jobs can finish and leave nothing happening. Disabling
                 // it leads to dramatically higher job scheduling, at the cost of a potentially higher load on the DB,
@@ -569,10 +569,10 @@ function getNumberOfJobsToQueue2(): int
 
     // If we don't have enough data, we'll return a value based on the current target and active job count.
     if ($lastIntervalCount === 0) {
-        $logger->info('[AIMD2] No jobs finished this interval, returning default value.', [ 'minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
+        $logger->info('[AIMD2] No jobs finished this interval, returning default value.', ['minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
 
         return intval(max($target - $numActive, 0));
-    } else if ($previousIntervalCount === 0) {
+    } elseif ($previousIntervalCount === 0) {
         $logger->info('[AIMD2] No jobs finished previous interval, returning default value.', ['minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
 
         return intval(max($target - $numActive, 0));
@@ -587,7 +587,7 @@ function getNumberOfJobsToQueue2(): int
             $logger->info('[AIMD2] Backing off jobs target.', [
                                                        'target' => $target,
                                                        'lastIntervalAverage' => $lastIntervalAverage,
-                                                       'backoffThreshold' => $backoffThreshold]);
+                                                       'backoffThreshold' => $backoffThreshold, ]);
        }
     } else {
         // Otherwise, slowly ramp up. Increase by $jobsToAddPerSecond every second, except don't increase past 2x the
@@ -603,7 +603,8 @@ function getNumberOfJobsToQueue2(): int
     $numJobsToRun = intval(max($target - $numActive, 0));
     $logger->info('[AIMD2] Found number of jobs to run.', ['numJobsToRun' => $numJobsToRun,
                                                    'target' => $target,
-                                                   'numActive' => $numActive, 'lastIntervalAverage' => $lastIntervalAverage]);
+                                                   'numActive' => $numActive,
+                                                   'lastIntervalAverage' => $lastIntervalAverage, ]);
 
     return $numJobsToRun;
 }

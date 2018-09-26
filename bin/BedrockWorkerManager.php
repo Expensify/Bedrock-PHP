@@ -166,7 +166,7 @@ try {
             } else if ($aimdVersion === 2) {
                 $jobsToQueue = getNumberOfJobsToQueue2();
             } else {
-                $logger->warn('Invalid AIMD Version', ['aimdVersion' => $aimdVersion]);
+                $logger->warning('Invalid AIMD Version', ['aimdVersion' => $aimdVersion]);
                 exit(1);
             }
 
@@ -462,6 +462,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
 
         return [$target - $numActive, $target];
     }
+
     // We're at or over our target; do we have enough data to evaluate the speed?
     $numFinished = $stats->benchmark('bedrockWorkerManager.db.read.completeJobs', function () use ($localDB) { return $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NOT NULL;')[0]; });
     if ($numFinished < $target * 2) {
@@ -509,7 +510,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
 /**
  * Determines whether or not we call GetJob and try to start a new job
  *
- * @return how many jobs it is safe to queue,.
+ * @return int How many jobs it is safe to queue.
  */
 function getNumberOfJobsToQueue2(): int
 {

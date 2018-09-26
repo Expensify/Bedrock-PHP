@@ -171,7 +171,7 @@ try {
             }
 
             if ($load > $maxLoad) {
-                $logger->info('[AIMD2] Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]); 
+                $logger->info('Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]); 
                 sleep(1);
             } else if ($jobsToQueue > 0/*$minSafeJobs / 2*/) {
                 // The floor of half the minimum can have a huge impact on scheduling. It causes a full second wait
@@ -213,7 +213,7 @@ try {
                 $response = $jobs->getJobs($jobName, $jobsToQueue, ['getMockedJobs' => true]);
             } catch (Exception $e) {
                 // Try again in 60 seconds
-                $logger->info('[AIMD2] Problem getting job, retrying in 60s', ['message' => $e->getMessage()]);
+                $logger->info('Problem getting job, retrying in 60s', ['message' => $e->getMessage()]);
                 sleep(60);
             }
         }
@@ -453,6 +453,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
 
         return [$maxJobsForSingleRun, $target];
     }
+
     // Have we hit our target job count?
     $numActive = $stats->benchmark('bedrockWorkerManager.db.read.activeJobs', function () use ($localDB) { return $localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0]; });
     if ($numActive < $target) {
@@ -470,6 +471,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
 
         return [0, $target];
     }
+
     // Calculate the speed of the last 2 batches to see if we're speeding up or slowing down
     $oldBatchTimes = $stats->benchmark('bedrockWorkerManager.db.read.oldBatchTimes', function () use ($localDB, $target) { return $localDB->read("SELECT ended - started FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT $target OFFSET $target;"); });
     $oldBatchAverageTime = array_sum($oldBatchTimes) / count($oldBatchTimes);
@@ -482,6 +484,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
         // if speeds hold at the new target.
         $target++;
         $logger->info('Increasing target', ['numberOfJobsToQueue' => $target - $numActive, 'newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
+
         // Also, blow away any data from more than two batches ago, because we don't
         // look farther back than that and don't want to accumulate data infinitely.  However,
         // this is very useful data to keep while debugging to analyze our throttle behavior.
@@ -496,6 +499,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
         $target = intval(max(floor($target / 2), $minSafeJobs));
         $logger->info("Jobs are slowing down, halving the target", ['numberOfJobsToQueue' => $target - $numActive, 'newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
     }
+
     // Don't authorize BWM to call GetJobs
     $logger->info("Not queueing job, number of running jobs is above the target", ['numberOfJobsToQueue' => $target - $numActive, 'newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
 

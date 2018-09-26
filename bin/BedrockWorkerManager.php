@@ -588,7 +588,7 @@ function getNumberOfJobsToQueue2(): int
                                                        'target' => $target,
                                                        'lastIntervalAverage' => $lastIntervalAverage,
                                                        'backoffThreshold' => $backoffThreshold, ]);
-       }
+        }
     } else {
         // Otherwise, slowly ramp up. Increase by $jobsToAddPerSecond every second, except don't increase past 2x the
         // number of currently running jobs.

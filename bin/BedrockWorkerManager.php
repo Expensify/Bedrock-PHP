@@ -536,7 +536,7 @@ function getNumberOfJobsToQueue2(): int
     $now = microtime(true);
 
     // Following line is only for testing.
-    $secondElapsed = (intval($now) === intval($lastRun)) ? 0 : intval($now);
+    // $secondElapsed = (intval($now) === intval($lastRun)) ? 0 : intval($now);
 
     // Get timing info for the last two intervals.
     $timeSinceLastRun = $now - $lastRun;
@@ -548,20 +548,18 @@ function getNumberOfJobsToQueue2(): int
     $numActive = intval($localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0]);
 
     // Look up how many jobs we've finished recently.
-    $q0 = 'SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$oneIntervalAgo.';';
-    $temp0 = $localDB->read($q0);
-    $lastIntervalCount = $temp0[0];
-    $lastIntervalAverage = floatval($temp0[1]);
+    $lastIntervalData = $localDB->read('SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$oneIntervalAgo.';');
+    $lastIntervalCount = $lastIntervalData[0];
+    $lastIntervalAverage = floatval($lastIntervalData[1]);
 
-    $q1 = 'SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$twoIntervalsAgo.' AND ended < '.$oneIntervalAgo.';';
-    $temp1 = $localDB->read($q1);
-    $previousIntervalCount = $temp1[0];
-    $previousIntervalAverage = floatval($temp1[1]);
+    $previousIntervalData = $localDB->read('SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$twoIntervalsAgo.' AND ended < '.$oneIntervalAgo.';');
+    $previousIntervalCount = $previousIntervalData[0];
+    $previousIntervalAverage = floatval($previousIntervalData[1]);
 
     // Following block is only for testing.
-    if ($secondElapsed) {
-        echo "$secondElapsed, $numActive, $target, $lastIntervalAverage\n";
-    }
+    // if ($secondElapsed) {
+    //     echo "$secondElapsed, $numActive, $target, $lastIntervalAverage\n";
+    // }
 
     // Delete old stuff.
     $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');

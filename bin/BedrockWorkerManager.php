@@ -184,7 +184,7 @@ try {
                 break;
             } else {
                 $logger->info('Not enough jobs to queue, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                $localDB->write('DELETE FROM localJobs WHERE started<'.(microtime(true) + 60 * 60).' AND ended IS NULL;');
+                $localDB->write('DELETE FROM localJobs WHERE started < '.(microtime(true) - 60 * 60).' AND ended IS NULL;');
                 $isFirstTry = false;
                 sleep(1);
             }

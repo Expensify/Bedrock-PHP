@@ -210,12 +210,7 @@ try {
             // Ready to get a new job
             try {
                 // Query the server for a job
-                $start = microtime(true);
                 $response = $jobs->getJobs($jobName, $jobsToQueue, ['getMockedJobs' => true]);
-                $end = microtime(true);
-                if ($end - $start > 5) {
-                    echo "GetJobs took ".($end - $start)." seconds.\n";
-                }
             } catch (Exception $e) {
                 // Try again in 60 seconds
                 $logger->info('[AIMD2] Problem getting job, retrying in 60s', ['message' => $e->getMessage()]);
@@ -252,8 +247,7 @@ try {
                 if ($enableLoadHandler) {
                     $safeJobName = SQLite3::escapeString($job['name']);
                     $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName) {
-                        $q = "INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).");";
-                        $localDB->write($q);
+                        $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).");");
                     });
                     $localJobID = $localDB->getLastInsertedRowID();
                 }
@@ -388,10 +382,9 @@ try {
                                 if ($enableLoadHandler) {
                                     $localDB->open();
                                     $time = microtime(true);
-                                    //$logger->info('[AIMD2] Setting finish time for job.', ['localJobID' => $localJobID, 'ended' => $time]);
-                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID, $time) {
-                                        $q = "UPDATE localJobs SET ended=".$time." WHERE localJobID=$localJobID;";
-                                        $localDB->write($q);
+                                    $logger->info('Updating local db');
+                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) {
+                                        $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;");
                                     });
                                     $logger->info('Updating local db', ['total' => microtime(true) - $time]);
                                     $localDB->close();
@@ -457,6 +450,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
     // Allow for disabling of the load handler.
     if (!$enableLoadHandler) {
         $logger->info("Load handler not enabled");
+
         return [$maxJobsForSingleRun, $target];
     }
     // Have we hit our target job count?
@@ -464,6 +458,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
     if ($numActive < $target) {
         // Still in a safe zone, don't worry about load
         $logger->info("Safe to start new job", ["numberOfJobsToQueue" => $target - $numActive, "numActive" => $numActive, "target" => $target]);
+
         return [$target - $numActive, $target];
     }
     // We're at or over our target; do we have enough data to evaluate the speed?
@@ -472,6 +467,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
         // Wait until we finish at least two batches of our target so we can evaluate its speed,
         // before expanding the batch.
         $logger->info("Haven't finished two batches of target, not queuing job", ['numberOfJobsToQueue' => 0, 'numActive' => $numActive, 'target' => $target]);
+
         return [0, $target];
     }
     // Calculate the speed of the last 2 batches to see if we're speeding up or slowing down
@@ -492,6 +488,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
         if (!$debugThrottle) {
             $stats->benchmark('bedrockWorkerManager.db.write.deleteOldJobs', function () use ($localDB, $target) { $localDB->write("DELETE FROM localJobs WHERE localJobID IN (SELECT localJobID FROM localJobs WHERE ended IS NOT NULL ORDER BY ended DESC LIMIT -1 OFFSET $target * 2);"); });
         }
+
         // Authorize one more job given that we've just increased the target by one.
         return [$target - $numActive, $target];
     } elseif ($newBatchAverageTime > $maxSafeTime || $newBatchAverageTime < 1.5 * $oldBatchAverageTime) {
@@ -501,6 +498,7 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
     }
     // Don't authorize BWM to call GetJobs
     $logger->info("Not queueing job, number of running jobs is above the target", ['numberOfJobsToQueue' => $target - $numActive, 'newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
+
     return [0, $target];
 }
 
@@ -567,9 +565,11 @@ function getNumberOfJobsToQueue2(): int
     // If we don't have enough data, we'll return a value based on the current target and active job count.
     if ($lastIntervalCount === 0) {
         $logger->info('[AIMD2] No jobs finished this interval, returning default value.', [ 'minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
+
         return intval(max($target - $numActive, 0));
     } else if ($previousIntervalCount === 0) {
         $logger->info('[AIMD2] No jobs finished previous interval, returning default value.', ['minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
+
         return intval(max($target - $numActive, 0));
     }
 

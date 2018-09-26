@@ -184,8 +184,7 @@ try {
                 break;
             } else {
                 $logger->info('Not enough jobs to queue, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                // $localDB->write('DELETE FROM localJobs WHERE started<'.(microtime(true) + 60 * 60).' AND ended IS NULL;');
-                // TODO: Above breaks with getNumberOfJobsToQueue2.
+                $localDB->write('DELETE FROM localJobs WHERE started<'.(microtime(true) + 60 * 60).' AND ended IS NULL;');
                 $isFirstTry = false;
                 sleep(1);
             }
@@ -549,12 +548,12 @@ function getNumberOfJobsToQueue2(): int
     $numActive = intval($localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0]);
 
     // Look up how many jobs we've finished recently.
-    $q0 = 'SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended > '.$oneIntervalAgo.';';
+    $q0 = 'SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$oneIntervalAgo.';';
     $temp0 = $localDB->read($q0);
     $lastIntervalCount = $temp0[0];
     $lastIntervalAverage = floatval($temp0[1]);
 
-    $q1 = 'SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended > '.$twoIntervalsAgo.' AND ended < '.$oneIntervalAgo.';';
+    $q1 = 'SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$twoIntervalsAgo.' AND ended < '.$oneIntervalAgo.';';
     $temp1 = $localDB->read($q1);
     $previousIntervalCount = $temp1[0];
     $previousIntervalAverage = floatval($temp1[1]);

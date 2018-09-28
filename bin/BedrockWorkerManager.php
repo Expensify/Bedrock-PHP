@@ -34,7 +34,11 @@ if (php_sapi_name() !== "cli") {
 }
 
 // Parse the command line and verify the required settings are provided
-$options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::', 'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::', 'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle']);
+$options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::',
+'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::',
+'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'aimdVersion::', 'backoffThreshold::',
+'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
+'jobsToAddPerSecond::', ]);
 
 // Store parent ID to determine if we should continue forking
 $thisPID = getmypid();
@@ -50,12 +54,39 @@ $jobName = $options['jobName'] ?? '*'; // Process all jobs by default
 $maxLoad = floatval($options['maxLoad'] ?? 1.0); // Max load of 1.0 by default
 $maxIterations = intval($options['maxIterations'] ?? -1); // Unlimited iterations by default
 $pathToDB = $options['localJobsDBPath'] ?? '/tmp/localJobsDB.sql';
-$minSafeJobs = intval($options['minSafeJobs'] ?? 10);  // The minimum number of jobs before we start paying attention
+$minSafeJobs = intval($options['minSafeJobs'] ?? 10); // The floor of the number of jobs we'll target running simultaneously.
 $maxJobsForSingleRun = intval($options['maxJobsInSingleRun'] ?? 10);
 $maxSafeTime = intval($options['maxSafeTime'] ?? 0); // The maximum job time before we start paying attention
 $debugThrottle = isset($options['debugThrottle']); // Set to true to maintain a debug history
 $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD load handler
+
+// Select the job scheduling mechanism
+$aimdVersion = intval($options['aimdVersion'] ?? 1);
+
+// The fraction of run time the current batch of jobs needs to be in relation to the previous batch to cause us to
+// back off our target number of jobs.
+$backoffThreshold = floatval($options['backoffThreshold'] ?? 1.1);
+
+// The length of time in seconds that we use to determine the average speed of jobs currently running.
+$intervalDurationSeconds = floatval($options['intervalDurationSeconds'] ?? 10.0);
+
+// The fraction of $intervalDurationSeconds that we block a double backoff from happening in. This keeps us from
+// backing off to the base value on each successive run when we really only want to backoff by one step.
+$doubleBackoffPreventionIntervalFraction = floatval($options['doubleBackoffPreventionIntervalFraction'] ?? 1.0);
+
+// When we back off, we'll multiply the target by this value. Should be between 0 and 1.
+$multiplicativeDecreaseFraction = floatval($options['multiplicativeDecreaseFraction'] ?? 0.8);
+
+// Try to increase the target by this many jobs every second.
+$jobsToAddPerSecond = floatval($options['jobsToAddPerSecond'] ?? 1.0);
+
+// Internal state variables for determining the number of jobs to run at one time.
+// $target is the number of jobs that we think we can safely run at one time. It defaults to the number of jobs we've
+// decided is always safe, and is continually adjusted by `getNumberOfJobsToQueue`.
 $target = $minSafeJobs;
+$lastRun = microtime(true);
+$lastBackoff = 0;
+
 $bedrock = Client::getInstance();
 
 // Prepare to use the host logger and stats client, if configured
@@ -128,15 +159,28 @@ try {
 
             // Check if we can fork based on the load of our webservers
             $load = sys_getloadavg()[0];
-            list($jobsToQueue, $target) = $stats->benchmark('bedrockWorkerManager.getNumberOfJobsToQueue', function () use ($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats) { return getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats); });
-            if ($load < $maxLoad && $jobsToQueue > 0 && $jobsToQueue >= $minSafeJobs / 2) {
+
+            $jobsToQueue = 0;
+            if ($aimdVersion === 1) {
+                list($jobsToQueue, $target) = $stats->benchmark('bedrockWorkerManager.getNumberOfJobsToQueue', function () use ($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats) { return getNumberOfJobsToQueue($localDB, $target, $maxSafeTime, $minSafeJobs, $enableLoadHandler, $maxJobsForSingleRun, $debugThrottle, $logger, $stats); });
+            } elseif ($aimdVersion === 2) {
+                $jobsToQueue = getNumberOfJobsToQueue2();
+            } else {
+                $logger->warning('Invalid AIMD Version', ['aimdVersion' => $aimdVersion]);
+                exit(1);
+            }
+
+            if ($load > $maxLoad) {
+                $logger->info('Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
+                sleep(1);
+            } elseif ($jobsToQueue > $minSafeJobs / 2) {
                 $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $target);
                 $stats->timer('bedrockWorkerManager.targetJobs', $target);
                 break;
             } else {
-                $logger->info('Not safe to start a new job, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                $localDB->write('DELETE FROM localJobs WHERE started<'.(microtime(true) + 60 * 60).' AND ended IS NULL;');
+                $logger->info('Not enough jobs to queue, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $localDB->write('DELETE FROM localJobs WHERE started < '.(microtime(true) - 60 * 60).' AND ended IS NULL;');
                 $isFirstTry = false;
                 sleep(1);
             }
@@ -456,6 +500,106 @@ function getNumberOfJobsToQueue(LocalDB $localDB, int $target, int $maxSafeTime,
     $logger->info("Not queueing job, number of running jobs is above the target", ['numberOfJobsToQueue' => $target - $numActive, 'newBatchAverageTime' => $newBatchAverageTime, 'oldBatchAverageTime' => $oldBatchAverageTime, 'numActive' => $numActive, 'target' => $target]);
 
     return [0, $target];
+}
+
+/**
+ * Determines whether or not we call GetJob and try to start a new job
+ *
+ * @return int How many jobs it is safe to queue.
+ */
+function getNumberOfJobsToQueue2(): int
+{
+    global $backoffThreshold,
+           $doubleBackoffPreventionIntervalFraction,
+           $enableLoadHandler,
+           $intervalDurationSeconds,
+           $jobsToAddPerSecond,
+           $lastBackoff,
+           $lastRun,
+           $localDB,
+           $logger,
+           $maxJobsForSingleRun,
+           $minSafeJobs,
+           $multiplicativeDecreaseFraction,
+           $target;
+
+    // Allow for disabling of the load handler.
+    if (!$enableLoadHandler) {
+        $logger->info('[AIMD2] Load handler not enabled, scheduling max jobs.', ['maxJobsForSingleRun' => $maxJobsForSingleRun]);
+
+        return $maxJobsForSingleRun;
+    }
+    $now = microtime(true);
+
+    // Following line is only for testing.
+    // $secondElapsed = (intval($now) === intval($lastRun)) ? 0 : intval($now);
+
+    // Get timing info for the last two intervals.
+    $timeSinceLastRun = $now - $lastRun;
+    $lastRun = $now;
+    $oneIntervalAgo = $now - $intervalDurationSeconds;
+    $twoIntervalsAgo = $oneIntervalAgo - $intervalDurationSeconds;
+
+    // Look up how many jobs are currently in progress.
+    $numActive = intval($localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0]);
+
+    // Look up how many jobs we've finished recently.
+    $lastIntervalData = $localDB->read('SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$oneIntervalAgo.';');
+    $lastIntervalCount = $lastIntervalData[0];
+    $lastIntervalAverage = floatval($lastIntervalData[1]);
+
+    $previousIntervalData = $localDB->read('SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$twoIntervalsAgo.' AND ended < '.$oneIntervalAgo.';');
+    $previousIntervalCount = $previousIntervalData[0];
+    $previousIntervalAverage = floatval($previousIntervalData[1]);
+
+    // Following block is only for testing.
+    // if ($secondElapsed) {
+    //     echo "$secondElapsed, $numActive, $target, $lastIntervalAverage\n";
+    // }
+
+    // Delete old stuff.
+    $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
+
+    // If we don't have enough data, we'll return a value based on the current target and active job count.
+    if ($lastIntervalCount === 0) {
+        $logger->info('[AIMD2] No jobs finished this interval, returning default value.', ['minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
+
+        return intval(max($target - $numActive, 0));
+    } elseif ($previousIntervalCount === 0) {
+        $logger->info('[AIMD2] No jobs finished previous interval, returning default value.', ['minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
+
+        return intval(max($target - $numActive, 0));
+    }
+
+    // Update our target. If the last interval average run time exceeds the previous one by too much, back off.
+    if ($lastIntervalAverage > ($previousIntervalAverage * $backoffThreshold)) {
+        // Skip backoff if we've done so too recently in the past.
+        if ($lastBackoff < $now - ($intervalDurationSeconds * $doubleBackoffPreventionIntervalFraction)) {
+            $target = max($target * $multiplicativeDecreaseFraction, $minSafeJobs);
+            $lastBackoff = $now;
+            $logger->info('[AIMD2] Backing off jobs target.', [
+                                                       'target' => $target,
+                                                       'lastIntervalAverage' => $lastIntervalAverage,
+                                                       'backoffThreshold' => $backoffThreshold, ]);
+        }
+    } else {
+        // Otherwise, slowly ramp up. Increase by $jobsToAddPerSecond every second, except don't increase past 2x the
+        // number of currently running jobs.
+        if (($target + $timeSinceLastRun * $jobsToAddPerSecond) < $numActive * 2) {
+            // Ok, we're running at least half this many jobs, we can increment.
+            $target += $timeSinceLastRun * $jobsToAddPerSecond;
+        }
+        $logger->info('[AIMD2] Congestion Avoidance, incrementing target', ['target' => $target]);
+    }
+
+    // Now we know how many jobs we want to be running, and how many are running, so we can return the difference.
+    $numJobsToRun = intval(max($target - $numActive, 0));
+    $logger->info('[AIMD2] Found number of jobs to run.', ['numJobsToRun' => $numJobsToRun,
+                                                   'target' => $target,
+                                                   'numActive' => $numActive,
+                                                   'lastIntervalAverage' => $lastIntervalAverage, ]);
+
+    return $numJobsToRun;
 }
 
 /**

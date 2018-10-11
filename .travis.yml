@@ -3,7 +3,7 @@ php:
     - '7.0.16'
 
 install:
-  - ./ci/phan-setup.sh
+  - pecl install ast-0.1.7
   - composer self-update
   - composer install --prefer-dist --no-interaction --dev
 

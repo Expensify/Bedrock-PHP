@@ -8,6 +8,7 @@ use Expensify\Bedrock\Exceptions\Jobs\GenericError;
 use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\MalformedAttribute;
 use Expensify\Bedrock\Exceptions\Jobs\SqlFailed;
+use stdClass;
 
 /**
  * Encapsulates the built-in Jobs plugin to Bedrock.
@@ -95,6 +96,12 @@ class Jobs extends Plugin
      */
     public function call($method, $headers = [], $body = '')
     {
+        // If we ever pass an empty array as data, PHP will json encode it as an array, but data expects an object and
+        // will generate a warning if it receives an array, so we pass an stdClass, which will get encoded as object
+        if (isset($headers['data']) && is_array($headers['data']) && empty($headers['data'])) {
+            $headers['data'] = new stdClass();
+        }
+
         $this->client->getStats()->counter('bedrockJob.call.'.$method);
         $response = $this->client->getStats()->benchmark('bedrock.jobs.'.$method, function () use ($method, $headers, $body) {
             return $this->client->call($method, $headers, $body);

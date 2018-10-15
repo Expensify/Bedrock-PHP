@@ -155,12 +155,13 @@ class Jobs extends Plugin
     public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
+        $commitCounts = Client::getCommitCounts();
 
         $response = $this->call(
             'CreateJob',
             [
                 'name'        => $name,
-                'data'        => $data,
+                'data'        => array_merge($data ?? [], count($commitCounts) ? ['commitCounts' => $commitCounts] : []),
                 'firstRun'    => $firstRun,
                 'repeat'      => $repeat,
                 'unique'      => $unique,
@@ -196,6 +197,10 @@ class Jobs extends Plugin
                 $jobs[$i]['jobPriority'] = $jobs[$i]['priority'];
                 unset($jobs[$i]['priority']);
             }
+        }
+        $commitCounts = Client::getCommitCounts();
+        foreach ($jobs as $i => $job) {
+            $jobs[$i]['data'] = array_merge($jobs[$i]['data'] ?? [], count($commitCounts) ? ['commitCounts' => $commitCounts] : []);
         }
 
         $response = $this->call(
@@ -255,11 +260,12 @@ class Jobs extends Plugin
      */
     public function updateJob($jobID, $data, $repeat = null)
     {
+        $commitCounts = Client::getCommitCounts();
         return $this->call(
             "UpdateJob",
             [
                 "jobID"      => $jobID,
-                "data"       => $data,
+                "data"       => array_merge($data ?? [], count($commitCounts) ? ['commitCounts' => $commitCounts] : []),
                 "repeat"     => $repeat,
                 "idempotent" => true,
             ]

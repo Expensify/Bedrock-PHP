@@ -263,6 +263,14 @@ class Client implements LoggerAwareInterface
     }
 
     /**
+     * Returns the cluster name.
+     */
+    public function getClusterName(): string
+    {
+        return $this->clusterName;
+    }
+
+    /**
      * Makes a direct call to Bedrock.
      *
      * @param string $method  Request method
@@ -592,7 +600,7 @@ class Client implements LoggerAwareInterface
         // If we received the commitCount, then save it for future requests. This is useful if for some reason we
         // change the bedrock node we are talking to.
         if (isset($responseHeaders["commitCount"])) {
-            $this->commitCount = $responseHeaders["commitCount"];
+            $this->commitCount = (int) $responseHeaders["commitCount"];
         }
 
         return [
@@ -705,5 +713,23 @@ class Client implements LoggerAwareInterface
             @socket_close($this->socket);
             $this->socket = null;
         }
+    }
+
+    /**
+     * Returns the highest commitCount of each cluster name instantiated in this request.
+     *
+     * @return int[]
+     */
+    public static function getCommitCounts(): array
+    {
+        $commitCounts = [];
+        foreach (self::$instances as $instance) {
+            $commitCounts[$instance->getClusterName()][] = $instance->commitCount;
+        }
+        foreach ($commitCounts as $name => $values) {
+            $commitCounts[$name] = max($values) ?? 0;
+        }
+
+        return array_filter($commitCounts);
     }
 }

@@ -289,7 +289,7 @@ class Client implements LoggerAwareInterface
 
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
-            $headers['commitCount']  = $this->commitCount;
+            $headers['commitCount'] = $this->commitCount;
         }
 
         // Include the requestID for logging purposes
@@ -383,6 +383,7 @@ class Client implements LoggerAwareInterface
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $this->markHostAsFailed($hostName);
+                /* @phan-suppress-next-line PhanTypeInvalidDimOffset for some reason phan says idempotent does not exist, but I have the ?? so it should not matter */
                 if ($numRetriesLeft && ($headers['idempotent'] ?? false)) {
                     $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
                 } else {
@@ -409,10 +410,10 @@ class Client implements LoggerAwareInterface
 
         // Log how long this particular call took
         $processingTime = isset($response['headers']['processTime']) ? $response['headers']['processTime'] : 0;
-        $serverTime     = isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0;
-        $clientTime     = round(microtime(true) - $timeStart, 3);
-        $networkTime    = $clientTime - $serverTime;
-        $waitTime       = $serverTime - $processingTime;
+        $serverTime = isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0;
+        $clientTime = round(microtime(true) - $timeStart, 3);
+        $networkTime = $clientTime - $serverTime;
+        $waitTime = $serverTime - $processingTime;
         $this->logger->info('Bedrock\Client - Request finished', [
             'host' => $hostName,
             'command' => $method,
@@ -468,7 +469,7 @@ class Client implements LoggerAwareInterface
         // Failed to send anything
         if ($bytesSent === false) {
             $socketErrorCode = socket_last_error();
-            $socketError  = socket_strerror($socketErrorCode);
+            $socketError = socket_strerror($socketErrorCode);
             throw new ConnectionFailure("Failed to send request to bedrock host $host:$port. Error: $socketErrorCode $socketError");
         }
 
@@ -574,7 +575,7 @@ class Client implements LoggerAwareInterface
             $sizeDataOnSocket = @socket_recv($this->socket, $dataOnSocket, self::PACKET_LENGTH, 0);
             if ($sizeDataOnSocket === false) {
                 $errorCode = socket_last_error($this->socket);
-                $errorMsg  = socket_strerror($errorCode);
+                $errorMsg = socket_strerror($errorCode);
                 throw new BedrockError("Error receiving data: $errorCode - $errorMsg");
             }
             if ($sizeDataOnSocket === 0 || strlen($dataOnSocket) === 0) {
@@ -605,8 +606,8 @@ class Client implements LoggerAwareInterface
 
         return [
             'headers' => $responseHeaders,
-            'body'    => $this->parseRawBody($responseHeaders, $response),
-            'size'    => $totalDataReceived,
+            'body' => $this->parseRawBody($responseHeaders, $response),
+            'size' => $totalDataReceived,
             'codeLine' => $codeLine,
             'code' => intval($codeLine),
         ];

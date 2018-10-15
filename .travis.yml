@@ -1,6 +1,6 @@
 language: php
 php:
-    - '7.0.16'
+    - '7.2'
 
 install:
   - pecl install ast-0.1.7

@@ -282,7 +282,7 @@ try {
                         // keep the same commitCount because we need the finishJob call below to run in a server that has
                         // the commit of the GetJobs call above or the job we are trying to finish might be in QUEUED state.
                         $commitCount = Client::getInstance()->commitCount;
-                        Client::clearInstancesAfterFork($job['data']['commitCounts'] ?? []);
+                        Client::clearInstancesAfterFork($job['data']['_commitCounts'] ?? []);
                         $bedrock = Client::getInstance();
                         $bedrock->commitCount = $commitCount;
                         $jobs = new Jobs($bedrock);

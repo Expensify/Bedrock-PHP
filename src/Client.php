@@ -335,7 +335,7 @@ class Client implements LoggerAwareInterface
             $headers['priority'] = $this->commandPriority;
         }
 
-        if (!$headers['timeout'] && $this->bedrockTimeout) {
+        if (!array_key_exists('timeout', $headers) && $this->bedrockTimeout) {
             $headers['timeout'] = $this->bedrockTimeout * 1000;
         }
 

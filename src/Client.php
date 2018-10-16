@@ -49,6 +49,13 @@ class Client implements LoggerAwareInterface
     private static $instances = [];
 
     /**
+     * @var int[] An array with the keys being the name of a cluster and the value a commitCount. This variable is set
+     *            in clearInstancesAfterFork and can be used to force a specific commitCount to be used when the
+     *            instance for that cluster is initialized.
+     */
+    private static $preloadedCommitCounts = [];
+
+    /**
      *  @var ?int The last commit count of the node we talked to. This is used to ensure if we make a subsequent
      *            request to a different node in the same session, that the node waits until it is at least
      *            up to date with the commits as the node we originally queried.
@@ -188,6 +195,11 @@ class Client implements LoggerAwareInterface
             return self::$instances[$hash];
         }
         $instance = new self($config);
+
+        // If we had a preloaded commitCount, set it so that the first request uses it.
+        if (isset(self::$preloadedCommitCounts[$instance->getClusterName()])) {
+            $instance->commitCount = self::$preloadedCommitCounts[$instance->getClusterName()];
+        }
         self::$instances[$hash] = $instance;
 
         return $instance;
@@ -196,10 +208,13 @@ class Client implements LoggerAwareInterface
     /**
      * After forking, you need to call this method to make sure the forks don't share the same socket and instead open
      * a new connection.
+     *
+     * @param int[] $preloadedCommitCounts
      */
-    public static function clearInstancesAfterFork()
+    public static function clearInstancesAfterFork(array $preloadedCommitCounts)
     {
         self::$instances = [];
+        self::$preloadedCommitCounts = $preloadedCommitCounts;
     }
 
     /**

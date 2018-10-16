@@ -161,7 +161,7 @@ class Jobs extends Plugin
             'CreateJob',
             [
                 'name' => $name,
-                'data' => array_merge($data ?? [], count($commitCounts) ? ['commitCounts' => $commitCounts] : []),
+                'data' => array_merge($data ?? [], count($commitCounts) ? ['_commitCounts' => $commitCounts] : []),
                 'firstRun' => $firstRun,
                 'repeat' => $repeat,
                 'unique' => $unique,
@@ -200,7 +200,7 @@ class Jobs extends Plugin
         }
         $commitCounts = Client::getCommitCounts();
         foreach ($jobs as $i => $job) {
-            $jobs[$i]['data'] = array_merge($jobs[$i]['data'] ?? [], count($commitCounts) ? ['commitCounts' => $commitCounts] : []);
+            $jobs[$i]['data'] = array_merge($jobs[$i]['data'] ?? [], count($commitCounts) ? ['_commitCounts' => $commitCounts] : []);
         }
 
         $response = $this->call(
@@ -265,7 +265,7 @@ class Jobs extends Plugin
             "UpdateJob",
             [
                 "jobID" => $jobID,
-                "data" => array_merge($data ?? [], count($commitCounts) ? ['commitCounts' => $commitCounts] : []),
+                "data" => array_merge($data ?? [], count($commitCounts) ? ['_commitCounts' => $commitCounts] : []),
                 "repeat" => $repeat,
                 "idempotent" => true,
             ]

@@ -88,7 +88,7 @@ class Client implements LoggerAwareInterface
     private $readTimeout;
 
     /**
-     * @var int Timeout to pass to bedrock, in MS.
+     * @var int Timeout to pass to bedrock.
      */
     private $bedrockTimeout;
 
@@ -137,7 +137,7 @@ class Client implements LoggerAwareInterface
      *                      array|null           failovers           List of hosts to use as failovers
      *                      int|null             connectionTimeout   Timeout to use when connecting
      *                      int|null             readTimeout         Timeout to use when reading
-     *                      int|null             bedrockTimeout      Timeout to use for bedrock commands (in ms, not seconds)
+     *                      int|null             bedrockTimeout      Timeout to use for bedrock commands
      *                      LoggerInterface|null logger              Class to use for logging
      *                      StatsInterface|null  stats               Class to use for statistics tracking
      *                      string|null          writeConsistency    The bedrock write consistency we want to use
@@ -221,7 +221,7 @@ class Client implements LoggerAwareInterface
             'failoverHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
             'connectionTimeout' => 1,
             'readTimeout' => 300,
-            'bedrockTimeout' => 290000,
+            'bedrockTimeout' => 290,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
@@ -313,7 +313,7 @@ class Client implements LoggerAwareInterface
         }
 
         if (!$headers['timeout'] && $this->bedrockTimeout) {
-            $headers['timeout'] = $this->bedrockTimeout;
+            $headers['timeout'] = $this->bedrockTimeout * 1000;
         }
 
         $this->logger->info('Bedrock\Client - Starting a request', [

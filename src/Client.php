@@ -88,6 +88,11 @@ class Client implements LoggerAwareInterface
     private $readTimeout;
 
     /**
+     * @var int Timeout to pass to bedrock, in MS.
+     */
+    private $bedrockTimeout;
+
+    /**
      * @var LoggerInterface
      */
     private $logger;
@@ -132,6 +137,7 @@ class Client implements LoggerAwareInterface
      *                      array|null           failovers           List of hosts to use as failovers
      *                      int|null             connectionTimeout   Timeout to use when connecting
      *                      int|null             readTimeout         Timeout to use when reading
+     *                      int|null             bedrockTimeout      Timeout to use for bedrock commands (in ms, not seconds)
      *                      LoggerInterface|null logger              Class to use for logging
      *                      StatsInterface|null  stats               Class to use for statistics tracking
      *                      string|null          writeConsistency    The bedrock write consistency we want to use
@@ -148,6 +154,7 @@ class Client implements LoggerAwareInterface
         $this->failoverHostConfigs = $config['failoverHostConfigs'];
         $this->connectionTimeout = $config['connectionTimeout'];
         $this->readTimeout = $config['readTimeout'];
+        $this->bedrockTimeout = $config['bedrockTimeout'];
         $this->logger = $config['logger'];
         $this->stats = $config['stats'];
         $this->writeConsistency = $config['writeConsistency'];
@@ -214,6 +221,7 @@ class Client implements LoggerAwareInterface
             'failoverHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
             'connectionTimeout' => 1,
             'readTimeout' => 300,
+            'bedrockTimeout' => 290000,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
@@ -302,6 +310,10 @@ class Client implements LoggerAwareInterface
 
         if ($this->commandPriority) {
             $headers['priority'] = $this->commandPriority;
+        }
+
+        if (!$headers['timeout'] && $this->bedrockTimeout) {
+            $headers['timeout'] = $this->bedrockTimeout;
         }
 
         $this->logger->info('Bedrock\Client - Starting a request', [

@@ -282,7 +282,7 @@ try {
                         // keep the same commitCount because we need the finishJob call below to run in a server that has
                         // the commit of the GetJobs call above or the job we are trying to finish might be in QUEUED state.
                         $commitCount = Client::getInstance()->commitCount;
-                        Client::clearInstancesAfterFork();
+                        Client::clearInstancesAfterFork($job['data']['_commitCounts'] ?? []);
                         $bedrock = Client::getInstance();
                         $bedrock->commitCount = $commitCount;
                         $jobs = new Jobs($bedrock);
@@ -431,11 +431,12 @@ $logger->info('Stopped BedrockWorkerManager');
  * Determines whether or not we call GetJob and try to start a new job
  *
  * @param LocalDB                 $localDB
- * @param int                     $target            The current max number of jobs allowed.
- * @param int                     $maxSafeTime       Maximum safe average time for a batch of jobs before it cuts back.
+ * @param int                     $target              The current max number of jobs allowed.
+ * @param int                     $maxSafeTime         Maximum safe average time for a batch of jobs before it cuts back.
+ * @param int                     $minSafeJobs         A number of jobs that will always be safe to run.
  * @param bool                    $enableLoadHandler
- * @param int                     $minSafeJobs       A number of jobs that will always be safe to run.
- * @param bool                    $debugThrottle     If true, doesn't delete jobs from localDB
+ * @param int                     $maxJobsForSingleRun
+ * @param bool                    $debugThrottle       If true, doesn't delete jobs from localDB
  * @param Psr\Log\LoggerInterface $logger
  *
  * @return array First value how many jobs it is safe to queue, second is an updated $target value.

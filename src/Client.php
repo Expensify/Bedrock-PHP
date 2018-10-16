@@ -95,6 +95,11 @@ class Client implements LoggerAwareInterface
     private $readTimeout;
 
     /**
+     * @var int Timeout to pass to bedrock.
+     */
+    private $bedrockTimeout;
+
+    /**
      * @var LoggerInterface
      */
     private $logger;
@@ -139,6 +144,7 @@ class Client implements LoggerAwareInterface
      *                      array|null           failovers           List of hosts to use as failovers
      *                      int|null             connectionTimeout   Timeout to use when connecting
      *                      int|null             readTimeout         Timeout to use when reading
+     *                      int|null             bedrockTimeout      Timeout to use for bedrock commands
      *                      LoggerInterface|null logger              Class to use for logging
      *                      StatsInterface|null  stats               Class to use for statistics tracking
      *                      string|null          writeConsistency    The bedrock write consistency we want to use
@@ -155,6 +161,7 @@ class Client implements LoggerAwareInterface
         $this->failoverHostConfigs = $config['failoverHostConfigs'];
         $this->connectionTimeout = $config['connectionTimeout'];
         $this->readTimeout = $config['readTimeout'];
+        $this->bedrockTimeout = $config['bedrockTimeout'];
         $this->logger = $config['logger'];
         $this->stats = $config['stats'];
         $this->writeConsistency = $config['writeConsistency'];
@@ -229,6 +236,7 @@ class Client implements LoggerAwareInterface
             'failoverHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
             'connectionTimeout' => 1,
             'readTimeout' => 300,
+            'bedrockTimeout' => 290,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
@@ -327,6 +335,10 @@ class Client implements LoggerAwareInterface
             $headers['priority'] = $this->commandPriority;
         }
 
+        if (!array_key_exists('timeout', $headers) && $this->bedrockTimeout) {
+            $headers['timeout'] = $this->bedrockTimeout * 1000;
+        }
+
         $this->logger->info('Bedrock\Client - Starting a request', [
             'command' => $method,
             'clusterName' => $this->clusterName,
@@ -387,7 +399,8 @@ class Client implements LoggerAwareInterface
                 $this->sendRawRequest($hostName, $port, $rawRequest);
                 $response = $this->receiveResponse();
             } catch (ConnectionFailure $e) {
-                // The error happened during connection (or before we sent any data) so we can retry it safely
+                // The error happened during connection (or before we sent any data, or in a case where we know the
+                // command was never processed) so we can retry it safely.
                 $this->markHostAsFailed($hostName);
                 if ($numRetriesLeft) {
                     $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
@@ -617,6 +630,11 @@ class Client implements LoggerAwareInterface
         // change the bedrock node we are talking to.
         if (isset($responseHeaders["commitCount"])) {
             $this->commitCount = (int) $responseHeaders["commitCount"];
+        }
+
+        // We treat a timeout as a ConnectionFailure
+        if (intval($codeLine) === 555) {
+            throw new ConnectionFailure('Timeout waiting for bedrock response');
         }
 
         return [

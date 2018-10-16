@@ -399,7 +399,8 @@ class Client implements LoggerAwareInterface
                 $this->sendRawRequest($hostName, $port, $rawRequest);
                 $response = $this->receiveResponse();
             } catch (ConnectionFailure $e) {
-                // The error happened during connection (or before we sent any data) so we can retry it safely
+                // The error happened during connection (or before we sent any data, or in a case where we know the
+                // command was never processed) so we can retry it safely.
                 $this->markHostAsFailed($hostName);
                 if ($numRetriesLeft) {
                     $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
@@ -629,6 +630,11 @@ class Client implements LoggerAwareInterface
         // change the bedrock node we are talking to.
         if (isset($responseHeaders["commitCount"])) {
             $this->commitCount = (int) $responseHeaders["commitCount"];
+        }
+
+        // We treat a timeout as a ConnectionFailure
+        if (intval($codeLine) === 555) {
+            throw new ConnectionFailure('Timeout waiting for bedrock response');
         }
 
         return [

@@ -155,22 +155,23 @@ class Jobs extends Plugin
     public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
+        $commitCounts = Client::getCommitCounts();
 
         $response = $this->call(
             'CreateJob',
             [
-                'name'        => $name,
-                'data'        => $data,
-                'firstRun'    => $firstRun,
-                'repeat'      => $repeat,
-                'unique'      => $unique,
+                'name' => $name,
+                'data' => array_merge($data ?? [], count($commitCounts) ? ['commitCounts' => $commitCounts] : []),
+                'firstRun' => $firstRun,
+                'repeat' => $repeat,
+                'unique' => $unique,
                 'jobPriority' => $priority,
                 'parentJobID' => $parentJobID,
-                'Connection'  => $connection,
+                'Connection' => $connection,
                 // If the name of the job has to be unique, Bedrock will return any existing job that exists with the
                 // given name instead of making a new one, which essentially makes the command idempotent.
-                'idempotent'  => $unique,
-                'retryAfter'  => $retryAfter,
+                'idempotent' => $unique,
+                'retryAfter' => $retryAfter,
             ]
         );
 
@@ -196,6 +197,10 @@ class Jobs extends Plugin
                 $jobs[$i]['jobPriority'] = $jobs[$i]['priority'];
                 unset($jobs[$i]['priority']);
             }
+        }
+        $commitCounts = Client::getCommitCounts();
+        foreach ($jobs as $i => $job) {
+            $jobs[$i]['data'] = array_merge($jobs[$i]['data'] ?? [], count($commitCounts) ? ['commitCounts' => $commitCounts] : []);
         }
 
         $response = $this->call(
@@ -255,12 +260,13 @@ class Jobs extends Plugin
      */
     public function updateJob($jobID, $data, $repeat = null)
     {
+        $commitCounts = Client::getCommitCounts();
         return $this->call(
             "UpdateJob",
             [
-                "jobID"      => $jobID,
-                "data"       => $data,
-                "repeat"     => $repeat,
+                "jobID" => $jobID,
+                "data" => array_merge($data ?? [], count($commitCounts) ? ['commitCounts' => $commitCounts] : []),
+                "repeat" => $repeat,
                 "idempotent" => true,
             ]
         );
@@ -279,8 +285,8 @@ class Jobs extends Plugin
         return $this->call(
             "FinishJob",
             [
-                "jobID"      => $jobID,
-                "data"       => $data,
+                "jobID" => $jobID,
+                "data" => $data,
                 "idempotent" => true,
             ]
         );
@@ -315,7 +321,7 @@ class Jobs extends Plugin
         return $this->call(
             "DeleteJob",
             [
-                "jobID"      => $jobID,
+                "jobID" => $jobID,
                 "idempotent" => true,
             ]
         );
@@ -333,7 +339,7 @@ class Jobs extends Plugin
         return $this->call(
             "FailJob",
             [
-                "jobID"      => $jobID,
+                "jobID" => $jobID,
                 "idempotent" => true,
             ]
         );
@@ -347,11 +353,11 @@ class Jobs extends Plugin
         return $this->call(
             "RetryJob",
             [
-                "jobID"      => $jobID,
-                "delay"      => $delay,
-                "data"       => $data,
-                "name"       => $name,
-                "nextRun"    => $nextRun,
+                "jobID" => $jobID,
+                "delay" => $delay,
+                "data" => $data,
+                "name" => $name,
+                "nextRun" => $nextRun,
                 "idempotent" => true,
             ]
         );
@@ -379,7 +385,7 @@ class Jobs extends Plugin
         $bedrockResponse = $this->call(
             "QueryJob",
             [
-                "jobID"      => $jobID,
+                "jobID" => $jobID,
                 "idempotent" => true,
             ]
         );

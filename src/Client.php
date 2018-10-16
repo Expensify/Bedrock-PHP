@@ -49,6 +49,13 @@ class Client implements LoggerAwareInterface
     private static $instances = [];
 
     /**
+     * @var int[] An array with the keys being the name of a cluster and the value a commitCount. This variable is set
+     *            in clearInstancesAfterFork and can be used to force a specific commitCount to be used when the
+     *            instance for that cluster is initialized.
+     */
+    private static $preloadedCommitCounts = [];
+
+    /**
      *  @var ?int The last commit count of the node we talked to. This is used to ensure if we make a subsequent
      *            request to a different node in the same session, that the node waits until it is at least
      *            up to date with the commits as the node we originally queried.
@@ -188,6 +195,11 @@ class Client implements LoggerAwareInterface
             return self::$instances[$hash];
         }
         $instance = new self($config);
+
+        // If we had a preloaded commitCount, set it so that the first request uses it.
+        if (isset(self::$preloadedCommitCounts[$instance->getClusterName()])) {
+            $instance->commitCount = self::$preloadedCommitCounts[$instance->getClusterName()];
+        }
         self::$instances[$hash] = $instance;
 
         return $instance;
@@ -196,10 +208,13 @@ class Client implements LoggerAwareInterface
     /**
      * After forking, you need to call this method to make sure the forks don't share the same socket and instead open
      * a new connection.
+     *
+     * @param int[] $preloadedCommitCounts
      */
-    public static function clearInstancesAfterFork()
+    public static function clearInstancesAfterFork(array $preloadedCommitCounts)
     {
         self::$instances = [];
+        self::$preloadedCommitCounts = $preloadedCommitCounts;
     }
 
     /**
@@ -263,6 +278,14 @@ class Client implements LoggerAwareInterface
     }
 
     /**
+     * Returns the cluster name.
+     */
+    public function getClusterName(): string
+    {
+        return $this->clusterName;
+    }
+
+    /**
      * Makes a direct call to Bedrock.
      *
      * @param string $method  Request method
@@ -281,7 +304,7 @@ class Client implements LoggerAwareInterface
 
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
-            $headers['commitCount']  = $this->commitCount;
+            $headers['commitCount'] = $this->commitCount;
         }
 
         // Include the requestID for logging purposes
@@ -375,6 +398,7 @@ class Client implements LoggerAwareInterface
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $this->markHostAsFailed($hostName);
+                /* @phan-suppress-next-line PhanTypeInvalidDimOffset for some reason phan says idempotent does not exist, but I have the ?? so it should not matter */
                 if ($numRetriesLeft && ($headers['idempotent'] ?? false)) {
                     $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
                 } else {
@@ -401,10 +425,10 @@ class Client implements LoggerAwareInterface
 
         // Log how long this particular call took
         $processingTime = isset($response['headers']['processTime']) ? $response['headers']['processTime'] : 0;
-        $serverTime     = isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0;
-        $clientTime     = round(microtime(true) - $timeStart, 3);
-        $networkTime    = $clientTime - $serverTime;
-        $waitTime       = $serverTime - $processingTime;
+        $serverTime = isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0;
+        $clientTime = round(microtime(true) - $timeStart, 3);
+        $networkTime = $clientTime - $serverTime;
+        $waitTime = $serverTime - $processingTime;
         $this->logger->info('Bedrock\Client - Request finished', [
             'host' => $hostName,
             'command' => $method,
@@ -460,7 +484,7 @@ class Client implements LoggerAwareInterface
         // Failed to send anything
         if ($bytesSent === false) {
             $socketErrorCode = socket_last_error();
-            $socketError  = socket_strerror($socketErrorCode);
+            $socketError = socket_strerror($socketErrorCode);
             throw new ConnectionFailure("Failed to send request to bedrock host $host:$port. Error: $socketErrorCode $socketError");
         }
 
@@ -566,7 +590,7 @@ class Client implements LoggerAwareInterface
             $sizeDataOnSocket = @socket_recv($this->socket, $dataOnSocket, self::PACKET_LENGTH, 0);
             if ($sizeDataOnSocket === false) {
                 $errorCode = socket_last_error($this->socket);
-                $errorMsg  = socket_strerror($errorCode);
+                $errorMsg = socket_strerror($errorCode);
                 throw new BedrockError("Error receiving data: $errorCode - $errorMsg");
             }
             if ($sizeDataOnSocket === 0 || strlen($dataOnSocket) === 0) {
@@ -592,13 +616,13 @@ class Client implements LoggerAwareInterface
         // If we received the commitCount, then save it for future requests. This is useful if for some reason we
         // change the bedrock node we are talking to.
         if (isset($responseHeaders["commitCount"])) {
-            $this->commitCount = $responseHeaders["commitCount"];
+            $this->commitCount = (int) $responseHeaders["commitCount"];
         }
 
         return [
             'headers' => $responseHeaders,
-            'body'    => $this->parseRawBody($responseHeaders, $response),
-            'size'    => $totalDataReceived,
+            'body' => $this->parseRawBody($responseHeaders, $response),
+            'size' => $totalDataReceived,
             'codeLine' => $codeLine,
             'code' => intval($codeLine),
         ];
@@ -705,5 +729,23 @@ class Client implements LoggerAwareInterface
             @socket_close($this->socket);
             $this->socket = null;
         }
+    }
+
+    /**
+     * Returns the highest commitCount of each cluster name instantiated in this request.
+     *
+     * @return int[]
+     */
+    public static function getCommitCounts(): array
+    {
+        $commitCounts = [];
+        foreach (self::$instances as $instance) {
+            $commitCounts[$instance->getClusterName()][] = $instance->commitCount;
+        }
+        foreach ($commitCounts as $name => $values) {
+            $commitCounts[$name] = max($values) ?? 0;
+        }
+
+        return array_filter($commitCounts);
     }
 }

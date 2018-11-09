@@ -389,7 +389,13 @@ class Client implements LoggerAwareInterface
             if ($this->socket && array_key_exists($this->lastHost, $hostConfigs)) {
                 $hostName = $this->lastHost;
             } else {
-                $this->socket = null;
+                // If we have a socket connection, but the current host is no longer in the list of available host
+                // configs, close the socket so it can be reset.
+                if ($this->socket) {
+                    @socket_close($this->socket);
+                    $this->socket = null;
+                }
+                // Try the first possible host.
                 $hostName = key($hostConfigs);
                 $this->lastHost = $hostName;
             }

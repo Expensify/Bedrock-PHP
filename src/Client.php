@@ -386,9 +386,10 @@ class Client implements LoggerAwareInterface
             $numRetriesLeft = count($hostConfigs) - 1;
 
             // If we already have a socket for this instance, then we first try to reuse it
-            if ($this->socket) {
+            if ($this->socket && array_key_exists($this->lastHost, $hostConfigs)) {
                 $hostName = $this->lastHost;
             } else {
+                $this->socket = null;
                 $hostName = key($hostConfigs);
                 $this->lastHost = $hostName;
             }

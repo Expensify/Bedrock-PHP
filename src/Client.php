@@ -632,9 +632,10 @@ class Client implements LoggerAwareInterface
             $this->commitCount = (int) $responseHeaders["commitCount"];
         }
 
-        // We treat a timeout as a ConnectionFailure
-        if (intval($codeLine) === 555) {
-            throw new ConnectionFailure('Timeout waiting for bedrock response');
+        // We treat a non-sqlite-query timeout as a ConnectionFailure.
+        // We don't want to retry timed out queries as this will just overwhelm the servers.
+        if ($codeLine === '555 Timeout') {
+            throw new ConnectionFailure('Internal Bedrock command timeout (555 Timeout)');
         }
 
         return [

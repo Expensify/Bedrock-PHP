@@ -385,10 +385,18 @@ class Client implements LoggerAwareInterface
             reset($hostConfigs);
             $numRetriesLeft = count($hostConfigs) - 1;
 
+            if ($this->lastHost && $this->socket && !isset($hostConfigs[$this->lastHost])) {
+                // If we have a socket connection, but the current host is no longer in the list of available host
+                // configs, close the socket so it can be reset.
+                @socket_close($this->socket);
+                $this->socket = null;
+                $this->logger->info('Bedrock\Client - Not reusing socket because the host it was connected to is no longer available', ['host' => $this->lastHost]);
+            }
             // If we already have a socket for this instance, then we first try to reuse it
             if ($this->socket) {
                 $hostName = $this->lastHost;
             } else {
+                // Try the first possible host.
                 $hostName = key($hostConfigs);
                 $this->lastHost = $hostName;
             }

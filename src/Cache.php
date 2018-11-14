@@ -59,7 +59,7 @@ class Cache extends Plugin
         if ($version) {
             // Invalidate all other versions of this name before setting
             $headers["invalidateName"] = "$name/*";
-            $headers["name"]           = "$name/$version";
+            $headers["name"] = "$name/$version";
         } else {
             // Just set this name
             $headers["name"] = "$name/";

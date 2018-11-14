@@ -59,7 +59,7 @@ class Cache extends Plugin
         if ($version) {
             // Invalidate all other versions of this name before setting
             $headers["invalidateName"] = "$name/*";
-            $headers["name"]           = "$name/$version";
+            $headers["name"] = "$name/$version";
         } else {
             // Just set this name
             $headers["name"] = "$name/";
@@ -82,6 +82,8 @@ class Cache extends Plugin
 
             return;
         }
+        // Both writing to and reading from the cache are always idempotent operations
+        $headers['idempotent'] = true;
 
         try {
             return $this->client->getStats()->benchmark("bedrock.cache.$method", function () use ($method, $headers, $body) {

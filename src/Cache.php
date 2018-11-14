@@ -82,6 +82,8 @@ class Cache extends Plugin
 
             return;
         }
+        // Both writing to and reading from the cache are always idempotent operations
+        $headers['idempotent'] = true;
 
         try {
             return $this->client->getStats()->benchmark("bedrock.cache.$method", function () use ($method, $headers, $body) {

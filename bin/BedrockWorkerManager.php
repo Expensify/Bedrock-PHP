@@ -40,10 +40,7 @@ $options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 
 'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
 'jobsToAddPerSecond::', ]);
 
-// Store parent ID to determine if we should continue forking
-$thisPID = getmypid();
-
-$workerPath = @$options['workerPath'];
+$workerPath = $options['workerPath'] ?? null;
 if (!$workerPath) {
     echo "Usage: sudo -u user php ./bin/BedrockWorkerManager.php --workerPath=<workerPath> [--jobName=<jobName> --maxLoad=<maxLoad> --maxIterations=<iteration> --writeConsistency=<consistency>  --enableLoadHandler --minSafeJobs=<minSafeJobs> --maxJobsInSingleRun=<maxJobsInSingleRun> --maxSafeTime=<maxSafeTime> --localJobsDBPath=<localJobsDBPath> --debugThrottle]\r\n";
     exit(1);

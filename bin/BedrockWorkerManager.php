@@ -295,6 +295,7 @@ try {
                             'name' => $job['name'],
                             'id' => $job['jobID'],
                             'extraParams' => $extraParams,
+                            'pid' => getmypid(),
                         ]);
                         $stats->counter('bedrockJob.create.'.$job['name']);
 

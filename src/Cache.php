@@ -34,7 +34,7 @@ class Cache extends Plugin
         if ($response['code'] === 404) {
             throw new DoesNotExist('The cache entry could not be found', 666);
         }
-        return is_array($response['body']) ? $response['body'] : json_decode($response['body']);
+        return $response['body'];
     }
 
     /**

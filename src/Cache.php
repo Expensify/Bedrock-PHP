@@ -38,6 +38,23 @@ class Cache extends Plugin
     }
 
     /**
+     * Reads from the cache, but if it does not find the entry, it returns the passed default.
+     *
+     * @param string $name
+     * @param mixed  $default
+     * @param string $version
+     * @return mixed
+     */
+    public function readWithDefault($name, $default, $version = null)
+    {
+        try {
+            return $this->read($name, $version);
+        } catch (DoesNotExist $e) {
+            return $default;
+        }
+    }
+
+    /**
      * Gets data from a cache, if it is not present, it computes it by calling $computeFunction and saves the result in the cache.
      *
      * @param string      $name

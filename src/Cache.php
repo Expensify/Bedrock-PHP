@@ -43,6 +43,7 @@ class Cache extends Plugin
      * @param string $name
      * @param mixed  $default
      * @param string $version
+     *
      * @return mixed
      */
     public function readWithDefault($name, $default, $version = null)

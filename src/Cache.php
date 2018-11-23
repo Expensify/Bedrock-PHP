@@ -34,7 +34,7 @@ class Cache extends Plugin
         if ($response['code'] === 404) {
             throw new DoesNotExist('The cache entry could not be found', 666);
         }
-        return json_decode($response['body']);
+        return is_array($response['body']) ? $response['body'] : json_decode($response['body']);
     }
 
     /**
@@ -93,7 +93,7 @@ class Cache extends Plugin
      *
      * @return mixed|null
      */
-    private function call(string $method, array $headers, $body = '')
+    public function call(string $method, array $headers, $body = '')
     {
         // Both writing to and reading from the cache are always idempotent operations
         $headers['idempotent'] = true;

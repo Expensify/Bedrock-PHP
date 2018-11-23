@@ -20,6 +20,7 @@ class Cache extends Plugin
      * @param string $version (optional) Specific version identifier (ie, a timestamp, counter, name, etc), defaults to the latest
      *
      * @return mixed Whatever what saved in the cache
+     *
      * @throws DoesNotExist
      */
     public function read($name, $version = null)
@@ -39,9 +40,10 @@ class Cache extends Plugin
     /**
      * Gets data from a cache, if it is not present, it computes it by calling $computeFunction and saves the result in the cache.
      *
-     * @param string $name
+     * @param string      $name
      * @param null|string $version
-     * @param callable $computeFunction
+     * @param callable    $computeFunction
+     *
      * @return array
      */
     public function get(string $name, ?string $version, callable $computeFunction)

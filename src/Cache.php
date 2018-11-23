@@ -110,7 +110,7 @@ class Cache extends Plugin
      *
      * @return mixed|null
      */
-    public function call(string $method, array $headers, $body = '')
+    private function call(string $method, array $headers, $body = '')
     {
         // Both writing to and reading from the cache are always idempotent operations
         $headers['idempotent'] = true;

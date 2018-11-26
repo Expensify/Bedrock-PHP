@@ -2,8 +2,8 @@
 
 namespace Expensify\Bedrock;
 
-use Expensify\Bedrock\Exceptions\ConnectionFailure;
 use Expensify\Bedrock\Exceptions\Cache\NotFound;
+use Expensify\Bedrock\Exceptions\ConnectionFailure;
 
 /**
  * Encapsulates the built-in Cache plugin to Bedrock.

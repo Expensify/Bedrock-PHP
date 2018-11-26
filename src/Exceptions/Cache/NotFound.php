@@ -1,12 +1,12 @@
 <?php
 
-namespace Expensify\Bedrock\Exceptions\Jobs;
+namespace Expensify\Bedrock\Exceptions\Cache;
 
 use Expensify\Bedrock\Exceptions\BedrockError;
 
 /**
  * Thrown when bedrock can't find the given cache entry.
  */
-class DoesNotExist extends BedrockError
+class NotFound extends BedrockError
 {
 }

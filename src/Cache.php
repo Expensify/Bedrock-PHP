@@ -3,7 +3,7 @@
 namespace Expensify\Bedrock;
 
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
-use Expensify\Bedrock\Exceptions\Jobs\DoesNotExist;
+use Expensify\Bedrock\Exceptions\Cache\NotFound;
 
 /**
  * Encapsulates the built-in Cache plugin to Bedrock.
@@ -21,7 +21,7 @@ class Cache extends Plugin
      *
      * @return mixed Whatever was saved in the cache
      *
-     * @throws DoesNotExist
+     * @throws NotFound
      */
     public function read($name, $version = null)
     {
@@ -32,7 +32,7 @@ class Cache extends Plugin
         ]);
         $response = $this->call("ReadCache", ["name" => $fullName]);
         if ($response['code'] === 404) {
-            throw new DoesNotExist('The cache entry could not be found', 666);
+            throw new NotFound('The cache entry could not be found', 666);
         }
         return $response['body'];
     }
@@ -50,7 +50,7 @@ class Cache extends Plugin
     {
         try {
             return $this->read($name, $version);
-        } catch (DoesNotExist $e) {
+        } catch (NotFound $e) {
             return $default;
         }
     }
@@ -68,7 +68,7 @@ class Cache extends Plugin
     {
         try {
             return $this->read($name, $version);
-        } catch (DoesNotExist $e) {
+        } catch (NotFound $e) {
             $value = $computeFunction();
             $this->write($name, $value, $version);
             return $value;

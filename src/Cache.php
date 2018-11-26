@@ -19,7 +19,7 @@ class Cache extends Plugin
      * @param string $name    Name pattern (using LIKE syntax) to read.
      * @param string $version (optional) Specific version identifier (ie, a timestamp, counter, name, etc), defaults to the latest
      *
-     * @return mixed Whatever what saved in the cache
+     * @return mixed Whatever was saved in the cache
      *
      * @throws DoesNotExist
      */

@@ -2,6 +2,7 @@
 
 namespace Expensify\Bedrock;
 
+use Expensify\Bedrock\Exceptions\Cache\NotFound;
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
 
 /**
@@ -12,20 +13,15 @@ use Expensify\Bedrock\Exceptions\ConnectionFailure;
 class Cache extends Plugin
 {
     /**
-     * Store if the cache is available and functional.
-     *
-     * @var bool
-     */
-    private static $hasFailed = false;
-
-    /**
      * Reads a named value from the cache.  Can optionally request a specific
      * version of that value, if available.
      *
      * @param string $name    Name pattern (using LIKE syntax) to read.
      * @param string $version (optional) Specific version identifier (ie, a timestamp, counter, name, etc), defaults to the latest
      *
-     * @return array Containing "name" (the name matched), "rawBody" (unparsed), and "body" (JSON parsed)
+     * @return mixed Whatever was saved in the cache
+     *
+     * @throws NotFound
      */
     public function read($name, $version = null)
     {
@@ -34,7 +30,49 @@ class Cache extends Plugin
             'key' => $name,
             'version' => $version,
         ]);
-        return $this->call("ReadCache", ["name" => $fullName]);
+        $response = $this->call("ReadCache", ["name" => $fullName]);
+        if ($response['code'] === 404) {
+            throw new NotFound('The cache entry could not be found', 666);
+        }
+        return $response['body'];
+    }
+
+    /**
+     * Reads from the cache, but if it does not find the entry, it returns the passed default.
+     *
+     * @param string $name
+     * @param mixed  $default
+     * @param string $version
+     *
+     * @return mixed
+     */
+    public function readWithDefault($name, $default, $version = null)
+    {
+        try {
+            return $this->read($name, $version);
+        } catch (NotFound $e) {
+            return $default;
+        }
+    }
+
+    /**
+     * Gets data from a cache, if it is not present, it computes it by calling $computeFunction and saves the result in the cache.
+     *
+     * @param string      $name
+     * @param null|string $version
+     * @param callable    $computeFunction
+     *
+     * @return array
+     */
+    public function get(string $name, ?string $version, callable $computeFunction)
+    {
+        try {
+            return $this->read($name, $version);
+        } catch (NotFound $e) {
+            $value = $computeFunction();
+            $this->write($name, $value, $version);
+            return $value;
+        }
     }
 
     /**
@@ -47,8 +85,6 @@ class Cache extends Plugin
      * @param string $name    Arbitrary string used to uniquely name this value.
      * @param mixed  $value   Raw binary data to associate with this name
      * @param string $version (optional) Version identifier (eg, a timestamp, counter, name, etc)
-     *
-     * @return array
      */
     public function write($name, $value, $version = null)
     {
@@ -65,7 +101,7 @@ class Cache extends Plugin
             $headers["name"] = "$name/";
         }
 
-        return $this->call("WriteCache", $headers, $value);
+        $this->call("WriteCache", $headers, json_encode($value));
     }
 
     /**
@@ -77,11 +113,6 @@ class Cache extends Plugin
      */
     private function call(string $method, array $headers, $body = '')
     {
-        if (self::$hasFailed) {
-            $this->client->getLogger()->info('Skip Bedrock Cache call because we have failed before');
-
-            return;
-        }
         // Both writing to and reading from the cache are always idempotent operations
         $headers['idempotent'] = true;
 
@@ -91,9 +122,6 @@ class Cache extends Plugin
             });
         } catch (ConnectionFailure $e) {
             $this->client->getLogger()->alert('Bedrock Cache failure', ['exception' => $e]);
-            self::$hasFailed = true;
-
-            return;
         }
     }
 }

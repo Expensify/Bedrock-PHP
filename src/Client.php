@@ -675,13 +675,12 @@ class Client implements LoggerAwareInterface
             $body = trim($body);
         }
 
-        if (!$body) {
+        if ($body === '') {
             return [];
         }
 
         $json = json_decode($body, true);
-        // json_decode will return null if it cannot decode the string
-        if (is_null($json)) {
+        if (json_last_error() !== JSON_ERROR_NONE) {
             // This will remove unwanted characters.
             // Check http://stackoverflow.com/a/20845642 and http://www.php.net/chr for details
             for ($i = 0; $i <= 31; $i++) {
@@ -692,7 +691,7 @@ class Client implements LoggerAwareInterface
             // We've seen occurrences of this happen when the string is not UTF-8. Forcing it fixes it.
             // See https://github.com/Expensify/Expensify/issues/21805 for example.
             $json = json_decode(mb_convert_encoding($jsonStr, 'UTF-8', 'UTF-8'), true);
-            if (is_null($json)) {
+            if (json_last_error() !== JSON_ERROR_NONE) {
                 throw new BedrockError('Could not parse JSON from bedrock');
             }
         }

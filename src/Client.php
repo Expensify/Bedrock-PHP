@@ -6,6 +6,7 @@ use Expensify\Bedrock\Exceptions\BedrockError;
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
 use Expensify\Bedrock\Stats\NullStats;
 use Expensify\Bedrock\Stats\StatsInterface;
+use Expensify\Libs\Str;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -339,6 +340,8 @@ class Client implements LoggerAwareInterface
             $headers['timeout'] = $this->bedrockTimeout * 1000;
         }
 
+        // Before logging, let's strip out any sensitive tokens from the initialReferer URL
+        $headers['initialReferer'] = Str::stripAuthToken($headers['initialReferer'] ?? '');
         $this->logger->info('Bedrock\Client - Starting a request', [
             'command' => $method,
             'clusterName' => $this->clusterName,

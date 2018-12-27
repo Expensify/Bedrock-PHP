@@ -135,6 +135,11 @@ class Client implements LoggerAwareInterface
     private $commandPriority;
 
     /**
+     * @var ?string Extra log param to add to bedrock requests.
+     */
+    private $logParam;
+
+    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
@@ -150,6 +155,7 @@ class Client implements LoggerAwareInterface
      *                      string|null          writeConsistency    The bedrock write consistency we want to use
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      *                      int|null             commandPriority     The priority to send the commands with
+     *                      int|string           logParam            An extra log to add in the bedrock request. Usually used for emails.
      *
      * @throws BedrockError
      */
@@ -167,6 +173,7 @@ class Client implements LoggerAwareInterface
         $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
         $this->commandPriority = $config['commandPriority'];
+        $this->logParam = $config['logParam'];
 
         // If the caller explicitly set `mockRequests`, use that value.
         if (isset($config['mockRequests'])) {
@@ -197,6 +204,7 @@ class Client implements LoggerAwareInterface
         $configForHash = $config;
         unset($configForHash['logger']);
         unset($configForHash['stats']);
+        unset($configForHash['logParama']);
         $hash = sha1(print_r($configForHash, true));
         if (isset(self::$instances[$hash])) {
             return self::$instances[$hash];
@@ -242,6 +250,7 @@ class Client implements LoggerAwareInterface
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
             'commandPriority' => null,
+            'logParam' => null,
         ], self::$defaultConfig, $config);
     }
 
@@ -337,6 +346,10 @@ class Client implements LoggerAwareInterface
 
         if (!array_key_exists('timeout', $headers) && $this->bedrockTimeout) {
             $headers['timeout'] = $this->bedrockTimeout * 1000;
+        }
+
+        if (!array_key_exists('logParam', $headers) && $this->logParam) {
+            $headers['logParam'] = $this->logParam;
         }
 
         $this->logger->info('Bedrock\Client - Starting a request', [

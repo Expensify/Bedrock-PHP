@@ -173,7 +173,7 @@ class Client implements LoggerAwareInterface
             $this->mockRequests = $config['mockRequests'];
         } else {
             // otherwise check the http headers
-            $this->mockRequests = isset($_SERVER['HTTP_X-Mock-Request']);
+            $this->mockRequests = isset($_SERVER['HTTP_X_MOCK_REQUEST']);
         }
 
         // Make sure we have at least one host configured

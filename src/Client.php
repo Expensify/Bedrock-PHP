@@ -171,12 +171,9 @@ class Client implements LoggerAwareInterface
         // If the caller explicitly set `mockRequests`, use that value.
         if (isset($config['mockRequests'])) {
             $this->mockRequests = $config['mockRequests'];
-        } elseif (function_exists('getallheaders')) {
-            // otherwise pull from the request headers.
-            $requestHeaders = getallheaders();
-            if (isset($requestHeaders['X-Mock-Request'])) {
-                $this->mockRequests = true;
-            }
+        } elseif (isset($_SERVER['HTTP_X_MOCK_REQUEST'])) {
+            // otherwise check the http headers and set it
+            $this->mockRequests = isset($_SERVER['HTTP_X_MOCK_REQUEST']);
         }
 
         // Make sure we have at least one host configured

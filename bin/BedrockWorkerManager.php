@@ -107,8 +107,11 @@ if ($enableLoadHandler) {
     $localDB->write($query);
 }
 
-// If --versionWatch is enabled, begin watching a version file for changes
+// If --versionWatch is enabled, begin watching a version file for changes. If the file doesn't exist, create it.
 $versionWatchFile = @$options['versionWatchFile'];
+if ($versionWatchFile && !file_exists($versionWatchFile)) {
+    touch($versionWatchFile);
+}
 $versionWatchFileTimestamp = $versionWatchFile && file_exists($versionWatchFile) ? filemtime($versionWatchFile) : false;
 
 // Wrap everything in a general exception handler so we can handle error

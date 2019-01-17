@@ -499,7 +499,9 @@ class Client implements LoggerAwareInterface
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
             @socket_connect($this->socket, $host, $port);
             $socketErrorCode = socket_last_error($this->socket);
-            if ($socketErrorCode) {
+            if ($socketErrorCode === 115) {
+                $this->logger->info('Bedrock\Client - socket_connect returned error 115, continuing.');
+            } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
             }

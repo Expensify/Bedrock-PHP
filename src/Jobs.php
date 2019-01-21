@@ -408,13 +408,13 @@ class Jobs extends Plugin
      *
      * @return array Containing "jobID"
      */
-    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT)
+    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, string $retryAfter = "")
     {
         $bedrock = Client::getInstance();
         try {
             $jobs = new self($bedrock);
 
-            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection);
+            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection, $retryAfter);
         } catch (Exception $e) {
             $bedrock->getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
 

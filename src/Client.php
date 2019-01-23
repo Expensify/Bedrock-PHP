@@ -140,6 +140,11 @@ class Client implements LoggerAwareInterface
     private $logParam;
 
     /**
+     * @var bool Should we leave the socket open after using it in order to reuse it in the following request we do?
+     */
+    private $stickySocket;
+
+    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
@@ -156,6 +161,7 @@ class Client implements LoggerAwareInterface
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      *                      int|null             commandPriority     The priority to send the commands with
      *                      string|null          logParam            Extra data to add to the bedrock logs
+     *                      bool                 stickySocket        Should we leave the socket open after using it in order to reuse it in the following request we do?
      *
      * @throws BedrockError
      */
@@ -174,6 +180,7 @@ class Client implements LoggerAwareInterface
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
         $this->commandPriority = $config['commandPriority'];
         $this->logParam = $config['logParam'];
+        $this->stickySocket = $config['stickySocket'];
 
         // If the caller explicitly set `mockRequests`, use that value.
         if (isset($config['mockRequests'])) {
@@ -247,6 +254,7 @@ class Client implements LoggerAwareInterface
             'maxBlackListTimeout' => 1,
             'commandPriority' => null,
             'logParam' => null,
+            'stickySocket' => true,
         ], self::$defaultConfig, $config);
     }
 
@@ -382,8 +390,7 @@ class Client implements LoggerAwareInterface
         // If we passed a preferred host and we already had a connected socket, but to a different host and the preferred
         // host is not blacklisted (the preferred host is returned first in the possible hosts array only when it's not blacklisted)
         // then we close the socket in order to connect to the preferred one.
-        $closeSocketAfterRequest = array_key_exists('Connection', $headers) ? $headers['Connection'] : false;
-
+        $closeSocketAfterRequest = array_key_exists('Connection', $headers) ? $headers['Connection'] : $this->stickySocket;
         if ($preferredHost && $this->socket && key($hostConfigs) !== $this->lastHost) {
             @socket_close($this->socket);
             $this->socket = null;

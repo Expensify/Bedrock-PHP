@@ -390,7 +390,7 @@ class Client implements LoggerAwareInterface
         // If we passed a preferred host and we already had a connected socket, but to a different host and the preferred
         // host is not blacklisted (the preferred host is returned first in the possible hosts array only when it's not blacklisted)
         // then we close the socket in order to connect to the preferred one.
-        $closeSocketAfterRequest = array_key_exists('Connection', $headers) ? $headers['Connection'] : $this->stickySocket;
+        $closeSocketAfterRequest = array_key_exists('Connection', $headers) ? $headers['Connection'] : !$this->stickySocket;
         if ($preferredHost && $this->socket && key($hostConfigs) !== $this->lastHost) {
             @socket_close($this->socket);
             $this->socket = null;

@@ -208,6 +208,7 @@ class Client implements LoggerAwareInterface
         $configForHash = $config;
         unset($configForHash['logger']);
         unset($configForHash['stats']);
+        unset($configForHash['logParam']);
         $hash = sha1(print_r($configForHash, true));
         if (isset(self::$instances[$hash])) {
             return self::$instances[$hash];

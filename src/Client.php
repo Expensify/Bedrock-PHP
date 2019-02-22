@@ -515,7 +515,7 @@ class Client implements LoggerAwareInterface
         socket_clear_error($this->socket);
 
         // Send the information to the socket
-        $bytesSent = socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
+        $bytesSent = @socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
 
         // Failed to send anything
         if ($bytesSent === false) {

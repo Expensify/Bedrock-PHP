@@ -201,6 +201,7 @@ class Client implements LoggerAwareInterface
         $configForHash = $config;
         unset($configForHash['logger']);
         unset($configForHash['stats']);
+        unset($configForHash['logParam']);
         $hash = sha1(print_r($configForHash, true));
         if (isset(self::$instances[$hash])) {
             return self::$instances[$hash];
@@ -382,7 +383,7 @@ class Client implements LoggerAwareInterface
         // If we passed a preferred host and we already had a connected socket, but to a different host and the preferred
         // host is not blacklisted (the preferred host is returned first in the possible hosts array only when it's not blacklisted)
         // then we close the socket in order to connect to the preferred one.
-        $closeSocketAfterRequest = array_key_exists('Connection', $headers) ? $headers['Connection'] : false;
+        $closeSocketAfterRequest = array_key_exists('Connection', $headers) ? $headers['Connection'] === 'close' : false;
 
         if ($preferredHost && $this->socket && key($hostConfigs) !== $this->lastHost) {
             @socket_close($this->socket);
@@ -450,15 +451,16 @@ class Client implements LoggerAwareInterface
 
         // If we had to close the socket after using it (because we connected to a preferred host or because the command
         // had Connection:forget), disconnect from it so we don't send all future requests to it.
-        if ($closeSocketAfterRequest) {
+        if ($closeSocketAfterRequest || ($response['headers']['Connection'] ?? '') === 'close') {
+            $this->logger->info('Closing socket after use');
             @socket_close($this->socket);
             $this->socket = null;
         }
 
         // Log how long this particular call took
-        $processingTime = isset($response['headers']['processTime']) ? $response['headers']['processTime'] : 0;
-        $serverTime = isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0;
-        $clientTime = round(microtime(true) - $timeStart, 3);
+        $processingTime = (isset($response['headers']['processTime']) ? $response['headers']['processTime'] : 0) / 1000;
+        $serverTime = (isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0) / 1000;
+        $clientTime = round(microtime(true) - $timeStart, 3) * 1000;
         $networkTime = $clientTime - $serverTime;
         $waitTime = $serverTime - $processingTime;
         $this->logger->info('Bedrock\Client - Request finished', [
@@ -513,7 +515,7 @@ class Client implements LoggerAwareInterface
         socket_clear_error($this->socket);
 
         // Send the information to the socket
-        $bytesSent = socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
+        $bytesSent = @socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
 
         // Failed to send anything
         if ($bytesSent === false) {

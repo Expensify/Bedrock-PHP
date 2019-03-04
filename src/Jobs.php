@@ -198,15 +198,21 @@ class Jobs extends Plugin
                 unset($jobs[$i]['priority']);
             }
         }
+
+        // If the name of the job has to be unique, Bedrock will return any existing job that exists with the
+        // given name instead of making a new one, which essentially makes the command idempotent.
+        $areAllJobsUnique = true;
         $commitCounts = Client::getCommitCounts();
         foreach ($jobs as $i => $job) {
             $jobs[$i]['data'] = array_merge($jobs[$i]['data'] ?? [], count($commitCounts) ? ['_commitCounts' => $commitCounts] : []);
+            $areAllJobsUnique = ($jobs[$i]['unique'] ?? false) && $areAllJobsUnique;
         }
 
         $response = $this->call(
             'CreateJobs',
             [
                 'jobs' => $jobs,
+                'idempotent' => $areAllJobsUnique,
             ]
         );
 

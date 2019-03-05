@@ -325,7 +325,9 @@ class Client implements LoggerAwareInterface
         if (isset($GLOBALS['REQUEST_ID'])) {
             $headers['requestID'] = $GLOBALS['REQUEST_ID'];
         }
-        $headers['lastIP'] = $_SERVER['REMOTE_ADDR'] ?? null;
+
+        // Get the real request IP if this is a proxied request
+        $headers['lastIP'] = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '';
 
         // Set the write consistency
         if ($this->writeConsistency) {

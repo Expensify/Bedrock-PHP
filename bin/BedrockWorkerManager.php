@@ -339,7 +339,7 @@ try {
                                 ]);
                                 try {
                                     $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());
-                                } catch (IllegalAction $e) {
+                                } catch (IllegalAction | DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
                                     // after the first server actually ran the command (but we lost the response).

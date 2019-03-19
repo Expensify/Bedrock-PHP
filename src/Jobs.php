@@ -400,6 +400,37 @@ class Jobs extends Plugin
     }
 
     /**
+     * Queries several job's info.
+     * Bedrock will return:
+     *     - 200 - OK
+     *         . created - creation time of this job
+     *         . jobID - unique ID of the job
+     *         . state - One of QUEUED, RUNNING, FINISHED
+     *         . name  - name of the actual job matched
+     *         . nextRun - timestamp of next scheduled run
+     *         . lastRun - timestamp it was last run
+     *         . repeat - recurring description
+     *         . data - JSON data associated with this job.
+     *
+     * @param int[] $jobIDs
+     *
+     * @return array|null
+     */
+    public function queryJobs(array $jobIDs)
+    {
+        $bedrockResponse = $this->call(
+            "QueryJob",
+            [
+                "jobIDList" => implode(',', $jobIDs),
+                "idempotent" => true,
+            ]
+        );
+
+        return $bedrockResponse['body'] ?? null;
+    }
+
+
+    /**
      * Schedules a new job, optionally in the future, optionally to repeat.
      * Silently fails in case of an exception and logs the error.
      *

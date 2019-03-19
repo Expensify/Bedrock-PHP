@@ -436,7 +436,6 @@ class Jobs extends Plugin
         return $bedrockResponse['body'] ?? [];
     }
 
-
     /**
      * Schedules a new job, optionally in the future, optionally to repeat.
      * Silently fails in case of an exception and logs the error.

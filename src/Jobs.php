@@ -51,6 +51,13 @@ class Jobs extends Plugin
     const STATE_CANCELLED = "CANCELLED";
 
     /**
+     * State of a job that is currently failed.
+     *
+     * @var string
+     */
+    const STATE_FAILED = "FAILED";
+
+    /**
      * "Connection" header option to wait for a response.
      *
      * @var string
@@ -401,7 +408,7 @@ class Jobs extends Plugin
 
     /**
      * Queries several job's info.
-     * Bedrock will return:
+     * Bedrock will return a jobs list with:
      *     - 200 - OK
      *         . created - creation time of this job
      *         . jobID - unique ID of the job
@@ -414,19 +421,19 @@ class Jobs extends Plugin
      *
      * @param int[] $jobIDs
      *
-     * @return array|null
+     * @return array[]
      */
     public function queryJobs(array $jobIDs)
     {
         $bedrockResponse = $this->call(
-            "QueryJob",
+            "QueryJobs",
             [
                 "jobIDList" => implode(',', $jobIDs),
                 "idempotent" => true,
             ]
         );
 
-        return $bedrockResponse['body'] ?? null;
+        return $bedrockResponse['body'] ?? [];
     }
 
 

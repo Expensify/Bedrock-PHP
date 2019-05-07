@@ -392,7 +392,9 @@ class Client implements LoggerAwareInterface
         }
 
         $hostName = null;
+        $retriedAllHosts = false;
         while (!$response && count($hostConfigs)) {
+            $exception = null;
             reset($hostConfigs);
             $numRetriesLeft = count($hostConfigs) - 1;
 
@@ -425,16 +427,21 @@ class Client implements LoggerAwareInterface
                     $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
                 } else {
                     $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                    throw $e;
+                    $exception = $e;
                 }
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $this->markHostAsFailed($hostName);
                 /* @phan-suppress-next-line PhanTypeInvalidDimOffset for some reason phan says idempotent does not exist, but I have the ?? so it should not matter */
-                if ($numRetriesLeft && ($headers['idempotent'] ?? false)) {
-                    $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+                if ($headers['idempotent'] ?? false) {
+                    if ($numRetriesLeft) {
+                        $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+                    } else {
+                        $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                        $exception = $e;
+                    }
                 } else {
-                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because command is not idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
                 }
             } finally {
@@ -442,6 +449,23 @@ class Client implements LoggerAwareInterface
                 $hostConfigs = array_filter($hostConfigs, function ($possibleHost) use ($hostName) {
                     return $possibleHost !== $hostName;
                 }, ARRAY_FILTER_USE_KEY);
+            }
+
+            // All non blacklisted hosts failed, this could be because we are in the middle of a cluster version flip.
+            // ie: We have version 1 and version 2, we've installed version 2 in less than half the cluster, a previous
+            // request already marked all servers in version 2 as failed (since 1 is the current version) in this request
+            // we have installed version 2 in one more server, making it the current version. So now all the servers that
+            // were marked as failed in the previous request are the ones serving requests and all the ones that were good
+            // before are now in the old version and not serving requests. So to cover this, we retry in all servers
+            // once hoping it will find a server that works.
+            if ($exception) {
+                if (!$retriedAllHosts) {
+                    $retriedAllHosts = true;
+                    $this->logger->info('All non blacklisted hosts failed, as a last resort try again in all hosts');
+                    $hostConfigs = $this->getPossibleHosts($preferredHost, true);
+                } else {
+                    throw $exception;
+                }
             }
         }
 
@@ -540,14 +564,19 @@ class Client implements LoggerAwareInterface
      *                               ensure it will use that host, but it will try to use it if its not blacklisted.
      * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
      */
-    private function getPossibleHosts(string $preferredHost = null)
+    private function getPossibleHosts(?string $preferredHost, bool $resetHosts = false)
     {
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
         // is so that we don't keep the old cache after changing the hosts or failover configuration.
         if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING)) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
-            $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
+            if ($resetHosts) {
+                $this->logger->info('Bedrock\Client - Resetting host configs');
+                $cachedHostConfigs = [];
+            } else {
+                $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
+            }
             $this->logger->info('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
 
             // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
@@ -581,7 +610,7 @@ class Client implements LoggerAwareInterface
         shuffle($failoverHostNames);
         $mainHostName = array_rand($this->mainHostConfigs);
         $preferredHost = array_key_exists((string) $preferredHost, $cachedHostConfigs) ? [$preferredHost] : [];
-        $hostNames = array_unique(array_merge($preferredHost, [$mainHostName], $failoverHostNames));
+        $hostNames = array_filter(array_unique(array_merge($preferredHost, [$mainHostName], $failoverHostNames)));
 
         $nonBlackListedHosts = [];
         foreach ($hostNames as $hostName) {

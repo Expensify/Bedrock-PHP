@@ -437,7 +437,7 @@ class Client implements LoggerAwareInterface
                     if ($numRetriesLeft) {
                         $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
                     } else {
-                        $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                        $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                         $exception = $e;
                     }
                 } else {
@@ -459,13 +459,12 @@ class Client implements LoggerAwareInterface
             // before are now in the old version and not serving requests. So to cover this, we retry in all servers
             // once hoping it will find a server that works.
             if ($exception) {
-                if (!$retriedAllHosts) {
-                    $retriedAllHosts = true;
-                    $this->logger->info('All non blacklisted hosts failed, as a last resort try again in all hosts');
-                    $hostConfigs = $this->getPossibleHosts($preferredHost, true);
-                } else {
+                if ($retriedAllHosts) {
                     throw $exception;
                 }
+                $retriedAllHosts = true;
+                $this->logger->info('All non blacklisted hosts failed, as a last resort try again in all hosts');
+                $hostConfigs = $this->getPossibleHosts($preferredHost, true);
             }
         }
 

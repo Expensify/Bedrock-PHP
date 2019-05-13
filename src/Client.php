@@ -433,16 +433,19 @@ class Client implements LoggerAwareInterface
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $this->markHostAsFailed($hostName);
                 /* @phan-suppress-next-line PhanTypeInvalidDimOffset for some reason phan says idempotent does not exist, but I have the ?? so it should not matter */
-                if ($headers['idempotent'] ?? false) {
-                    if ($numRetriesLeft) {
-                        $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
-                    } else {
-                        $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                        $exception = $e;
-                    }
-                } else {
+                if (!($headers['idempotent'] ?? false)) {
                     $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because command is not idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
+                }
+                if ($numRetriesLeft) {
+                    $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+                } else {
+                    if ($retriedAllHosts) {
+                        $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    } else {
+                        $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying in all hosts', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    }
+                    $exception = $e;
                 }
             } finally {
                 // We remove the host we just used from the possible hosts to use, in case we are retrying

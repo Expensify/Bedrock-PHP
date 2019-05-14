@@ -426,7 +426,11 @@ class Client implements LoggerAwareInterface
                 if ($numRetriesLeft) {
                     $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
                 } else {
-                    $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    if ($retriedAllHosts) {
+                        $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    } else {
+                        $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying in all hosts', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    }
                     $exception = $e;
                 }
             } catch (BedrockError $e) {

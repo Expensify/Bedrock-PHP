@@ -370,6 +370,21 @@ class Jobs extends Plugin
     }
 
     /**
+     * Requeues a job back to QUEUED state. Updates the job name if provided as well.
+     */
+    public function requeueJobs(array $jobIDs, string $name = ''): array
+    {
+        return $this->call(
+            "RequeueJobs",
+            [
+                "jobIDs" => implode(',',$jobIDs),
+                "name" => $name,
+                "idempotent" => true,
+            ]
+        );
+    }
+
+    /**
      * Query a job's info.
      * Bedrock will return:
      *     - 200 - OK

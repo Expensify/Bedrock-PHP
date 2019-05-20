@@ -377,7 +377,7 @@ class Jobs extends Plugin
         return $this->call(
             "RequeueJobs",
             [
-                "jobIDs" => implode(',',$jobIDs),
+                "jobIDs" => implode(',', $jobIDs),
                 "name" => $name,
                 "idempotent" => true,
             ]

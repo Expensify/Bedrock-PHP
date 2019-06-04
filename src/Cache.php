@@ -86,12 +86,14 @@ class Cache extends Plugin
      * @param mixed  $value   Raw binary data to associate with this name
      * @param string $version (optional) Version identifier (eg, a timestamp, counter, name, etc)
      */
-    public function write($name, $value, $version = null)
+    public function write($name, $value, $version = null, array $headers = [])
     {
+        // By default, unless specified otherwise, we want writes to be async
+        $headers = array_merge([
+            'Connection' => 'forget',
+        ], $headers);
+
         // If we have a version, invalidate previous versions
-        $headers = [
-            "Connection" => "forget",
-        ];
         if ($version) {
             // Invalidate all other versions of this name before setting
             $headers["invalidateName"] = "$name/*";

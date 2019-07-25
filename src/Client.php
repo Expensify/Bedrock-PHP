@@ -302,16 +302,17 @@ class Client implements LoggerAwareInterface
     /**
      * Makes a direct call to Bedrock.
      *
-     * @param string $method  Request method
-     * @param array  $headers Request headers (optional)
-     * @param string $body    Request body (optional)
+     * @param string $method            Request method
+     * @param array  $headers           Request headers (optional)
+     * @param string $body              Request body (optional)
+     * @param bool   $parseResponseBody Allow passing the body through unparsed and unmodified. (optional)
      *
      * @return array JSON response, or null on error
      *
      * @throws BedrockError
      * @throws ConnectionFailure
      */
-    public function call($method, $headers = [], $body = '')
+    public function call($method, $headers = [], $body = '', $parseResponseBody = true)
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
@@ -418,7 +419,7 @@ class Client implements LoggerAwareInterface
                 // trying to use might not be in the picked host configs, because getPossibleHosts randomizes them.
                 $port = $this->mainHostConfigs[$hostName]['port'] ?? $this->failoverHostConfigs[$hostName]['port'];
                 $this->sendRawRequest($hostName, $port, $rawRequest);
-                $response = $this->receiveResponse();
+                $response = $this->receiveResponse($parseResponseBody);
             } catch (ConnectionFailure $e) {
                 // The error happened during connection (or before we sent any data, or in a case where we know the
                 // command was never processed) so we can retry it safely.
@@ -638,11 +639,13 @@ class Client implements LoggerAwareInterface
     /**
      * Receives and parses the response.
      *
+     * @param bool $parseResponseBody flag indicating if the body should be parsed or passed unmodified.
+
      * @return array Response object including 'code', 'codeLine', 'headers', `size` and 'body'
      *
      * @throws BedrockError
      */
-    private function receiveResponse()
+    private function receiveResponse(bool $parseResponseBody = true)
     {
         // Make sure bedrock is returning something https://github.com/Expensify/Expensify/issues/11010
         if (@socket_recv($this->socket, $buf, self::PACKET_LENGTH, MSG_PEEK) === false) {
@@ -698,7 +701,7 @@ class Client implements LoggerAwareInterface
 
         return [
             'headers' => $responseHeaders,
-            'body' => $this->parseRawBody($responseHeaders, $response),
+            'body' => $parseResponseBody ? $this->parseRawBody($responseHeaders, $response) : $response,
             'size' => $totalDataReceived,
             'codeLine' => $codeLine,
             'code' => intval($codeLine),

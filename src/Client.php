@@ -640,7 +640,7 @@ class Client implements LoggerAwareInterface
      * Receives and parses the response.
      *
      * @param bool $parseResponseBody flag indicating if the body should be parsed or passed unmodified.
-
+     *
      * @return array Response object including 'code', 'codeLine', 'headers', `size` and 'body'
      *
      * @throws BedrockError

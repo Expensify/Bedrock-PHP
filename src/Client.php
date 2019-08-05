@@ -645,7 +645,7 @@ class Client implements LoggerAwareInterface
      *
      * @throws BedrockError
      */
-    private function receiveResponse(bool $parseResponseBody = true)
+    private function receiveResponse(bool $parseResponseBody)
     {
         // Make sure bedrock is returning something https://github.com/Expensify/Expensify/issues/11010
         if (@socket_recv($this->socket, $buf, self::PACKET_LENGTH, MSG_PEEK) === false) {

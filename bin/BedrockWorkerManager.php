@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Expensify\Bedrock\Client;
+use Expensify\Bedrock\Exceptions\BedrockError;
 use Expensify\Bedrock\Exceptions\Jobs\DoesNotExist;
 use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
@@ -329,6 +330,11 @@ try {
                                     // retried the command in a different server after the first server actually ran the
                                     // command (but we lost the response).
                                     $logger->info('Failed to FinishJob we probably retried the command on a child job so it is safe to ignore', ['job' => $job, 'exception' => $e]);
+                                } catch (BedrockError $e) {
+                                    if (!$job['retryAfter']) {
+                                        throw $e;
+                                    }
+                                    $logger->info('Could not call finishJob successfully, but job has retryAfter, so not failing the job and letting it be processed again');
                                 }
                             } catch (RetryableException $e) {
                                 // Worker had a recoverable failure; retry again later.

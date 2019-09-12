@@ -553,10 +553,12 @@ function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimesta
 /**
  * Watch for an ADMIN_DOWN file that can be touched. If in place, we
  * will not spawn new child processes until it has been removed.
+ *
+ * @param Expensify\Bedrock\Stats\StatsInterface $stats
  */
-function adminDownStatusEnabled(Expensify\Libs\StatsD $stats): bool
+function adminDownStatusEnabled($stats): bool
 {
-    return $stats->benchmark('bedrockWorkerManager.adminDownStatusEnabled', function() {
+    return $stats->benchmark('bedrockWorkerManager.adminDownStatusEnabled', function () {
         if (file_exists('/var/tmp/ADMIN_DOWN')) {
             return true;
         }

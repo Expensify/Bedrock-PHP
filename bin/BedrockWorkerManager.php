@@ -190,6 +190,14 @@ try {
                 break 2;
             }
 
+            if (adminDownStatusEnabled($stats) === true) {
+                $logger->info('ADMIN_DOWN status detected. Not spawning more child processes. Trying again after 1s.');
+                sleep(1);
+
+                // Don't query for new jobs until the status has been lifted
+                continue;
+            }
+
             // Ready to get a new job
             try {
                 // Query the server for a job
@@ -539,5 +547,20 @@ function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimesta
         $versionChanged = $versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp;
 
         return $versionChanged;
+    });
+}
+
+/**
+ * Watch for an ADMIN_DOWN file that can be touched. If in place, we
+ * will not spawn new child processes until it has been removed.
+ */
+function adminDownStatusEnabled(Expensify\Libs\StatsD $stats): bool
+{
+    return $stats->benchmark('bedrockWorkerManager.adminDownStatusEnabled', function() {
+        if (file_exists('/var/tmp/ADMIN_DOWN')) {
+            return true;
+        }
+
+        return false;
     });
 }

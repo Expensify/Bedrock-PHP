@@ -190,7 +190,7 @@ try {
                 break 2;
             }
 
-            if (adminDownStatusEnabled($stats) === true) {
+            if (adminDownStatusEnabled($stats)) {
                 $logger->info('ADMIN_DOWN status detected. Not spawning more child processes. Trying again after 1s.');
                 sleep(1);
 
@@ -559,10 +559,7 @@ function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimesta
 function adminDownStatusEnabled($stats): bool
 {
     return $stats->benchmark('bedrockWorkerManager.adminDownStatusEnabled', function () {
-        if (file_exists('/var/tmp/ADMIN_DOWN')) {
-            return true;
-        }
-
-        return false;
+        clearstatcache(true, Jobs::ADMIN_DOWN_FILE_LOCATION);
+        return file_exists(Jobs::ADMIN_DOWN_FILE_LOCATION);
     });
 }

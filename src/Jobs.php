@@ -80,6 +80,12 @@ class Jobs extends Plugin
     const PRIORITY_LOW = 0;
 
     /**
+     * Constant for the location of the file to look for to disable processing
+     * new jobs.
+     */
+    const ADMIN_DOWN_FILE_LOCATION = '/var/tmp/ADMIN_DOWN';
+
+    /**
      * Calls the Jobs plugin.
      *
      * @param string $method  Method to call

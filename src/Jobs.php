@@ -250,7 +250,7 @@ class Jobs extends Plugin
      *
      * @param string $name
      * @param int    $numResults
-     * @param array  $params (optional)
+     * @param array  $params         (optional)
      * @param bool   $orderByCreated (optional)
      *
      * @return array Containing all job details

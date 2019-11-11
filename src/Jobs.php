@@ -231,12 +231,16 @@ class Jobs extends Plugin
      * Waits for a match (if requested) and atomically dequeues exactly one job.
      *
      * @param string $name
+     * @param bool   $orderByCreated (optional)
      *
      * @return array Containing all job details
      */
-    public function getJob($name)
+    public function getJob(string $name, bool $orderByCreated = false): array
     {
-        $headers = ["name" => $name];
+        $headers = [
+            "name" => $name,
+            "orderByCreated" => $orderByCreated,
+        ];
 
         return $this->call("GetJob", $headers);
     }
@@ -246,14 +250,17 @@ class Jobs extends Plugin
      *
      * @param string $name
      * @param int    $numResults
+     * @param array  $params (optional)
+     * @param bool   $orderByCreated (optional)
      *
      * @return array Containing all job details
      */
-    public function getJobs(string $name, int $numResults, array $params = []): array
+    public function getJobs(string $name, int $numResults, array $params = [], bool $orderByCreated = false): array
     {
         $headers = [
             "name" => $name,
             "numResults" => $numResults,
+            "orderByCreated" => $orderByCreated,
         ];
 
         $headers = array_merge($headers, $params);

@@ -3,7 +3,7 @@ php:
     - '7.2.22'
 
 install:
-  - pecl install ast-0.1.7
+  - pecl install ast-1.0.3
   - composer self-update
   - composer install --prefer-dist --no-interaction --dev
 

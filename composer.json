@@ -20,8 +20,8 @@
         "psr/log": "1.0.1"
     },
     "require-dev": {
-        "phan/phan": "0.12.9",
-        "friendsofphp/php-cs-fixer": "2.13.0"
+        "friendsofphp/php-cs-fixer": "2.13.0",
+        "phan/phan": "2.2.13"
     },
     "autoload": {
         "psr-4": {

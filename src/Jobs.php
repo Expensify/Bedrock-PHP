@@ -267,10 +267,11 @@ class Jobs extends Plugin
      * @param int    $jobID
      * @param array  $data
      * @param string $repeat (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param int    $priority (optional) The new priority of the job
      *
      * @return array
      */
-    public function updateJob($jobID, $data, $repeat = null)
+    public function updateJob($jobID, $data, $repeat = null, $priority = null)
     {
         $commitCounts = Client::getCommitCounts();
         return $this->call(
@@ -279,6 +280,7 @@ class Jobs extends Plugin
                 "jobID" => $jobID,
                 "data" => array_merge($data ?? [], count($commitCounts) ? ['_commitCounts' => $commitCounts] : []),
                 "repeat" => $repeat,
+                "jobPriority" => $priority,
                 "idempotent" => true,
             ]
         );

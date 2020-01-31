@@ -266,7 +266,7 @@ class Jobs extends Plugin
      *
      * @param int    $jobID
      * @param array  $data
-     * @param string $repeat (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param string $repeat   (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
      * @param int    $priority (optional) The new priority of the job
      *
      * @return array

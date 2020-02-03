@@ -271,7 +271,7 @@ class Jobs extends Plugin
      *
      * @return array
      */
-    public function updateJob($jobID, $data, $repeat = null, $priority = null)
+    public function updateJob($jobID, $data, $repeat = null, ?int $priority = null)
     {
         $commitCounts = Client::getCommitCounts();
         return $this->call(

@@ -10,9 +10,9 @@ class Plugin
     /**
      * Pointer to parent Bedrock object.
      *
-     * @var null|Client
+     * @var Client
      */
-    protected $client = null;
+    protected $client;
 
     /**
      * Constructor.

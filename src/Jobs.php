@@ -271,7 +271,7 @@ class Jobs extends Plugin
      *
      * @return array
      */
-    public function updateJob($jobID, $data, $repeat = null, ?int $priority = null)
+    public function updateJob($jobID, $data, $repeat = null, ?int $priority = null, ?string $nextRun = null)
     {
         $commitCounts = Client::getCommitCounts();
         return $this->call(
@@ -282,6 +282,7 @@ class Jobs extends Plugin
                 "repeat" => $repeat,
                 "jobPriority" => $priority,
                 "idempotent" => true,
+                'nextRun' => $nextRun,
             ]
         );
     }

@@ -1,6 +1,7 @@
 language: php
 php:
-    - '7.2.22'
+  - '7.2.22'
+  - '7.4.3'
 
 install:
   - pecl install ast-1.0.3

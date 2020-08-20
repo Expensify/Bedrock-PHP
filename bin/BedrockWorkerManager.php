@@ -176,7 +176,7 @@ try {
 
         // Check to see if BWM was able to get jobs on the first attempt. If not, it would add a full second each time it failed, skewing the timer numbers.
         if ($isFirstTry) {
-            $stats->timer("bedrockWorkerManager.fullLoop", microtime(true) - $loopStartTime); /* @phan-suppress-current-line PhanTypeMismatchArgument */
+            $stats->timer('bedrockWorkerManager.fullLoop', microtime(true) - $loopStartTime); /* @phan-suppress-current-line PhanTypeMismatchArgument */
         }
 
         // Poll the server until we successfully get a job
@@ -211,7 +211,7 @@ try {
 
         // Found a job
         $loopStartTime = microtime(true);
-        /* @phan-suppress-next-line PhanTypeArraySuspiciousNullable */
+        $response = $response ?? [];
         if ($response['code'] == 200) {
             // BWM jobs are '/' separated names, the last component of which
             // indicates the name of the worker to instantiate to execute this
@@ -233,7 +233,6 @@ try {
             // selectively.  For example, you may have separate jobs scheduled
             // as production/jobName and staging/jobName, with a WorkerManager
             // in each environment looking for each path.
-            /* @phan-suppress-next-line PhanTypeArraySuspiciousNullable */
             $jobsToRun = $response['body']['jobs'];
             foreach ($jobsToRun as $job) {
                 $localJobID = 0;
@@ -413,7 +412,7 @@ try {
                     $jobs->failJob($job['jobID']);
                 }
             }
-        } elseif ($response['code'] == 303) { /** @phan-suppress-current-line PhanTypeArraySuspiciousNullable */
+        } elseif ($response['code'] == 303) {
             $logger->info("No job found, retrying.");
         } else {
             $logger->warning("Failed to get job");

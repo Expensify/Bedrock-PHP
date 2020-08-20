@@ -176,7 +176,7 @@ try {
 
         // Check to see if BWM was able to get jobs on the first attempt. If not, it would add a full second each time it failed, skewing the timer numbers.
         if ($isFirstTry) {
-            $stats->timer('bedrockWorkerManager.fullLoop', microtime(true) - $loopStartTime); /* @phan-suppress-current-line PhanTypeMismatchArgument */
+            $stats->timer('bedrockWorkerManager.fullLoop', microtime(true) - $loopStartTime);
         }
 
         // Poll the server until we successfully get a job

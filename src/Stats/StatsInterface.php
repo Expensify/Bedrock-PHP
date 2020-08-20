@@ -18,8 +18,8 @@ interface StatsInterface
     /**
      * Track how long an event took.
      *
-     * @param string $name  Name of the event
-     * @param int    $value Duration in ms
+     * @param string    $name  Name of the event
+     * @param int|float $value Duration in ms
      */
     public function timer($name, $value);
 

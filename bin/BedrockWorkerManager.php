@@ -163,7 +163,7 @@ try {
                 sleep(1);
             } elseif ($jobsToQueue > $minSafeJobs / 2) {
                 $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $target);
+                $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $jobsToQueue);
                 $stats->timer('bedrockWorkerManager.targetJobs', $target);
                 break;
             } else {
@@ -176,7 +176,7 @@ try {
 
         // Check to see if BWM was able to get jobs on the first attempt. If not, it would add a full second each time it failed, skewing the timer numbers.
         if ($isFirstTry) {
-            $stats->timer("bedrockWorkerManager.fullLoop", microtime(true) - $loopStartTime);
+            $stats->timer('bedrockWorkerManager.fullLoop', microtime(true) - $loopStartTime);
         }
 
         // Poll the server until we successfully get a job
@@ -211,6 +211,7 @@ try {
 
         // Found a job
         $loopStartTime = microtime(true);
+        $response = $response ?? [];
         if ($response['code'] == 200) {
             // BWM jobs are '/' separated names, the last component of which
             // indicates the name of the worker to instantiate to execute this

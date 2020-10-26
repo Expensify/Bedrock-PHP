@@ -155,10 +155,11 @@ class Jobs extends Plugin
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
      * @param string|null $connection  (optional) Specify 'Connection' header using constants defined in this class.
      * @param string|null $retryAfter  (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
+     * @param bool|null   $overwrite   (optional) If a unique job already exists with that name, should we overwrite the existing data
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null, $overwrite = true)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
         $commitCounts = Client::getCommitCounts();
@@ -178,6 +179,7 @@ class Jobs extends Plugin
                 // given name instead of making a new one, which essentially makes the command idempotent.
                 'idempotent' => $unique,
                 'retryAfter' => $retryAfter,
+                'overwrite' => $overwrite,
             ]
         );
 

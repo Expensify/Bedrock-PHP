@@ -155,7 +155,7 @@ class Jobs extends Plugin
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
      * @param string|null $connection  (optional) Specify 'Connection' header using constants defined in this class.
      * @param string|null $retryAfter  (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
-     * @param bool|null   $overwrite   (optional) If a unique job already exists with that name, should we overwrite the existing data
+     * @param bool|null   $overwrite   (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
      *
      * @return array Containing "jobID"
      */
@@ -438,16 +438,17 @@ class Jobs extends Plugin
      * @param int         $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
      * @param string      $connection  (optional) Specify 'Connection' header using constants defined in this class.
+     * @param bool|null   $overwrite   (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
      *
      * @return array Containing "jobID"
      */
-    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, string $retryAfter = "")
+    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, string $retryAfter = "", bool $overwrite = true)
     {
         $bedrock = Client::getInstance();
         try {
             $jobs = new self($bedrock);
 
-            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection, $retryAfter);
+            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection, $retryAfter, $overwrite);
         } catch (Exception $e) {
             $bedrock->getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
 

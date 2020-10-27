@@ -2,9 +2,11 @@ language: php
 php:
   - '7.4.7'
 
+before_install:
+  - cd ../ && composer self-update 1.6.4 && cd -
+
 install:
   - pecl install ast-1.0.3
-  - cd ../ && composer self-update 1.6.4 && cd -
   - composer install --prefer-dist --no-interaction --dev
 
 script:

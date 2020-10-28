@@ -155,10 +155,11 @@ class Jobs extends Plugin
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
      * @param string|null $connection  (optional) Specify 'Connection' header using constants defined in this class.
      * @param string|null $retryAfter  (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
+     * @param bool        $overwrite   (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null, $overwrite = true)
     {
         $this->client->getLogger()->info("Create job", ['name' => $name]);
         $commitCounts = Client::getCommitCounts();
@@ -178,6 +179,7 @@ class Jobs extends Plugin
                 // given name instead of making a new one, which essentially makes the command idempotent.
                 'idempotent' => $unique,
                 'retryAfter' => $retryAfter,
+                'overwrite' => $overwrite,
             ]
         );
 
@@ -244,9 +246,6 @@ class Jobs extends Plugin
     /**
      * Waits for a match (if requested) and atomically dequeues $numResults jobs.
      *
-     * @param string $name
-     * @param int    $numResults
-     *
      * @return array Containing all job details
      */
     public function getJobs(string $name, int $numResults, array $params = []): array
@@ -309,10 +308,6 @@ class Jobs extends Plugin
 
     /**
      * Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
-     *
-     * @param int $jobID
-     *
-     * @return array
      */
     public function cancelJob(int $jobID): array
     {
@@ -436,16 +431,17 @@ class Jobs extends Plugin
      * @param int         $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
      * @param string      $connection  (optional) Specify 'Connection' header using constants defined in this class.
+     * @param bool        $overwrite   (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
      *
      * @return array Containing "jobID"
      */
-    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, string $retryAfter = "")
+    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, string $retryAfter = "", bool $overwrite = true)
     {
         $bedrock = Client::getInstance();
         try {
             $jobs = new self($bedrock);
 
-            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection, $retryAfter);
+            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection, $retryAfter, $overwrite);
         } catch (Exception $e) {
             $bedrock->getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
 

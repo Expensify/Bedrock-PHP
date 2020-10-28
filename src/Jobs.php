@@ -155,7 +155,7 @@ class Jobs extends Plugin
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
      * @param string|null $connection  (optional) Specify 'Connection' header using constants defined in this class.
      * @param string|null $retryAfter  (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
-     * @param bool|null   $overwrite   (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
+     * @param bool        $overwrite   (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
      *
      * @return array Containing "jobID"
      */
@@ -438,7 +438,7 @@ class Jobs extends Plugin
      * @param int         $priority    (optional) Specify a job priority. Jobs with higher priorities will be run first.
      * @param int|null    $parentJobID (optional) Specify this job's parent job.
      * @param string      $connection  (optional) Specify 'Connection' header using constants defined in this class.
-     * @param bool|null   $overwrite   (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
+     * @param bool        $overwrite   (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
      *
      * @return array Containing "jobID"
      */

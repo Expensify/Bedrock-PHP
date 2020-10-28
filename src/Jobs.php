@@ -246,9 +246,6 @@ class Jobs extends Plugin
     /**
      * Waits for a match (if requested) and atomically dequeues $numResults jobs.
      *
-     * @param string $name
-     * @param int    $numResults
-     *
      * @return array Containing all job details
      */
     public function getJobs(string $name, int $numResults, array $params = []): array
@@ -311,10 +308,6 @@ class Jobs extends Plugin
 
     /**
      * Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
-     *
-     * @param int $jobID
-     *
-     * @return array
      */
     public function cancelJob(int $jobID): array
     {

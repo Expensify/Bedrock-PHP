@@ -243,12 +243,10 @@ try {
                     });
                     $localJobID = $localDB->getLastInsertedRowID();
                 }
-                $parts = explode('/', $job['name']);
                 $jobParts = explode('?', $job['name']);
                 $extraParams = count($jobParts) > 1 ? $jobParts[1] : null;
                 $job['name'] = $jobParts[0];
-                $workerName = $parts[count($parts) - 1];
-                $workerName = explode('?', $workerName)[0];
+                $workerName = explode('/', $job['name'])[1];
                 $workerFilename = $workerPath."/$workerName.php";
                 $logger->info("Looking for worker '$workerFilename'");
                 if (file_exists($workerFilename)) {

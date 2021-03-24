@@ -1,6 +1,6 @@
 language: php
 php:
-  - '7.4.13'
+  - '7.4.15'
 
 before_install:
   - cd ../ && composer self-update 1.6.4 && cd -

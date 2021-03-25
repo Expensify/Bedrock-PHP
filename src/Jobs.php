@@ -8,6 +8,7 @@ use Expensify\Bedrock\Exceptions\Jobs\GenericError;
 use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\MalformedAttribute;
 use Expensify\Bedrock\Exceptions\Jobs\SqlFailed;
+use Expensify\Bedrock\Stats\NullStats;
 use stdClass;
 
 /**

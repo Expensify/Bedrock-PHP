@@ -8,7 +8,6 @@ use Expensify\Bedrock\Exceptions\Jobs\GenericError;
 use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\MalformedAttribute;
 use Expensify\Bedrock\Exceptions\Jobs\SqlFailed;
-use Expensify\Bedrock\Stats\NullStats;
 use stdClass;
 
 /**
@@ -101,7 +100,7 @@ class Jobs extends Plugin
      *
      * @return array
      */
-    public function call($method, $headers = [], $body = '')
+    public function call(int $method, $headers = [], $body = '')
     {
         // If we ever pass an empty array as data, PHP will json encode it as an array, but data expects an object and
         // will generate a warning if it receives an array, so we pass an stdClass, which will get encoded as object

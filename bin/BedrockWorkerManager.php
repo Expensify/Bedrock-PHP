@@ -349,6 +349,7 @@ try {
                                     'name' => $job['name'],
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
+                                    'exception' => $e,
                                 ]);
                                 try {
                                     $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun());

@@ -1,0 +1,20 @@
+language: php
+php:
+  - '7.4.16'
+
+before_install:
+  - cd ../ && composer self-update 1.6.4 && cd -
+
+install:
+  - pecl install ast-1.0.3
+  - composer install --prefer-dist --no-interaction --dev
+
+script:
+    - ./ci/style.php
+    - ./ci/phan.php
+
+notifications:
+    email:
+        on_success: never
+
+sudo: false

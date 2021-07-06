@@ -264,7 +264,7 @@ try {
                         throw new Exception("Unable to fork because '$errorMessage', aborting.");
                     } elseif ($pid == 0) {
                         // Track each job that we've successfully forked
-			$myPid = getmypid();
+                        $myPid = getmypid();
                         $localJobID = 0;
                         if ($enableLoadHandler) {
                             $safeJobName = SQLite3::escapeString($job['name']);
@@ -273,7 +273,7 @@ try {
                                 $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, bedrockJobRetry) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).", {$myPid}, '{$safeRetryAfter}');");
                             });
                             $localJobID = $localDB->getLastInsertedRowID();
-			    $logger->info("got a job and stuffed it in the local db");
+                            $logger->info("got a job and stuffed it in the local db");
                         }
 
                         // We forked, so we need to make sure the bedrock client opens new sockets inside this for,

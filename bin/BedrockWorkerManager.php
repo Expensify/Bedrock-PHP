@@ -490,7 +490,7 @@ function getNumberOfJobsToQueue(): int
     // }
 
     // Delete old stuff.
-    //$localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
+    $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
 
     // If we don't have enough data, we'll return a value based on the current target and active job count.
     if ($lastIntervalCount === 0) {

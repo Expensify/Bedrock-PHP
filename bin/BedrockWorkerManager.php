@@ -100,7 +100,7 @@ if ($enableLoadHandler) {
         started text NOT NULL,
         ended text,
         workerPID integer,
-        bedrockJobRetry text
+        retryAfter text
     );
     CREATE INDEX IF NOT EXISTS localJobsLocalJobID ON localJobs (localJobID);
     PRAGMA journal_mode = WAL;';
@@ -268,12 +268,11 @@ try {
                         $localJobID = 0;
                         if ($enableLoadHandler) {
                             $safeJobName = SQLite3::escapeString($job['name']);
-                            $safeRetryAfter = array_key_exists('retryAfter', $job) ? SQLite3::escapeString($job['retryAfter']) : "";
+                            $safeRetryAfter = SQLite3::escapeString($job['retryAfter'] ?? '');
                             $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName, $safeRetryAfter, $myPid) {
-                                $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, bedrockJobRetry) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).", {$myPid}, '{$safeRetryAfter}');");
+                                $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, retryAfter) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).", {$myPid}, '{$safeRetryAfter}');");
                             });
                             $localJobID = $localDB->getLastInsertedRowID();
-                            $logger->info("got a job and stuffed it in the local db");
                         }
 
                         // We forked, so we need to make sure the bedrock client opens new sockets inside this for,

@@ -263,6 +263,10 @@ try {
                         $errorMessage = pcntl_strerror(pcntl_get_last_error());
                         throw new Exception("Unable to fork because '$errorMessage', aborting.");
                     } elseif ($pid == 0) {
+                        // Get a new localDB handle
+                        $localDB = new LocalDB($pathToDB, $logger, $stats);
+                        $localDB->open();
+
                         // Track each job that we've successfully forked
                         $myPid = getmypid();
                         $localJobID = 0;
@@ -299,7 +303,6 @@ try {
                             'pid' => $myPid,
                         ]);
                         $stats->counter('bedrockJob.create.'.$job['name']);
-                        $localDB->close();
 
                         // Include the worker now (not in the parent thread) such
                         // that we automatically pick up new versions over the
@@ -381,7 +384,6 @@ try {
                                 }
                             } finally {
                                 if ($enableLoadHandler) {
-                                    $localDB->open();
                                     $time = microtime(true);
                                     $logger->info('Updating local db');
                                     $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) {
@@ -397,11 +399,6 @@ try {
                         $stats->counter('bedrockJob.finish.'.$job['name']);
                         exit(1);
                     } else {
-                        // Reopen the DB connection in the parent thread.
-                        if ($enableLoadHandler) {
-                            $localDB->open();
-                        }
-
                         // Otherwise we are the parent thread -- continue execution
                         $logger->info("Successfully ran job", [
                             'name' => $job['name'],

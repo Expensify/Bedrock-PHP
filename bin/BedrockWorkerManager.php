@@ -99,7 +99,7 @@ if ($enableLoadHandler) {
         jobName text NOT NULL,
         started text NOT NULL,
         ended text,
-        workerPID integer,
+        workerPID integer NOT NULL,
         retryAfter text
     );
     CREATE INDEX IF NOT EXISTS localJobsLocalJobID ON localJobs (localJobID);

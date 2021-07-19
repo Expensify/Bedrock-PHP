@@ -98,7 +98,9 @@ if ($enableLoadHandler) {
         jobID integer NOT NULL,
         jobName text NOT NULL,
         started text NOT NULL,
-        ended text
+        ended text,
+        workerPID integer NOT NULL,
+        retryAfter text
     );
     CREATE INDEX IF NOT EXISTS localJobsLocalJobID ON localJobs (localJobID);
     PRAGMA journal_mode = WAL;';
@@ -235,14 +237,6 @@ try {
             // in each environment looking for each path.
             $jobsToRun = $response['body']['jobs'];
             foreach ($jobsToRun as $job) {
-                $localJobID = 0;
-                if ($enableLoadHandler) {
-                    $safeJobName = SQLite3::escapeString($job['name']);
-                    $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName) {
-                        $localDB->write("INSERT INTO localJobs (jobID, jobName, started) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).");");
-                    });
-                    $localJobID = $localDB->getLastInsertedRowID();
-                }
                 $jobParts = explode('?', $job['name']);
                 $extraParams = count($jobParts) > 1 ? $jobParts[1] : null;
                 $job['name'] = $jobParts[0];
@@ -261,10 +255,7 @@ try {
                         'workerFileName' => $workerFilename,
                     ]);
 
-                    // Close DB connection before forking.
-                    if ($enableLoadHandler) {
-                        $localDB->close();
-                    }
+                    // Do the fork
                     pcntl_signal(SIGCHLD, SIG_IGN);
                     $pid = $stats->benchmark('bedrockWorkerManager.fork', function () { return pcntl_fork(); });
                     if ($pid == -1) {
@@ -272,6 +263,22 @@ try {
                         $errorMessage = pcntl_strerror(pcntl_get_last_error());
                         throw new Exception("Unable to fork because '$errorMessage', aborting.");
                     } elseif ($pid == 0) {
+                        // Get a new localDB handle
+                        $localDB = new LocalDB($pathToDB, $logger, $stats);
+                        $localDB->open();
+
+                        // Track each job that we've successfully forked
+                        $myPid = getmypid();
+                        $localJobID = 0;
+                        if ($enableLoadHandler) {
+                            $safeJobName = SQLite3::escapeString($job['name']);
+                            $safeRetryAfter = SQLite3::escapeString($job['retryAfter'] ?? '');
+                            $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName, $safeRetryAfter, $myPid) {
+                                $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, retryAfter) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).", {$myPid}, '{$safeRetryAfter}');");
+                            });
+                            $localJobID = $localDB->getLastInsertedRowID();
+                        }
+
                         // We forked, so we need to make sure the bedrock client opens new sockets inside this for,
                         // instead of reusing the ones created by the parent process. But we also want to make sure we
                         // keep the same commitCount because we need the finishJob call below to run in a server that has
@@ -293,7 +300,7 @@ try {
                             'name' => $job['name'],
                             'id' => $job['jobID'],
                             'extraParams' => $extraParams,
-                            'pid' => getmypid(),
+                            'pid' => $myPid,
                         ]);
                         $stats->counter('bedrockJob.create.'.$job['name']);
 
@@ -377,7 +384,6 @@ try {
                                 }
                             } finally {
                                 if ($enableLoadHandler) {
-                                    $localDB->open();
                                     $time = microtime(true);
                                     $logger->info('Updating local db');
                                     $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) {
@@ -393,11 +399,6 @@ try {
                         $stats->counter('bedrockJob.finish.'.$job['name']);
                         exit(1);
                     } else {
-                        // Reopen the DB connection in the parent thread.
-                        if ($enableLoadHandler) {
-                            $localDB->open();
-                        }
-
                         // Otherwise we are the parent thread -- continue execution
                         $logger->info("Successfully ran job", [
                             'name' => $job['name'],

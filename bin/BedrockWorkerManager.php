@@ -165,8 +165,8 @@ try {
                 sleep(1);
             } elseif ($jobsToQueue > $minSafeJobs / 2) {
                 $logger->info('[AIMD] Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                $stats->counter('bedrockWorkerManager.numberOfJobsToQueue', $jobsToQueue);
-                $stats->counter('bedrockWorkerManager.targetJobs', $target);
+                $stats->counter('bedrockWorkerManager.currentJobsToQueue', $jobsToQueue);
+                $stats->counter('bedrockWorkerManager.targetJobsToQueue', $target);
                 break;
             } else {
                 $logger->info('[AIMD] Not enough jobs to queue, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);

@@ -161,15 +161,15 @@ try {
             $load = sys_getloadavg()[0];
             $jobsToQueue = getNumberOfJobsToQueue();
             if ($load > $maxLoad) {
-                $logger->info('Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('[AIMD] Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 sleep(1);
             } elseif ($jobsToQueue > $minSafeJobs / 2) {
-                $logger->info('Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('[AIMD] Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->timer('bedrockWorkerManager.numberOfJobsToQueue', $jobsToQueue);
                 $stats->timer('bedrockWorkerManager.targetJobs', $target);
                 break;
             } else {
-                $logger->info('Not enough jobs to queue, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('[AIMD] Not enough jobs to queue, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $localDB->write('DELETE FROM localJobs WHERE started < '.(microtime(true) - 60 * 60).' AND ended IS NULL;');
                 $isFirstTry = false;
                 sleep(1);
@@ -506,9 +506,11 @@ function getNumberOfJobsToQueue(): int
             $target = max($target * $multiplicativeDecreaseFraction, $minSafeJobs);
             $lastBackoff = $now;
             $logger->info('[AIMD] Backing off jobs target.', [
-                                                       'target' => $target,
-                                                       'lastIntervalAverage' => $lastIntervalAverage,
-                                                       'backoffThreshold' => $backoffThreshold, ]);
+                'target' => $target,
+                'lastIntervalAverage' => $lastIntervalAverage,
+                'previousIntervalAverage' => $previousIntervalAverage,
+                'backoffThreshold' => $backoffThreshold,
+            ]);
         }
     } else {
         // Otherwise, slowly ramp up. Increase by $jobsToAddPerSecond every second, except don't increase past 2x the
@@ -522,10 +524,15 @@ function getNumberOfJobsToQueue(): int
 
     // Now we know how many jobs we want to be running, and how many are running, so we can return the difference.
     $numJobsToRun = intval(max($target - $numActive, 0));
-    $logger->info('[AIMD] Found number of jobs to run.', ['numJobsToRun' => $numJobsToRun,
-                                                   'target' => $target,
-                                                   'numActive' => $numActive,
-                                                   'lastIntervalAverage' => $lastIntervalAverage, ]);
+    $logger->info('[AIMD] Found number of jobs to run.', [
+        'numJobsToRun' => $numJobsToRun,
+        'target' => $target,
+        'numActive' => $numActive,
+        'lastIntervalAverage' => $lastIntervalAverage,
+        'previousIntervalAverage' => $previousIntervalAverage,
+        'lastIntervalCount' => $lastIntervalCount,
+        'previousIntervalCount' => $previousIntervalCount,
+    ]);
 
     return $numJobsToRun;
 }

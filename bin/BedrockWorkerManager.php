@@ -82,6 +82,10 @@ $target = $minSafeJobs;
 $lastRun = microtime(true);
 $lastBackoff = 0;
 
+// This is the name of a particular job if it made up over 50% of the jobs previously returned. Its purpose is to
+// detect when we switch job types so that we can react appropriately.
+$lastJobProfile = "none";
+
 $bedrock = Client::getInstance();
 
 // Prepare to use the host logger and stats client, if configured
@@ -236,6 +240,35 @@ try {
             // as production/jobName and staging/jobName, with a WorkerManager
             // in each environment looking for each path.
             $jobsToRun = $response['body']['jobs'];
+
+            // Build a profile based on the most common job.
+            $workers = [];
+            $workerCount = 0;
+            foreach ($jobsToRun as $job) {
+                $workerName = explode('/', $job['name'])[1];
+                if (isset($workers[$workerName])) {
+                    $workers[$workerName]++;
+                } else {
+                    $workers[$workerName] = 1;
+                }
+                $workerCount++;
+            }
+            $majorityJobType = false;
+            foreach ($workers as $key => $value) {
+                if ($value > $workerCount / 2) {
+                    if ($key !== $lastJobProfile) {
+                        $logger->info('[AIMD] job type switched from '.$lastJobProfile.' to '.$key.' with '.$value.' of '.$workerCount.' jobs selected.');
+                        $lastJobProfile = $key;
+                    }
+                    $majorityJobType = true;
+                    break;
+                }
+            }
+            if (!$majorityJobType && $lastJobProfile !== 'none') {
+                $logger->info('[AIMD] job type switched from '.$lastJobProfile.' to none.');
+                $lastJobProfile = 'none';
+            }
+
             foreach ($jobsToRun as $job) {
                 $jobParts = explode('?', $job['name']);
                 $extraParams = count($jobParts) > 1 ? $jobParts[1] : null;

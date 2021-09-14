@@ -532,6 +532,7 @@ function getNumberOfJobsToQueue(): int
         'previousIntervalAverage' => $previousIntervalAverage,
         'lastIntervalCount' => $lastIntervalCount,
         'previousIntervalCount' => $previousIntervalCount,
+        'timeSinceLastRun' => $timeSinceLastRun,
     ]);
 
     return $numJobsToRun;

@@ -245,6 +245,8 @@ try {
             $workers = [];
             $workerCount = 0;
             foreach ($jobsToRun as $job) {
+                $jobParts = explode('?', $job['name']);
+                $job['name'] = $jobParts[0];
                 $workerName = explode('/', $job['name'])[1];
                 if (isset($workers[$workerName])) {
                     $workers[$workerName]++;

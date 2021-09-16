@@ -535,8 +535,19 @@ function getNumberOfJobsToQueue(): int
     }
 
     // Update our target. If the last interval average run time exceeds the previous one by too much, back off.
+    // Options:
+    // 1. Make intervalDurationSeconds longer for more data to average.
+    // 2. Make backoffThreshold higher (this seems riskier)
+    // 3. back off by less (increase multiplicativeDecreaseFraction closer to 1).
+    //
+    // Possibly helpful ideas:
+    // log the count and type of jobs used to calculate lastIntervalData and previousIntervalData.
+    // Also log the times for each type of job.
+    //
+    // Just knowing the count of completed jobs in the previous intervals is interesting, if it's a very small number
+    //  of jobs, a high degree of variability is expected.
     if ($lastIntervalAverage > ($previousIntervalAverage * $backoffThreshold)) {
-        // Skip backoff if we've done so too recently in the past.
+        // Skip backoff if we've done so too recently in the past. (within 10 second by default)
         if ($lastBackoff < $now - ($intervalDurationSeconds * $doubleBackoffPreventionIntervalFraction)) {
             $target = max($target * $multiplicativeDecreaseFraction, $minSafeJobs);
             $lastBackoff = $now;

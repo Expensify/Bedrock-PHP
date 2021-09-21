@@ -175,10 +175,10 @@ try {
                 $stats->counter('bedrockWorkerManager.targetJobsToQueue', $target);
                 break;
             } else {
-                $logger->info('[AIMD] Not enough jobs to queue, waiting 1s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('[AIMD] Not enough jobs to queue, waiting 0.5s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $localDB->write('DELETE FROM localJobs WHERE started < '.(microtime(true) - 60 * 60).' AND ended IS NULL;');
                 $isFirstTry = false;
-                sleep(1);
+                usleep(500000);
             }
         }
 

@@ -39,7 +39,7 @@ $options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 
 'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::',
 'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'backoffThreshold::',
 'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
-'jobsToAddPerSecond::', 'profileChangeThreshold::']);
+'jobsToAddPerSecond::', 'profileChangeThreshold::', ]);
 
 $workerPath = $options['workerPath'] ?? null;
 if (!$workerPath) {

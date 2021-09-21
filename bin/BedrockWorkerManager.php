@@ -248,7 +248,7 @@ try {
             $runningTotal = 0;
             $running = $localDB->read('SELECT jobName FROM localJobs WHERE ended IS NULL;');
             foreach ($running as $job) {
-                $jobParts = explode('?', $job['name']);
+                $jobParts = explode('?', $job['name'] ?? '');
                 $job['name'] = $jobParts[0];
                 $runningName = explode('/', $job['name'])[1];
                 if (isset($runningCounts[$runningName])) {
@@ -264,7 +264,7 @@ try {
             $targetCounts = $runningCounts;
             $targetTotal = $runningTotal;
             foreach ($jobsToRun as $job) {
-                $jobParts = explode('?', $job['name']);
+                $jobParts = explode('?', $job['name'] ?? '');
                 $job['name'] = $jobParts[0];
                 $workerName = explode('/', $job['name'])[1];
                 if (isset($targetCounts[$workerName])) {

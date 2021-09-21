@@ -301,7 +301,7 @@ try {
             foreach ($targetCounts as $name => $count) {
                 $targetPercent = $count / $targetTotal;
                 $runningPercent = ($runningCounts[$name] ?? 0) / $runningTotal;
-                if ($runningPercent + $profileChangeThreshold < $targetPercent ) {
+                if ($runningPercent + $profileChangeThreshold < $targetPercent) {
                     $logger->info('[AIMD] Job profile changed, '.$name.' increased from '.$runningPercent.' to '.$targetPercent.'.');
                 }
             }

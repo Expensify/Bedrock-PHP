@@ -281,7 +281,7 @@ try {
             // graph" model that totals to 100%, with each job type being some fraction of this total.
             // We can compute this for each currently running job, and then again for each target job, and we can
             // detect if any job's percentage has changed drastically between the two.
-            // For example, imagines jobs A, B, C and D, each with 25% of the currently running set of jobs.
+            // For example, imagine jobs A, B, C and D, each with 25% of the currently running set of jobs.
             // When we re-compute the averages for the new targets, suppose that we end up with:
             // Job A: 10%
             // Job B: 10%
@@ -295,7 +295,7 @@ try {
             // work currently being done.
             //
             // This deliberately fails to detect a gradual change in job profile. If a job goes from 5 to 7 to 10 to 12
-            // to 15 to 20% of total jobs o er several iterations, it may at no point hit a (for example) 10% increase
+            // to 15 to 20% of total jobs over several iterations, it may at no point hit a (for example) 10% increase
             // threshold, but a gradual increase like this should be handled by existing mechanisms. We are only trying
             // to detect sudden changes in job profiles with this code.
             foreach ($targetCounts as $name => $count) {
@@ -573,16 +573,16 @@ function getNumberOfJobsToQueue(): int
     // Options:
     // 1. Make intervalDurationSeconds longer for more data to average.
     // 2. Make backoffThreshold higher (this seems riskier)
-    // 3. back off by less (increase multiplicativeDecreaseFraction closer to 1).
+    // 3. Back off by less (increase multiplicativeDecreaseFraction closer to 1).
     //
     // Possibly helpful ideas:
-    // log the count and type of jobs used to calculate lastIntervalData and previousIntervalData.
+    // Log the count and type of jobs used to calculate lastIntervalData and previousIntervalData.
     // Also log the times for each type of job.
     //
-    // Just knowing the count of completed jobs in the previous intervals is interesting, if it's a very small number
-    //  of jobs, a high degree of variability is expected.
+    // Just knowing the count of completed jobs in the previous intervals is interesting. If it's a very small number
+    // of jobs, a high degree of variability is expected.
     if ($lastIntervalAverage > ($previousIntervalAverage * $backoffThreshold)) {
-        // Skip backoff if we've done so too recently in the past. (within 10 second by default)
+        // Skip backoff if we've done so too recently in the past. (within 10 seconds by default)
         if ($lastBackoff < $now - ($intervalDurationSeconds * $doubleBackoffPreventionIntervalFraction)) {
             $target = max($target * $multiplicativeDecreaseFraction, $minSafeJobs);
             $lastBackoff = $now;

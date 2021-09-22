@@ -39,7 +39,7 @@ $options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 
 'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::',
 'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'backoffThreshold::',
 'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
-'jobsToAddPerSecond::', ]);
+'jobsToAddPerSecond::', 'profileChangeThreshold::', ]);
 
 $workerPath = $options['workerPath'] ?? null;
 if (!$workerPath) {
@@ -74,6 +74,8 @@ $multiplicativeDecreaseFraction = floatval($options['multiplicativeDecreaseFract
 
 // Try to increase the target by this many jobs every second.
 $jobsToAddPerSecond = floatval($options['jobsToAddPerSecond'] ?? 1.0);
+
+$profileChangeThreshold = floatval($options['profileChangeThreshold'] ?? 0.25);
 
 // Internal state variables for determining the number of jobs to run at one time.
 // $target is the number of jobs that we think we can safely run at one time. It defaults to the number of jobs we've
@@ -241,34 +243,67 @@ try {
             // in each environment looking for each path.
             $jobsToRun = $response['body']['jobs'];
 
-            // Build a profile based on the most common job.
-            $workers = [];
-            $workerCount = 0;
+            // Check what's running now.
+            $runningCounts = [];
+            $runningTotal = 0;
+            $running = $localDB->read('SELECT jobName FROM localJobs WHERE ended IS NULL;');
+            foreach ($running as $job) {
+                $jobParts = explode('?', $job['name'] ?? '');
+                $job['name'] = $jobParts[0];
+                $runningName = explode('/', $job['name'])[1];
+                if (isset($runningCounts[$runningName])) {
+                    $runningCounts[$runningName]++;
+                } else {
+                    $runningCounts[$runningName] = 1;
+                }
+                $runningTotal++;
+            }
+            $logger->info('[AIMD] currently running jobs');
+
+            // Now make a modified version of what's running that includes the jobs we just selected.
+            $targetCounts = $runningCounts;
+            $targetTotal = $runningTotal;
             foreach ($jobsToRun as $job) {
-                $jobParts = explode('?', $job['name']);
+                $jobParts = explode('?', $job['name'] ?? '');
                 $job['name'] = $jobParts[0];
                 $workerName = explode('/', $job['name'])[1];
-                if (isset($workers[$workerName])) {
-                    $workers[$workerName]++;
+                if (isset($targetCounts[$workerName])) {
+                    $targetCounts[$workerName]++;
                 } else {
-                    $workers[$workerName] = 1;
+                    $targetCounts[$workerName] = 1;
                 }
-                $workerCount++;
+                $targetTotal++;
             }
-            $majorityJobType = false;
-            foreach ($workers as $key => $value) {
-                if ($value > $workerCount / 2) {
-                    if ($key !== $lastJobProfile) {
-                        $logger->info('[AIMD] job type switched from '.$lastJobProfile.' to '.$key.' with '.$value.' of '.$workerCount.' jobs selected.');
-                        $lastJobProfile = $key;
-                    }
-                    $majorityJobType = true;
-                    break;
+
+            // Now we want to detect if the new target profile is "significantly different" to the existing profile.
+            // How?
+            // What if we compute the percentages of the total for each job. This results in a sort of "stacked line
+            // graph" model that totals to 100%, with each job type being some fraction of this total.
+            // We can compute this for each currently running job, and then again for each target job, and we can
+            // detect if any job's percentage has changed drastically between the two.
+            // For example, imagine jobs A, B, C and D, each with 25% of the currently running set of jobs.
+            // When we re-compute the averages for the new targets, suppose that we end up with:
+            // Job A: 10%
+            // Job B: 10%
+            // Job C: 25%
+            // Job D: 55%
+            // This shows an increase in D of 30%, which may go over some threshold (it's unclear what to set this
+            // threshold at) and indicate a "change of job profile".
+            // Note that the change is detected not in the number of any particular jobs, but in the percentage of jobs
+            // as a whole. This prevents a single job type going from 1% to 3% of running jobs as counting as an
+            // increase of 200%, which would likely be significant, when it makes up only a small fraction of all the
+            // work currently being done.
+            //
+            // This deliberately fails to detect a gradual change in job profile. If a job goes from 5 to 7 to 10 to 12
+            // to 15 to 20% of total jobs over several iterations, it may at no point hit a (for example) 10% increase
+            // threshold, but a gradual increase like this should be handled by existing mechanisms. We are only trying
+            // to detect sudden changes in job profiles with this code.
+            foreach ($targetCounts as $name => $count) {
+                $targetPercent = $count / $targetTotal;
+                $runningPercent = ($runningCounts[$name] ?? 0) / $runningTotal;
+                if ($runningPercent + $profileChangeThreshold < $targetPercent) {
+                    $logger->info('[AIMD] Job profile changed, '.$name.' increased from '.$runningPercent.' to '.$targetPercent.'.');
                 }
-            }
-            if (!$majorityJobType && $lastJobProfile !== 'none') {
-                $logger->info('[AIMD] job type switched from '.$lastJobProfile.' to none.');
-                $lastJobProfile = 'none';
             }
 
             foreach ($jobsToRun as $job) {
@@ -535,8 +570,19 @@ function getNumberOfJobsToQueue(): int
     }
 
     // Update our target. If the last interval average run time exceeds the previous one by too much, back off.
+    // Options:
+    // 1. Make intervalDurationSeconds longer for more data to average.
+    // 2. Make backoffThreshold higher (this seems riskier)
+    // 3. Back off by less (increase multiplicativeDecreaseFraction closer to 1).
+    //
+    // Possibly helpful ideas:
+    // Log the count and type of jobs used to calculate lastIntervalData and previousIntervalData.
+    // Also log the times for each type of job.
+    //
+    // Just knowing the count of completed jobs in the previous intervals is interesting. If it's a very small number
+    // of jobs, a high degree of variability is expected.
     if ($lastIntervalAverage > ($previousIntervalAverage * $backoffThreshold)) {
-        // Skip backoff if we've done so too recently in the past.
+        // Skip backoff if we've done so too recently in the past. (within 10 seconds by default)
         if ($lastBackoff < $now - ($intervalDurationSeconds * $doubleBackoffPreventionIntervalFraction)) {
             $target = max($target * $multiplicativeDecreaseFraction, $minSafeJobs);
             $lastBackoff = $now;

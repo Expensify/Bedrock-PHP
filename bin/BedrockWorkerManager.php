@@ -247,18 +247,20 @@ try {
             $runningCounts = [];
             $runningTotal = 0;
             $running = $localDB->read('SELECT jobName FROM localJobs WHERE ended IS NULL;');
-            foreach ($running as $job) {
-                $jobParts = explode('?', $job['name'] ?? '');
-                $job['name'] = $jobParts[0];
-                $runningName = explode('/', $job['name'])[1];
-                if (isset($runningCounts[$runningName])) {
-                    $runningCounts[$runningName]++;
-                } else {
-                    $runningCounts[$runningName] = 1;
+            if ($running) {
+                foreach ($running as $job) {
+                    $jobParts = explode('?', $job ?? '');
+                    $jobName = $jobParts[0];
+                    $runningName = explode('/', $jobName)[1];
+                    if (isset($runningCounts[$runningName])) {
+                        $runningCounts[$runningName]++;
+                    } else {
+                        $runningCounts[$runningName] = 1;
+                    }
+                    $runningTotal++;
                 }
-                $runningTotal++;
+                $logger->info('[AIMD] currently running jobs');
             }
-            $logger->info('[AIMD] currently running jobs');
 
             // Now make a modified version of what's running that includes the jobs we just selected.
             $targetCounts = $runningCounts;
@@ -299,8 +301,8 @@ try {
             // threshold, but a gradual increase like this should be handled by existing mechanisms. We are only trying
             // to detect sudden changes in job profiles with this code.
             foreach ($targetCounts as $name => $count) {
-                $targetPercent = $count / $targetTotal;
-                $runningPercent = ($runningCounts[$name] ?? 0) / $runningTotal;
+                $targetPercent = $count / max($targetTotal, 1);
+                $runningPercent = ($runningCounts[$name] ?? 0) / max($runningTotal, 1);
                 if ($runningPercent + $profileChangeThreshold < $targetPercent) {
                     $logger->info('[AIMD] Job profile changed, '.$name.' increased from '.$runningPercent.' to '.$targetPercent.'.');
                 }

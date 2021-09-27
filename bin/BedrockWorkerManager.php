@@ -250,8 +250,7 @@ try {
             if ($running) {
                 foreach ($running as $job) {
                     $jobParts = explode('?', $job ?? '');
-                    $jobName = $jobParts[0];
-                    $runningName = explode('/', $jobName)[1];
+                    $runningName = explode('/', $jobParts[0])[1];
                     if (isset($runningCounts[$runningName])) {
                         $runningCounts[$runningName]++;
                     } else {

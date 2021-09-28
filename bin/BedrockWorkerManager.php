@@ -305,7 +305,6 @@ try {
                 $targetPercent = $count / max($targetTotal, 1);
                 $runningPercent = ($runningCounts[$name] ?? 0) / max($runningTotal, 1);
                 if ($runningPercent + $profileChangeThreshold < $targetPercent) {
-                    $jobShares[$name] = $targetPercent;
                     $jobIncreases[$name] = ['from' => $runningPercent, 'to' => $targetPercent];
                 }
             }

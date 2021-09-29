@@ -258,7 +258,7 @@ try {
                     }
                     $runningTotal++;
                 }
-                $logger->info('[AIMD] currently running jobs');
+                $logger->info('[AIMD] current jobs (running):', $runningCounts);
             }
 
             // Now make a modified version of what's running that includes the jobs we just selected.
@@ -275,6 +275,7 @@ try {
                 }
                 $targetTotal++;
             }
+            $logger->info('[AIMD] current jobs (target):', $targetCounts);
 
             // Now we want to detect if the new target profile is "significantly different" to the existing profile.
             // How?
@@ -299,12 +300,16 @@ try {
             // to 15 to 20% of total jobs over several iterations, it may at no point hit a (for example) 10% increase
             // threshold, but a gradual increase like this should be handled by existing mechanisms. We are only trying
             // to detect sudden changes in job profiles with this code.
+            $jobIncreases = [];
             foreach ($targetCounts as $name => $count) {
                 $targetPercent = $count / max($targetTotal, 1);
                 $runningPercent = ($runningCounts[$name] ?? 0) / max($runningTotal, 1);
                 if ($runningPercent + $profileChangeThreshold < $targetPercent) {
-                    $logger->info('[AIMD] Job profile changed, '.$name.' increased from '.$runningPercent.' to '.$targetPercent.'.');
+                    $jobIncreases[$name] = ['from' => $runningPercent, 'to' => $targetPercent];
                 }
+            }
+            if (count($jobIncreases)) {
+                $logger->info('[AIMD] Job profile changed, increases: ', $jobIncreases);
             }
 
             foreach ($jobsToRun as $job) {

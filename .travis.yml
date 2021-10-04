@@ -1,6 +1,6 @@
 language: php
 php:
-  - '7.4.15'
+  - '7.4.22'
 
 before_install:
   - cd ../ && composer self-update 1.6.4 && cd -
@@ -18,3 +18,4 @@ notifications:
         on_success: never
 
 sudo: false
+dist: focal

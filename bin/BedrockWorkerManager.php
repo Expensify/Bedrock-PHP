@@ -318,6 +318,7 @@ try {
                 $job['name'] = $jobParts[0];
                 $workerName = explode('/', $job['name'])[1];
                 $workerFilename = $workerPath."/$workerName.php";
+                $stats->timer('bedrockJob.lateBy.'.$job['name'], (time() - strtotime($job['nextRun'])) * 1000);
                 $logger->info("Looking for worker '$workerFilename'");
                 if (file_exists($workerFilename)) {
                     // The file seems to exist -- fork it so we can run it.

@@ -211,9 +211,10 @@ try {
                 // Query the server for a job
                 $response = $jobs->getJobs($jobName, $jobsToQueue, ['getMockedJobs' => true]);
             } catch (Exception $e) {
-                // Try again in 60 seconds
-                $logger->info('Problem getting job, retrying in 60s', ['message' => $e->getMessage()]);
-                sleep(60);
+                // Try again in a random amount of time between 1 and 10 seconds
+                $wait = rand(1, 10);
+                $logger->info('Problem getting job, retrying in a few seconds', ['message' => $e->getMessage(), 'wait' => $wait]);
+                sleep($wait);
             }
         }
 

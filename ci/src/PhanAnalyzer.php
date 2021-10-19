@@ -27,7 +27,7 @@ class PhanAnalyzer extends CommandLine
      */
     public function analyze()
     {
-        if ($this->branch === 'master') {
+        if ($this->branch === 'main') {
             echo 'Skipping style check for merge commits';
 
             return true;
@@ -38,7 +38,7 @@ class PhanAnalyzer extends CommandLine
         Travis::fold("start", "phan.analyze");
         Travis::timeStart();
         echo 'Analyze PHP using Phan'.PHP_EOL;
-        $changedFiles = $this->eexec("git diff master...{$this->branch} --name-status | egrep \"^[A|M].*\\.php$\" | cut -f 2");
+        $changedFiles = $this->eexec("git diff main...{$this->branch} --name-status | egrep \"^[A|M].*\\.php$\" | cut -f 2");
         echo "Analyzing files:".PHP_EOL;
         $lintErrors = $this->eexec("./vendor/bin/phan -p -z --processes 5", false);
         $lintOK = true;

@@ -8,7 +8,7 @@ namespace Expensify\Bedrock\CI;
 class CommandLine
 {
     /**
-     * Checks out a branch and fetches master
+     * Checks out a branch and fetches main
      *
      * @param string $branch
      */
@@ -16,12 +16,12 @@ class CommandLine
     {
         Travis::fold("start", "git.checkout.".get_called_class());
         $this->call("git checkout $branch 2>&1");
-        $this->call('git fetch origin master:master 2>&1');
+        $this->call('git fetch origin main:main 2>&1');
         Travis::fold("end", "git.checkout.".get_called_class());
     }
 
     /**
-     * Get the new/modified PHP files in a branch, with respect to master.
+     * Get the new/modified PHP files in a branch, with respect to main.
      *
      * @param string $branch
      *
@@ -29,7 +29,7 @@ class CommandLine
      */
     protected function getModifiedFiles($branch)
     {
-        return $this->eexec("git diff master...$branch --name-status | grep -v 'vendor/' | egrep \"^[A|M].*\\.php$\" | cut -f 2");
+        return $this->eexec("git diff main...$branch --name-status | grep -v 'vendor/' | egrep \"^[A|M].*\\.php$\" | cut -f 2");
     }
 
     /**

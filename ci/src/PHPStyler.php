@@ -38,7 +38,7 @@ class PHPStyler extends CommandLine
     {
         $PHPLintCommand = "find . -name '*.php' -not \\( -path './externalLib/*' -or -path './vendor/*' -or -path './build/*' \\) -print0 | xargs -0 -L 1 -n 1 -P 8 php -l 1>/dev/null";
 
-        if ($this->branch === 'master') {
+        if ($this->branch === 'main') {
             Travis::foldCall("lintmaster.php", $PHPLintCommand);
 
             echo 'Skipping style check for merge commits';

@@ -6,7 +6,7 @@ before_install:
   - cd ../ && composer self-update 2.2.1 && cd -
 
 install:
-  - pecl install ast-1.0.3
+  - pecl install ast-1.0.16
   - composer install --prefer-dist --no-interaction --dev
 
 script:

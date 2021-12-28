@@ -1,9 +1,9 @@
 language: php
 php:
-  - '7.4.22'
+  - '8.1.0'
 
 before_install:
-  - cd ../ && composer self-update 1.6.4 && cd -
+  - cd ../ && composer self-update 2.2.1 && cd -
 
 install:
   - pecl install ast-1.0.3

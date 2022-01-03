@@ -33,10 +33,7 @@ class Response implements JsonSerializable, Countable
         return $this->container;
     }
 
-    /**
-     * @return int
-     */
-    public function count()
+    public function count(): int
     {
         return count($this->container);
     }
@@ -44,7 +41,7 @@ class Response implements JsonSerializable, Countable
     /**
      * @return array
      */
-    public function jsonSerialize()
+    public function jsonSerialize(): array
     {
         return $this->toArray();
     }

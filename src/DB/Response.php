@@ -38,9 +38,6 @@ class Response implements JsonSerializable, Countable
         return count($this->container);
     }
 
-    /**
-     * @return array
-     */
     public function jsonSerialize(): array
     {
         return $this->toArray();
@@ -95,7 +92,7 @@ class Response implements JsonSerializable, Countable
     /**
      * Shortcut to make sure the value of an index is strictly true.
      *
-     * @param string |array $index
+     * @param string|array $index
      *
      * @return bool
      */
@@ -161,7 +158,7 @@ class Response implements JsonSerializable, Countable
      */
     public function getError()
     {
-        return $this->getFromContainer(['headers', 'error'], "");
+        return $this->getFromContainer(['headers', 'error'], '');
     }
 
     /**

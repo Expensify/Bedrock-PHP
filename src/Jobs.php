@@ -80,6 +80,11 @@ class Jobs extends Plugin
     const PRIORITY_LOW = 0;
 
     /**
+     * Constant for the minimum priority.
+     */
+    const PRIORITY_MIN = 0;
+
+    /**
      * Constant for the location of the file to look for to disable processing
      * new jobs.
      */

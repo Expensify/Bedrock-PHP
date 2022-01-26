@@ -25,6 +25,8 @@ class RetryableException extends BedrockError
      */
     private $name;
 
+    private $ignoreRepeat;
+
     /**
      * RetryableException constructor.
      *
@@ -35,12 +37,13 @@ class RetryableException extends BedrockError
      * @param ?string    $name     New name for the job
      * @param ?string    $nextRun  When to retry the job (takes precedence over delay; expects format Y-m-d H:i:s)
      */
-    public function __construct(string $message, int $delay = 0, int $code = null, Exception $previous = null, string $name = '', string $nextRun = '')
+    public function __construct(string $message, int $delay = 0, int $code = null, Exception $previous = null, string $name = '', string $nextRun = '', bool $ignoreRepeat = false)
     {
         $code = $code ?? 666;
         $this->delay = $delay;
         $this->nextRun = $nextRun;
         $this->name = $name;
+        $this->ignoreRepeat = $ignoreRepeat;
         parent::__construct($message, $code, $previous);
     }
 
@@ -66,5 +69,10 @@ class RetryableException extends BedrockError
     public function getName(): string
     {
         return $this->name;
+    }
+
+    public function getIgnoreRepeat(): bool
+    {
+        return $this->ignoreRepeat;
     }
 }

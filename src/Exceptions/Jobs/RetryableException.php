@@ -26,8 +26,8 @@ class RetryableException extends BedrockError
     private $name;
 
     /**
-     * @var bool When calculating when to retry the job, should we ignore the repeat parameter and use $delay or
-     *           $nextRun instead
+     * @var bool When calculating when to retry the job, should we ignore the repeat parameter and use delay or
+     *           nextRun instead
      */
     private $ignoreRepeat;
 

@@ -388,7 +388,7 @@ class Jobs extends Plugin
     /**
      * Retry a job. Job must be in a RUNNING state to be able to be retried.
      */
-    public function retryJob(int $jobID, int $delay = 0, array $data = null, string $name = '', string $nextRun = '', ?int $priority = null): array
+    public function retryJob(int $jobID, int $delay = 0, array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false): array
     {
         return $this->call(
             "RetryJob",
@@ -400,6 +400,7 @@ class Jobs extends Plugin
                 "nextRun" => $nextRun,
                 "idempotent" => true,
                 'jobPriority' => $priority,
+                'ignoreRepeat' => $ignoreRepeat,
             ]
         );
     }

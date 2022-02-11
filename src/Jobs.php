@@ -80,6 +80,36 @@ class Jobs extends Plugin
     const PRIORITY_LOW = 0;
 
     /**
+     * Constant for the minimum priority.
+     */
+    const PRIORITY_0 = 0;
+
+    /**
+     * Constant for the low priority.
+     */
+    const PRIORITY_250 = 250;
+
+    /**
+     * Constant for the medium priority.
+     */
+    const PRIORITY_500 = 500;
+
+    /**
+     * Constant for the high priority.
+     */
+    const PRIORITY_750 = 750;
+
+    /**
+     * Constant for the higher priority.
+     */
+    const PRIORITY_850 = 850;
+
+    /**
+     * Constant for the maximum priority.
+     */
+    const PRIORITY_1000 = 1000;
+
+    /**
      * Constant for the location of the file to look for to disable processing
      * new jobs.
      */
@@ -358,7 +388,7 @@ class Jobs extends Plugin
     /**
      * Retry a job. Job must be in a RUNNING state to be able to be retried.
      */
-    public function retryJob(int $jobID, int $delay = 0, array $data = null, string $name = '', string $nextRun = '', ?int $priority = null): array
+    public function retryJob(int $jobID, int $delay = 0, array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false): array
     {
         return $this->call(
             "RetryJob",
@@ -370,6 +400,7 @@ class Jobs extends Plugin
                 "nextRun" => $nextRun,
                 "idempotent" => true,
                 'jobPriority' => $priority,
+                'ignoreRepeat' => $ignoreRepeat,
             ]
         );
     }

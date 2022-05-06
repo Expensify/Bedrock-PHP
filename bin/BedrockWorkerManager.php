@@ -9,6 +9,7 @@ use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
 use Expensify\Bedrock\LocalDB;
+use Psr\Log\LoggerInterface;
 
 /*
  * BedrockWorkerManager
@@ -155,7 +156,7 @@ try {
                 throw new Exception('are you in a chroot?  If so, please make sure /proc is mounted correctly');
             }
 
-            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp, $stats)) {
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp, $logger)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -190,7 +191,7 @@ try {
         // Poll the server until we successfully get a job
         $response = null;
         while (!$response) {
-            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp, $stats)) {
+            if ($versionWatchFile && checkVersionFile($versionWatchFile, $versionWatchFileTimestamp, $logger)) {
                 $logger->info('Version watch file changed, stop processing new jobs');
 
                 // We break out of this loop and the outer one too. We don't want to process anything more,
@@ -637,15 +638,24 @@ function getNumberOfJobsToQueue(): int
  *
  * @param Expensify\Bedrock\Stats\StatsInterface $stats
  */
-function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimestamp, $stats): bool
+function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimestamp, LoggerInterface $logger): bool
 {
-    return $stats->benchmark('bedrockWorkerManager.checkVersionFile', function () use ($versionWatchFile, $versionWatchFileTimestamp) {
-        clearstatcache(true, $versionWatchFile);
-        $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;
-        $versionChanged = $versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp;
+    static $restartAfterVersionChange = null;
+    clearstatcache(true, $versionWatchFile);
+    $newVersionWatchFileTimestamp = ($versionWatchFile && file_exists($versionWatchFile)) ? filemtime($versionWatchFile) : false;
+    $versionChanged = $versionWatchFile && $newVersionWatchFileTimestamp !== $versionWatchFileTimestamp;
 
-        return $versionChanged;
-    });
+    if ($versionChanged) {
+        if (!$restartAfterVersionChange) {
+            $waitTime = rand(30, 60);
+            $restartAfterVersionChange = time() + $waitTime;
+            $logger->info('Version watch file changed, will stop processing new jobs soon', ['wait' => $waitTime]);
+        } elseif (time() > $restartAfterVersionChange) {
+            $logger->info('Version watch file changed and wait time is over, stop processing new jobs');
+            return true;
+        }
+    }
+    return false;
 }
 
 /**

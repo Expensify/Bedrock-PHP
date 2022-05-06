@@ -635,8 +635,6 @@ function getNumberOfJobsToQueue(): int
  *
  * Note: php's filemtime results are cached, so we need to clear
  *       that cache or we'll be getting a stale modified time.
- *
- * @param Expensify\Bedrock\Stats\StatsInterface $stats
  */
 function checkVersionFile(string $versionWatchFile, int $versionWatchFileTimestamp, LoggerInterface $logger): bool
 {

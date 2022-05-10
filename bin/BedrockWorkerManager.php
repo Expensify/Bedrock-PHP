@@ -502,11 +502,7 @@ try {
     echo "Error: $message\r\n";
 }
 
-// We wait for all children to finish before dying.
-$logger->info('Stopping BedrockWorkerManager, waiting for children');
-$status = null;
-pcntl_wait($status);
-$logger->info('Stopped BedrockWorkerManager');
+$logger->info('Stopped BedrockWorkerManager, will not wait for children');
 
 /**
  * Determines whether or not we call GetJob and try to start a new job

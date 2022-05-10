@@ -37,10 +37,10 @@ if (php_sapi_name() !== "cli") {
 
 // Parse the command line and verify the required settings are provided
 $options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::',
-'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::',
-'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'backoffThreshold::',
-'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
-'jobsToAddPerSecond::', 'profileChangeThreshold::', ]);
+    'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::',
+    'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'backoffThreshold::',
+    'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
+    'jobsToAddPerSecond::', 'profileChangeThreshold::', ]);
 
 $workerPath = $options['workerPath'] ?? null;
 if (!$workerPath) {
@@ -177,7 +177,7 @@ try {
                 break;
             } else {
                 $logger->info('[AIMD] Not enough jobs to queue, waiting 0.5s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
-                $localDB->write('DELETE FROM localJobs WHERE started < '.(microtime(true) - 60 * 60).' AND ended IS NULL;');
+//                $localDB->write('DELETE FROM localJobs WHERE started < '.(microtime(true) - 60 * 60).' AND ended IS NOT NULL;');
                 $isFirstTry = false;
                 usleep(500000);
             }
@@ -503,10 +503,20 @@ try {
     echo "Error: $message\r\n";
 }
 
-// We wait for all children to finish before dying.
-$logger->info('Stopping BedrockWorkerManager, waiting for children');
-$status = null;
-pcntl_wait($status);
+// This query can fail if other childs have the DB open/blocked, so we retry till it succeeds
+$childPids = null;
+while (!is_array($childPids)) {
+    $childPids = $localDB->read('SELECT workerPID FROM localJobs WHERE ended IS NOT NULL AND retryAfter = ""');
+    if (!is_array($childPids)) {
+        $logger->info('Could not query local jobs db, retrying shortly');
+        usleep(100);
+    }
+}
+foreach ($childPids as $childPid) {
+    $logger->info('Waiting for child', ['pid' => $childPid]);
+    $status = null;
+    pcntl_waitpid($childPid, $status);
+}
 $logger->info('Stopped BedrockWorkerManager');
 
 /**
@@ -565,7 +575,7 @@ function getNumberOfJobsToQueue(): int
     // }
 
     // Delete old stuff.
-    $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
+//    $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
 
     // If we don't have enough data, we'll return a value based on the current target and active job count.
     if ($lastIntervalCount === 0) {

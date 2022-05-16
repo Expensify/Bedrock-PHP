@@ -169,9 +169,7 @@ try {
             if ($load > $maxLoad) {
                 $logger->info('[AIMD] Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 sleep(1);
-            } elseif ($jobsToQueue >= 3) {
-                // We ensure we ask minimum 3 jobs per GetJobs call, to avoid running tons of GetJobs calls back to back
-                // to return just 1 job
+            } elseif ($jobsToQueue > $minSafeJobs / 2) {
                 $logger->info('[AIMD] Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->counter('bedrockWorkerManager.currentJobsToQueue', $jobsToQueue);
                 $stats->counter('bedrockWorkerManager.targetJobsToQueue', $target);
@@ -504,7 +502,11 @@ try {
     echo "Error: $message\r\n";
 }
 
-$logger->info('Stopped BedrockWorkerManager, will not wait for children');
+// We wait for all children to finish before dying.
+$logger->info('Stopping BedrockWorkerManager, waiting for children');
+$status = null;
+pcntl_wait($status);
+$logger->info('Stopped BedrockWorkerManager');
 
 /**
  * Determines whether or not we call GetJob and try to start a new job

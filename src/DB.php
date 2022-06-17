@@ -66,7 +66,7 @@ class DB extends Plugin
                     'timeout' => $timeout,
                 ]
             ));
-        });
+        })();
 
         if ($response->getCode() === self::CODE_QUERY_FAILED) {
             throw new BedrockError($response->getCodeLine()." - ".$response->getError(), $response->getCode());

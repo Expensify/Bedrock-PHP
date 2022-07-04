@@ -369,6 +369,10 @@ try {
                         $bedrock->commitCount = $commitCount;
                         $jobs = new Jobs($bedrock);
 
+                        // For each child PID, we need a fresh random seed to prevent duplicate "random" numbers generated.
+                        // Otherwise similar jobs run in the same BWM batch that call rand() will return the same result.
+                        mt_srand();
+
                         // If we are using a global REQUEST_ID, reset it to indicate this is a new process.
                         if (isset($GLOBALS['REQUEST_ID'])) {
                             // Reset the REQUEST_ID and re-log the line so we see

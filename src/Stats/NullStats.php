@@ -14,5 +14,6 @@ class NullStats implements StatsInterface
 
     public function benchmark($name, callable $function)
     {
+        return $function();
     }
 }

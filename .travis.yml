@@ -3,10 +3,10 @@ php:
   - '8.1.10'
 
 before_install:
-  - cd ../ && composer self-update 1.6.4 && cd -
+  - cd ../ && composer self-update 2.4.2 && cd -
 
 install:
-  - pecl install ast-1.0.3
+  - pecl install ast-1.1.0
   - composer install --prefer-dist --no-interaction --dev
 
 script:

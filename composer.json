@@ -1,8 +1,8 @@
 {
-    "name": "expensify/Bedrock-PHP",
+    "name": "expensify/bedrock-php",
     "description": "Bedrock PHP Library",
     "type": "library",
-    "version": "1.9.20",
+    "version": "2.0.0",
     "authors": [
         {
             "name": "Expensify",
@@ -20,8 +20,8 @@
         "psr/log": "1.0.1"
     },
     "require-dev": {
-        "friendsofphp/php-cs-fixer": "2.16.3",
-        "phan/phan": "2.2.13"
+        "friendsofphp/php-cs-fixer": "^3.4",
+        "phan/phan": "^5.3"
     },
     "autoload": {
         "psr-4": {

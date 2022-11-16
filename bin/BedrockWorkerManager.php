@@ -353,8 +353,9 @@ try {
                         if ($enableLoadHandler) {
                             $safeJobName = SQLite3::escapeString($job['name']);
                             $safeRetryAfter = SQLite3::escapeString($job['retryAfter'] ?? '');
-                            $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName, $safeRetryAfter, $myPid) {
-                                $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, retryAfter) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).", {$myPid}, '{$safeRetryAfter}');");
+                            $jobStartTime = microtime(true);
+                            $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName, $safeRetryAfter, $jobStartTime, $myPid) {
+                                $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, retryAfter) VALUES ({$job['jobID']}, '$safeJobName', '$jobStartTime', $myPid, '$safeRetryAfter');");
                             });
                             $localJobID = $localDB->getLastInsertedRowID();
                         }
@@ -392,7 +393,7 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats) {
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats, $jobStartTime) {
                             $worker = new $workerName($bedrock, $job);
 
                             // Open the DB connection after the fork in the child process.
@@ -469,11 +470,15 @@ try {
                             } finally {
                                 if ($enableLoadHandler) {
                                     $time = microtime(true);
+                                    $jobDuration = $time - $jobStartTime;
+                                    if ($jobDuration > 60) {
+                                        $logger->notice('Job took longer than 1 minute', ['name' => $job['name'], 'duration' => $jobDuration]);
+                                    }
                                     $logger->info('Updating local db');
-                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) {
-                                        $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;");
+                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID, $time) {
+                                        $localDB->write("UPDATE localJobs SET ended=$time WHERE localJobID=$localJobID;");
                                     });
-                                    $logger->info('Updating local db', ['total' => microtime(true) - $time]);
+                                    $logger->info('Updated local db', ['duration' => microtime(true) - $time]);
                                     $localDB->close();
                                 }
                             }

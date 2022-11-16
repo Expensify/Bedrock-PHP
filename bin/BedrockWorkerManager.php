@@ -148,6 +148,7 @@ try {
 
         // Step One wait for resources to free up
         $isFirstTry = true;
+        $jobsToQueue = 0;
         while (true) {
             $childProcesses = [];
             // Get the latest load
@@ -417,7 +418,7 @@ try {
                                 }
 
                                 try {
-                                    $jobs->finishJob($job['jobID'], $worker->getData());
+                                    $jobs->finishJob((int) $job['jobID'], $worker->getData());
                                 } catch (DoesNotExist $e) {
                                     // Job does not exist, but we know it had to exist because we were running it, so
                                     // we assume this is happening because we retried the command in a different server
@@ -460,7 +461,7 @@ try {
                                 ]);
                                 // Worker had a fatal error -- mark as failed.
                                 try {
-                                    $jobs->failJob($job['jobID']);
+                                    $jobs->failJob((int) $job['jobID']);
                                 } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
@@ -497,7 +498,7 @@ try {
                 } else {
                     // No worker for this job
                     $logger->warning('No worker found, ignoring', ['jobName' => $job['name']]);
-                    $jobs->failJob($job['jobID']);
+                    $jobs->failJob((int) $job['jobID']);
                 }
             }
         } elseif ($response['code'] == 303) {

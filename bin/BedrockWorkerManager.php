@@ -366,6 +366,7 @@ try {
                         // keep the same commitCount because we need the finishJob call below to run in a server that has
                         // the commit of the GetJobs call above or the job we are trying to finish might be in QUEUED state.
                         $commitCount = Client::getInstance()->commitCount;
+                        /* @phan-suppress-next-line PhanTypeMismatchDimFetch */
                         Client::clearInstancesAfterFork($job['data']['_commitCounts'] ?? []);
                         $bedrock = Client::getInstance();
                         $bedrock->commitCount = $commitCount;
@@ -473,13 +474,11 @@ try {
                                     $time = microtime(true);
                                     $jobDuration = $time - $jobStartTime;
                                     if ($jobDuration > 60) {
-                                        $logger->notice('Job took longer than 1 minute', ['name' => $job['name'], 'duration' => $jobDuration]);
+                                        $logger->notice('Job took longer than 1 minute', ['name' => $job['name'], 'jobID' => $job['jobID'], 'duration' => $jobDuration]);
                                     }
-                                    $logger->info('Updating local db');
                                     $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID, $time) {
                                         $localDB->write("UPDATE localJobs SET ended=$time WHERE localJobID=$localJobID;");
                                     });
-                                    $logger->info('Updated local db', ['duration' => microtime(true) - $time]);
                                     $localDB->close();
                                 }
                             }

@@ -26,7 +26,7 @@ use Expensify\Bedrock\LocalDB;
  */
 
 // Verify it's being started correctly
-if (php_sapi_name() !== "cli") {
+if (php_sapi_name() !== 'cli') {
     // Throw an exception rather than just output because we assume this is
     // being executed on a webserver, so no STDOUT.  Hopefully they've
     // configured a general uncaught exception handler, and this will trigger
@@ -86,7 +86,7 @@ $lastBackoff = 0;
 
 // This is the name of a particular job if it made up over 50% of the jobs previously returned. Its purpose is to
 // detect when we switch job types so that we can react appropriately.
-$lastJobProfile = "none";
+$lastJobProfile = 'none';
 
 $bedrock = Client::getInstance();
 
@@ -140,14 +140,15 @@ try {
     while (true) {
         // Is it time to self destruct?
         if ($maxIterations > 0 && $iteration >= $maxIterations) {
-            $logger->info("We did all our loops iteration, shutting down");
+            $logger->info('We did all our loops iteration, shutting down');
             break;
         }
         $iteration++;
-        $logger->info("Loop iteration", ['iteration' => $iteration]);
+        $logger->info('Loop iteration', ['iteration' => $iteration]);
 
         // Step One wait for resources to free up
         $isFirstTry = true;
+        $jobsToQueue = 0;
         while (true) {
             $childProcesses = [];
             // Get the latest load
@@ -331,7 +332,7 @@ try {
                     //       than creating "zombie" processes.  (We don't care
                     //       about the child's exit code, so we have no use for the
                     //       zombie process.)
-                    $logger->info("Forking and running a worker.", [
+                    $logger->info('Forking and running a worker.', [
                         'workerFileName' => $workerFilename,
                     ]);
 
@@ -353,8 +354,9 @@ try {
                         if ($enableLoadHandler) {
                             $safeJobName = SQLite3::escapeString($job['name']);
                             $safeRetryAfter = SQLite3::escapeString($job['retryAfter'] ?? '');
-                            $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName, $safeRetryAfter, $myPid) {
-                                $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, retryAfter) VALUES ({$job['jobID']}, '{$safeJobName}', ".microtime(true).", {$myPid}, '{$safeRetryAfter}');");
+                            $jobStartTime = microtime(true);
+                            $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName, $safeRetryAfter, $jobStartTime, $myPid) {
+                                $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, retryAfter) VALUES ({$job['jobID']}, '$safeJobName', '$jobStartTime', $myPid, '$safeRetryAfter');");
                             });
                             $localJobID = $localDB->getLastInsertedRowID();
                         }
@@ -364,6 +366,7 @@ try {
                         // keep the same commitCount because we need the finishJob call below to run in a server that has
                         // the commit of the GetJobs call above or the job we are trying to finish might be in QUEUED state.
                         $commitCount = Client::getInstance()->commitCount;
+                        /* @phan-suppress-next-line PhanTypeMismatchDimFetch */
                         Client::clearInstancesAfterFork($job['data']['_commitCounts'] ?? []);
                         $bedrock = Client::getInstance();
                         $bedrock->commitCount = $commitCount;
@@ -380,7 +383,7 @@ try {
                             // REQUEST_IDs.
                             $GLOBALS['REQUEST_ID'] = substr(str_replace(['+', '/'], 'x', base64_encode(openssl_random_pseudo_bytes(6))), 0, 6); // random 6 character ID
                         }
-                        $logger->info("Fork succeeded, child process, running job", [
+                        $logger->info('Fork succeeded, child process, running job', [
                             'name' => $job['name'],
                             'id' => $job['jobID'],
                             'extraParams' => $extraParams,
@@ -392,23 +395,23 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats) {
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats, $jobStartTime) {
                             $worker = new $workerName($bedrock, $job);
 
                             // Open the DB connection after the fork in the child process.
                             try {
-                                if (!$worker->getParam("mockRequest")) {
+                                if (!$worker->getParam('mockRequest')) {
                                     // Run the worker.  If it completes successfully, finish the job.
                                     $worker->run();
 
                                     // Success
-                                    $logger->info("Job completed successfully, exiting.", [
+                                    $logger->info('Job completed successfully, exiting.', [
                                         'name' => $job['name'],
                                         'id' => $job['jobID'],
                                         'extraParams' => $extraParams,
                                     ]);
                                 } else {
-                                    $logger->info("Mock job, not running and marking as finished.", [
+                                    $logger->info('Mock job, not running and marking as finished.', [
                                         'name' => $job['name'],
                                         'id' => $job['jobID'],
                                         'extraParams' => $extraParams,
@@ -416,7 +419,7 @@ try {
                                 }
 
                                 try {
-                                    $jobs->finishJob($job['jobID'], $worker->getData());
+                                    $jobs->finishJob((int) $job['jobID'], $worker->getData());
                                 } catch (DoesNotExist $e) {
                                     // Job does not exist, but we know it had to exist because we were running it, so
                                     // we assume this is happening because we retried the command in a different server
@@ -436,7 +439,7 @@ try {
                                 }
                             } catch (RetryableException $e) {
                                 // Worker had a recoverable failure; retry again later.
-                                $logger->info("Job could not complete, retrying.", [
+                                $logger->info('Job could not complete, retrying.', [
                                     'name' => $job['name'],
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
@@ -444,14 +447,14 @@ try {
                                 ]);
                                 try {
                                     $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun(), null, $e->getIgnoreRepeat());
-                                } catch (IllegalAction | DoesNotExist $e) {
+                                } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
                                     // after the first server actually ran the command (but we lost the response).
                                     $logger->info('Failed to RetryJob we probably retried the command so it is safe to ignore', ['job' => $job, 'exception' => $e]);
                                 }
                             } catch (Throwable $e) {
-                                $logger->alert("Job failed with errors, exiting.", [
+                                $logger->alert('Job failed with errors, exiting.', [
                                     'name' => $job['name'],
                                     'id' => $job['jobID'],
                                     'extraParams' => $extraParams,
@@ -459,8 +462,8 @@ try {
                                 ]);
                                 // Worker had a fatal error -- mark as failed.
                                 try {
-                                    $jobs->failJob($job['jobID']);
-                                } catch (IllegalAction | DoesNotExist $e) {
+                                    $jobs->failJob((int) $job['jobID']);
+                                } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
                                     // after the first server actually ran the command (but we lost the response).
@@ -469,11 +472,13 @@ try {
                             } finally {
                                 if ($enableLoadHandler) {
                                     $time = microtime(true);
-                                    $logger->info('Updating local db');
-                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID) {
-                                        $localDB->write("UPDATE localJobs SET ended=".microtime(true)." WHERE localJobID=$localJobID;");
+                                    $jobDuration = $time - $jobStartTime;
+                                    if ($jobDuration > 60) {
+                                        $logger->notice('Job took longer than 1 minute', ['name' => $job['name'], 'jobID' => $job['jobID'], 'duration' => $jobDuration]);
+                                    }
+                                    $stats->benchmark('bedrockWorkerManager.db.write.update', function () use ($localDB, $localJobID, $time) {
+                                        $localDB->write("UPDATE localJobs SET ended=$time WHERE localJobID=$localJobID;");
                                     });
-                                    $logger->info('Updating local db', ['total' => microtime(true) - $time]);
                                     $localDB->close();
                                 }
                             }
@@ -482,24 +487,23 @@ try {
                         // The forked worker process is all done.
                         $stats->counter('bedrockJob.finish.'.$job['name']);
                         exit(1);
-                    } else {
-                        // Otherwise we are the parent thread -- continue execution
-                        $logger->info("Successfully ran job", [
+                    }
+                    // Otherwise we are the parent thread -- continue execution
+                    $logger->info('Successfully ran job', [
                             'name' => $job['name'],
                             'id' => $job['jobID'],
                             'pid' => $pid,
                         ]);
-                    }
                 } else {
                     // No worker for this job
                     $logger->warning('No worker found, ignoring', ['jobName' => $job['name']]);
-                    $jobs->failJob($job['jobID']);
+                    $jobs->failJob((int) $job['jobID']);
                 }
             }
         } elseif ($response['code'] == 303) {
-            $logger->info("No job found, retrying.");
+            $logger->info('No job found, retrying.');
         } else {
-            $logger->warning("Failed to get job");
+            $logger->warning('Failed to get job');
         }
     }
 } catch (Throwable $e) {

@@ -435,7 +435,29 @@ class Client implements LoggerAwareInterface
                     $exception = $e;
                 }
             } catch (VersionMismatchFailure $e) {
-
+                // The error happened during a deploy where we have different versions through the cluster
+                // so we want to mark the host as failed. Considering that the flip can happen in one second
+                // we might have a situation where half of the cluster is suddenly available again, so we're
+                // adding a custom blacklistTimout when it's a version mismatch exception.
+                // I chose 5 seconds so we don't end up calling the same server for the same request during a 
+                // a deploy, but we should be checking it fairly frequently since we'll move from a half the 
+                // cluster to the other half pretty fast.
+                $this->markHostAsFailed($hostName, 5);
+                
+                if ($numRetriesLeft) {
+                    $this->logger->info('Bedrock\Client - Failed to connect or send the request because of version mismatch; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+                } else {
+                    if ($retriedAllHosts) {
+                        // If this happens, it means we failed to form a cluster during the deploy.
+                        $this->logger->error('Bedrock\Client - Failed to connect or send the request because of version mismatch; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    } else {
+                        // We shouldn't reach this part of the code frequently, but we need to treat it the same way 
+                        // as the other exceptions in case we tried the first three servers and they were unavailable, 
+                        // then the cluster flipped and the remaining three servers are now unavailable
+                        $this->logger->info('Bedrock\Client - Failed to connect or send the request  because of version mismatch; retrying in all hosts', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    }
+                    $exception = $e;
+                }
             }
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command

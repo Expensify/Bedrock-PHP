@@ -64,7 +64,7 @@ class Client implements LoggerAwareInterface
     public $commitCount = null;
 
     /**
-     *  @var resource|null Socket to the server.
+     *  @var Socket|null Socket to the server.
      */
     private $socket = null;
 
@@ -412,6 +412,9 @@ class Client implements LoggerAwareInterface
                 $hostName = key($hostConfigs);
                 $this->lastHost = $hostName;
             }
+
+            // For some reason, phan thinks that hostName might be null, so let's coalesce it to an empty string
+            $hostName = $hostName ?? '';
             try {
                 // We get the port from either the main or failover host configs, due to socket reuse, the host we are
                 // trying to use might not be in the picked host configs, because getPossibleHosts randomizes them.

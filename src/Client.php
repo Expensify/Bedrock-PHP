@@ -64,7 +64,7 @@ class Client implements LoggerAwareInterface
     public $commitCount = null;
 
     /**
-     *  @var Socket|null Socket to the server.
+     *  @var \Socket|null Socket to the server.
      */
     private $socket = null;
 

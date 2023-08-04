@@ -435,7 +435,7 @@ class Client implements LoggerAwareInterface
                     $exception = $e;
                 }
             } catch (VersionMismatchFailure $e) {
-                
+
             }
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
@@ -700,6 +700,8 @@ class Client implements LoggerAwareInterface
             throw new ConnectionFailure('Internal Bedrock command timeout (555 Timeout)');
         }
 
+        // In case of version mismatch, we want to blacklist the servers (which will happen in 'call') but for
+        // a smaller amount of time, so we have a specific exception for it.
         if ($codeLine === '542 Version Mismatch') {
             throw new VersionMismatchFailure('Bedrock server had a version Mismatch (542 Version Mismatch)');
         }
@@ -800,9 +802,9 @@ class Client implements LoggerAwareInterface
      *
      * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
      */
-    private function markHostAsFailed(string $host)
+    private function markHostAsFailed(string $host, ?int $blackListTimeout = null)
     {
-        $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
+        $blacklistedUntil = time() + (is_null($blackListTimeout) ? rand(1, $this->maxBlackListTimeout) : $blackListTimeout);
         if (!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $hostConfigs = apcu_fetch($apcuKey);

@@ -4,6 +4,7 @@ namespace Expensify\Bedrock;
 
 use Expensify\Bedrock\Exceptions\BedrockError;
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
+use Expensify\Bedrock\Exceptions\VersionMismatchFailure;
 use Expensify\Bedrock\Stats\NullStats;
 use Expensify\Bedrock\Stats\StatsInterface;
 use Psr\Log\LoggerAwareInterface;
@@ -433,6 +434,9 @@ class Client implements LoggerAwareInterface
                     }
                     $exception = $e;
                 }
+            } catch (VersionMismatchFailure $e) {
+                
+            }
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $this->markHostAsFailed($hostName);
@@ -694,6 +698,10 @@ class Client implements LoggerAwareInterface
         // We don't want to retry timed out queries as this will just overwhelm the servers.
         if ($codeLine === '555 Timeout') {
             throw new ConnectionFailure('Internal Bedrock command timeout (555 Timeout)');
+        }
+
+        if ($codeLine === '542 Version Mismatch') {
+            throw new VersionMismatchFailure('Bedrock server had a version Mismatch (542 Version Mismatch)');
         }
 
         // We'll parse the body *only* if this is `application/json` or blank.

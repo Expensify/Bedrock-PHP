@@ -454,7 +454,7 @@ class Client implements LoggerAwareInterface
                         // We shouldn't reach this part of the code frequently, but we need to treat it the same way 
                         // as the other exceptions in case we tried the first three servers and they were unavailable, 
                         // then the cluster flipped and the remaining three servers are now unavailable
-                        $this->logger->info('Bedrock\Client - Failed to connect or send the request  because of version mismatch; retrying in all hosts', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                        $this->logger->info('Bedrock\Client - Failed to connect or send the request because of version mismatch; retrying in all hosts', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     }
                     $exception = $e;
                 }

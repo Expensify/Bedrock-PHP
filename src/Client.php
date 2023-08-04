@@ -458,7 +458,6 @@ class Client implements LoggerAwareInterface
                     }
                     $exception = $e;
                 }
-            }
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $this->markHostAsFailed($hostName);

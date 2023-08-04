@@ -16,27 +16,27 @@ use Psr\Log\NullLogger;
  */
 class Client implements LoggerAwareInterface
 {
-    const HEADER_DELIMITER = "\r\n\r\n";
-    const HEADER_FIELD_SEPARATOR = "\r\n";
+    private const HEADER_DELIMITER = "\r\n\r\n";
+    private const HEADER_FIELD_SEPARATOR = "\r\n";
 
     /**
      * The length of each packet read from the socket.
      */
-    const PACKET_LENGTH = 16384;
+    private const PACKET_LENGTH = 16384;
 
     /**
      * The prefix to use in apcu to store the state of the hosts.
      */
-    const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
+    private const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
      * Priorities a command can have.
      */
-    const PRIORITY_MIN = 0;
-    const PRIORITY_LOW = 250;
-    const PRIORITY_NORMAL = 500;
-    const PRIORITY_HIGH = 750;
-    const PRIORITY_MAX = 1000;
+    private const PRIORITY_MIN = 0;
+    private const PRIORITY_LOW = 250;
+    private const PRIORITY_NORMAL = 500;
+    private const PRIORITY_HIGH = 750;
+    private const PRIORITY_MAX = 1000;
 
     /**
      * @var array This is a default configuration applied to all instances of this class. They can be overriden in the
@@ -69,7 +69,7 @@ class Client implements LoggerAwareInterface
     private $socket = null;
 
     /**
-     * @var null|string Name of the bedrock cluster we are talking to. If you have more than one bedrock cluster, you
+     * @var string|null Name of the bedrock cluster we are talking to. If you have more than one bedrock cluster, you
      *                  can pass in different names for them in order to have separate statistics collected and caches of failed servers.
      */
     private $clusterName = null;
@@ -262,8 +262,6 @@ class Client implements LoggerAwareInterface
 
     /**
      * Sets a logger instance on the object.
-     *
-     * @param LoggerInterface $logger
      */
     public function setLogger(LoggerInterface $logger)
     {
@@ -360,7 +358,7 @@ class Client implements LoggerAwareInterface
         $rawRequest = "$method\r\n";
         foreach ($headers as $name => $value) {
             if (is_array($value) || is_object($value)) {
-                $rawRequest .= "$name: ".addcslashes(json_encode($value), "\\")."\r\n";
+                $rawRequest .= "$name: ".addcslashes(json_encode($value), '\\')."\r\n";
             } elseif (is_bool($value)) {
                 $rawRequest .= "$name: ".($value ? 'true' : 'false')."\r\n";
             } elseif ($value === null || $value === '') {
@@ -369,7 +367,7 @@ class Client implements LoggerAwareInterface
                 $rawRequest .= "$name: ".self::toUTF8(addcslashes($value, "\r\n\t\\"))."\r\n";
             }
         }
-        $rawRequest .= "Content-Length: ".strlen($body)."\r\n";
+        $rawRequest .= 'Content-Length: '.strlen($body)."\r\n";
         $rawRequest .= "\r\n";
         $rawRequest .= $body;
 
@@ -439,11 +437,11 @@ class Client implements LoggerAwareInterface
                 // so we want to mark the host as failed. Considering that the flip can happen in one second
                 // we might have a situation where half of the cluster is suddenly available again, so we're
                 // adding a custom blacklistTimout when it's a version mismatch exception.
-                // I chose 5 seconds so we don't end up calling the same server for the same request during a 
-                // a deploy, but we should be checking it fairly frequently since we'll move from a half the 
+                // I chose 5 seconds so we don't end up calling the same server for the same request during a
+                // a deploy, but we should be checking it fairly frequently since we'll move from a half the
                 // cluster to the other half pretty fast.
                 $this->markHostAsFailed($hostName, 5);
-                
+
                 if ($numRetriesLeft) {
                     $this->logger->info('Bedrock\Client - Failed to connect or send the request because of version mismatch; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
                 } else {
@@ -451,8 +449,8 @@ class Client implements LoggerAwareInterface
                         // If this happens, it means we failed to form a cluster during the deploy.
                         $this->logger->error('Bedrock\Client - Failed to connect or send the request because of version mismatch; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     } else {
-                        // We shouldn't reach this part of the code frequently, but we need to treat it the same way 
-                        // as the other exceptions in case we tried the first three servers and they were unavailable, 
+                        // We shouldn't reach this part of the code frequently, but we need to treat it the same way
+                        // as the other exceptions in case we tried the first three servers and they were unavailable,
                         // then the cluster flipped and the remaining three servers are now unavailable
                         $this->logger->info('Bedrock\Client - Failed to connect or send the request because of version mismatch; retrying in all hosts', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     }
@@ -711,8 +709,8 @@ class Client implements LoggerAwareInterface
 
         // If we received the commitCount, then save it for future requests. This is useful if for some reason we
         // change the bedrock node we are talking to.
-        if (isset($responseHeaders["commitCount"])) {
-            $this->commitCount = (int) $responseHeaders["commitCount"];
+        if (isset($responseHeaders['commitCount'])) {
+            $this->commitCount = (int) $responseHeaders['commitCount'];
         }
 
         // We treat a non-sqlite-query timeout as a ConnectionFailure.
@@ -788,7 +786,7 @@ class Client implements LoggerAwareInterface
         $responseHeaders = [];
         foreach ($responseHeaderLines as $responseHeaderLine) {
             // Try to split this line
-            $nameValue = explode(":", $responseHeaderLine, 2);
+            $nameValue = explode(':', $responseHeaderLine, 2);
             if (count($nameValue) === 2) {
                 $responseHeaders[trim($nameValue[0])] = trim($nameValue[1]);
             } elseif (strlen($responseHeaderLine)) {

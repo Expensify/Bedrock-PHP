@@ -1,6 +1,6 @@
 language: php
 php:
-  - '8.1.18'
+  - '8.1.21'
 
 before_install:
   - cd ../ && composer self-update 2.2.1 && cd -

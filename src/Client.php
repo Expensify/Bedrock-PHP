@@ -9,6 +9,7 @@ use Expensify\Bedrock\Stats\StatsInterface;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Socket;
 
 /**
  * Client for communicating with bedrock.
@@ -63,7 +64,7 @@ class Client implements LoggerAwareInterface
     public $commitCount = null;
 
     /**
-     *  @var resource|\Socket|null Socket to the server.
+     *  @var resource|Socket|null Socket to the server.
      */
     private $socket = null;
 

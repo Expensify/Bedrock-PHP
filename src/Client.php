@@ -684,9 +684,11 @@ class Client implements LoggerAwareInterface
             }
         } while (is_null($responseLength) || strlen($response) < $responseLength);
 
-        // If we received the commitCount, then save it for future requests. This is useful if for some reason we
-        // change the bedrock node we are talking to.
-        if (isset($responseHeaders["commitCount"])) {
+        // We save the commitCount for future requests. This is useful if for some reason we change the bedrock node we
+        // are talking to.
+        // We only set it if process time was returned, which means we did a write. We don't care about saving the commit
+        // count for reads, since we did not change anything in the DB.
+        if (isset($responseHeaders["commitCount"]) && ($responseHeaders['processTime'] ?? 0) > 0 || ($responseHeaders['upstreamProcessTime'] ?? 0) > 0) {
             $this->commitCount = (int) $responseHeaders["commitCount"];
         }
 

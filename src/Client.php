@@ -9,33 +9,34 @@ use Expensify\Bedrock\Stats\StatsInterface;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Socket;
 
 /**
  * Client for communicating with bedrock.
  */
 class Client implements LoggerAwareInterface
 {
-    const HEADER_DELIMITER = "\r\n\r\n";
-    const HEADER_FIELD_SEPARATOR = "\r\n";
+    public const HEADER_DELIMITER = "\r\n\r\n";
+    public const HEADER_FIELD_SEPARATOR = "\r\n";
 
     /**
      * The length of each packet read from the socket.
      */
-    const PACKET_LENGTH = 16384;
+    public const PACKET_LENGTH = 16384;
 
     /**
      * The prefix to use in apcu to store the state of the hosts.
      */
-    const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
+    public const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
      * Priorities a command can have.
      */
-    const PRIORITY_MIN = 0;
-    const PRIORITY_LOW = 250;
-    const PRIORITY_NORMAL = 500;
-    const PRIORITY_HIGH = 750;
-    const PRIORITY_MAX = 1000;
+    public const PRIORITY_MIN = 0;
+    public const PRIORITY_LOW = 250;
+    public const PRIORITY_NORMAL = 500;
+    public const PRIORITY_HIGH = 750;
+    public const PRIORITY_MAX = 1000;
 
     /**
      * @var array This is a default configuration applied to all instances of this class. They can be overriden in the
@@ -63,12 +64,12 @@ class Client implements LoggerAwareInterface
     public $commitCount = null;
 
     /**
-     *  @var resource|null Socket to the server.
+     *  @var resource|Socket|null Socket to the server.
      */
     private $socket = null;
 
     /**
-     * @var null|string Name of the bedrock cluster we are talking to. If you have more than one bedrock cluster, you
+     * @var string|null Name of the bedrock cluster we are talking to. If you have more than one bedrock cluster, you
      *                  can pass in different names for them in order to have separate statistics collected and caches of failed servers.
      */
     private $clusterName = null;
@@ -261,8 +262,6 @@ class Client implements LoggerAwareInterface
 
     /**
      * Sets a logger instance on the object.
-     *
-     * @param LoggerInterface $logger
      */
     public function setLogger(LoggerInterface $logger)
     {
@@ -359,7 +358,7 @@ class Client implements LoggerAwareInterface
         $rawRequest = "$method\r\n";
         foreach ($headers as $name => $value) {
             if (is_array($value) || is_object($value)) {
-                $rawRequest .= "$name: ".addcslashes(json_encode($value), "\\")."\r\n";
+                $rawRequest .= "$name: ".addcslashes(json_encode($value), '\\')."\r\n";
             } elseif (is_bool($value)) {
                 $rawRequest .= "$name: ".($value ? 'true' : 'false')."\r\n";
             } elseif ($value === null || $value === '') {
@@ -368,7 +367,7 @@ class Client implements LoggerAwareInterface
                 $rawRequest .= "$name: ".self::toUTF8(addcslashes($value, "\r\n\t\\"))."\r\n";
             }
         }
-        $rawRequest .= "Content-Length: ".strlen($body)."\r\n";
+        $rawRequest .= 'Content-Length: '.strlen($body)."\r\n";
         $rawRequest .= "\r\n";
         $rawRequest .= $body;
 
@@ -410,7 +409,7 @@ class Client implements LoggerAwareInterface
                 $hostName = $this->lastHost;
             } else {
                 // Try the first possible host.
-                $hostName = key($hostConfigs);
+                $hostName = (string) key($hostConfigs);
                 $this->lastHost = $hostName;
             }
             try {
@@ -684,10 +683,12 @@ class Client implements LoggerAwareInterface
             }
         } while (is_null($responseLength) || strlen($response) < $responseLength);
 
-        // If we received the commitCount, then save it for future requests. This is useful if for some reason we
-        // change the bedrock node we are talking to.
-        if (isset($responseHeaders["commitCount"])) {
-            $this->commitCount = (int) $responseHeaders["commitCount"];
+        // We save the commitCount for future requests. This is useful if for some reason we change the bedrock node we
+        // are talking to.
+        // We only set it if process time was returned, which means we did a write. We don't care about saving the commit
+        // count for reads, since we did not change anything in the DB.
+        if (isset($responseHeaders['commitCount']) && ($responseHeaders['processTime'] ?? 0) > 0 || ($responseHeaders['upstreamProcessTime'] ?? 0) > 0) {
+            $this->commitCount = (int) $responseHeaders['commitCount'];
         }
 
         // We treat a non-sqlite-query timeout as a ConnectionFailure.
@@ -757,7 +758,7 @@ class Client implements LoggerAwareInterface
         $responseHeaders = [];
         foreach ($responseHeaderLines as $responseHeaderLine) {
             // Try to split this line
-            $nameValue = explode(":", $responseHeaderLine, 2);
+            $nameValue = explode(':', $responseHeaderLine, 2);
             if (count($nameValue) === 2) {
                 $responseHeaders[trim($nameValue[0])] = trim($nameValue[1]);
             } elseif (strlen($responseHeaderLine)) {

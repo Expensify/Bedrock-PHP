@@ -697,6 +697,10 @@ class Client implements LoggerAwareInterface
             throw new ConnectionFailure('Internal Bedrock command timeout (555 Timeout)');
         }
 
+        if (str_starts_with($codeLine, '5')) {
+            throw new BedrockError('Internal Bedrock error');
+        }
+
         // We'll parse the body *only* if this is `application/json` or blank.
         $isJSON = !isset($responseHeaders['Content-Type']) || !strcasecmp($responseHeaders['Content-Type'], 'application/json');
 

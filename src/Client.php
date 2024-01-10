@@ -358,6 +358,9 @@ class Client implements LoggerAwareInterface
         $rawRequest = "$method\r\n";
         foreach ($headers as $name => $value) {
             if (is_array($value) || is_object($value)) {
+                // Passing flag JSON_PRESERVE_ZERO_FRACTION because otherwise PHP will serialize floating numbers like 2.0 to 2 instead of 2.0.
+                // This can cause bugs in Auth since we can't know what type a float number will be and accessing an int with the accessor for
+                // floats (or vice versa) would throw.
                 $rawRequest .= "$name: ".addcslashes(json_encode($value, JSON_PRESERVE_ZERO_FRACTION), '\\')."\r\n";
             } elseif (is_bool($value)) {
                 $rawRequest .= "$name: ".($value ? 'true' : 'false')."\r\n";

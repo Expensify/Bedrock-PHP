@@ -358,7 +358,7 @@ class Client implements LoggerAwareInterface
         $rawRequest = "$method\r\n";
         foreach ($headers as $name => $value) {
             if (is_array($value) || is_object($value)) {
-                $rawRequest .= "$name: ".addcslashes(json_encode($value), '\\')."\r\n";
+                $rawRequest .= "$name: ".addcslashes(json_encode($value, JSON_PRESERVE_ZERO_FRACTION), '\\')."\r\n";
             } elseif (is_bool($value)) {
                 $rawRequest .= "$name: ".($value ? 'true' : 'false')."\r\n";
             } elseif ($value === null || $value === '') {

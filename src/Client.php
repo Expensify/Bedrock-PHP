@@ -694,14 +694,14 @@ class Client implements LoggerAwareInterface
             $this->commitCount = (int) $responseHeaders['commitCount'];
         }
 
-        // We treat a non-sqlite-query timeout as a ConnectionFailure.
-        // We don't want to retry timed out queries as this will just overwhelm the servers.
+        // We treat this '555 Timeout', which is a command timeout (not a query timeout), as a ConnectionFailure so that it gets retried regardless of if it is idempotent or not.
+        // For other exceptions that have different error codes/messages, we do not throw here, so it gets handled like any regular exception.
         if ($codeLine === '555 Timeout') {
             throw new ConnectionFailure('Internal Bedrock command timeout (555 Timeout)');
         }
 
         if ($codeLine === '500 Internal Server Error') {
-            throw new BedrockError('Bedrock responded with 500 Internal Server Error');
+            throw new ConnectionFailure('Bedrock responded with 500 Internal Server Error');
         }
 
         // We'll parse the body *only* if this is `application/json` or blank.

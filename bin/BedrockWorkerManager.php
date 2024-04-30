@@ -175,7 +175,7 @@ try {
                 // to return just 1 job
                 $logger->info('[AIMD] Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->counter('bedrockWorkerManager.currentJobsToQueue', $jobsToQueue);
-                $stats->counter('bedrockWorkerManager.targetJobsToQueue', $target);
+                $stats->counter('bedrockWorkerManager.targetJobsToQueue', (int) $target);
                 break;
             } else {
                 $logger->info('[AIMD] Not enough jobs to queue, waiting 0.5s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);

@@ -221,11 +221,12 @@ class Jobs extends Plugin
     /**
      * Schedules a list of jobs.
      *
-     * @param array $jobs JSON array containing each job. Each job should include the same parameters as jobs define in CreateJob
+     * @param array  $jobs JSON array containing each job. Each job should include the same parameters as jobs define in CreateJob
+     * @param string $connection  (optional) Specify 'Connection' header using constants defined in this class.
      *
      * @return array - contain the jobIDs with the unique identifier of the created jobs
      */
-    public function createJobs(array $jobs): array
+    public function createJobs(array $jobs, string $connection = self::CONNECTION_WAIT): array
     {
         $this->client->getLogger()->info("Create jobs", ['jobs' => $jobs]);
 
@@ -251,7 +252,8 @@ class Jobs extends Plugin
             [
                 'jobs' => $jobs,
                 'idempotent' => $areAllJobsUnique,
-            ]
+                'Connection' => $connection,
+            ],
         );
 
         $this->client->getLogger()->info('Jobs created', ['jobIDs' => $response['body']['jobIDs'] ?? null]);

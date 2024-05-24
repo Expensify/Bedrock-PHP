@@ -29,7 +29,7 @@ class Jobs extends Plugin
      *
      * @var string
      */
-    public const STATE_RUNNING = "RUNNING";
+    public const STATE_RUNNING = 'RUNNING';
 
     /**
      * State of a job that is currently in the runqueued state.
@@ -41,28 +41,28 @@ class Jobs extends Plugin
      *
      * @var string
      */
-    public const STATE_QUEUED = "QUEUED";
+    public const STATE_QUEUED = 'QUEUED';
 
     /**
      * State of a job that is currently cancelled.
      *
      * @var string
      */
-    public const STATE_CANCELLED = "CANCELLED";
+    public const STATE_CANCELLED = 'CANCELLED';
 
     /**
-     * "Connection" header option to wait for a response.
+     * 'Connection' header option to wait for a response.
      *
      * @var string
      */
-    public const CONNECTION_WAIT = "wait";
+    public const CONNECTION_WAIT = 'wait';
 
     /**
-     * "Connection" header option to forget and not wait for a response.
+     * 'Connection' header option to forget and not wait for a response.
      *
      * @var string
      */
-    public const CONNECTION_FORGET = "forget";
+    public const CONNECTION_FORGET = 'forget';
 
     /**
      * Constant for the high priority.

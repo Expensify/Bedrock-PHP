@@ -22,98 +22,98 @@ class Jobs extends Plugin
      *
      * @var string
      */
-    const DATE_FORMAT = 'Y-m-d H:i:s';
+    public const DATE_FORMAT = 'Y-m-d H:i:s';
 
     /**
      * State of a job that is currently running.
      *
      * @var string
      */
-    const STATE_RUNNING = "RUNNING";
+    public const STATE_RUNNING = 'RUNNING';
 
     /**
      * State of a job that is currently in the runqueued state.
      */
-    const STATE_RUNQUEUED = 'RUNQUEUED';
+    public const STATE_RUNQUEUED = 'RUNQUEUED';
 
     /**
      * State of a job that is currently queued.
      *
      * @var string
      */
-    const STATE_QUEUED = "QUEUED";
+    public const STATE_QUEUED = 'QUEUED';
 
     /**
      * State of a job that is currently cancelled.
      *
      * @var string
      */
-    const STATE_CANCELLED = "CANCELLED";
+    public const STATE_CANCELLED = 'CANCELLED';
 
     /**
-     * "Connection" header option to wait for a response.
+     * 'Connection' header option to wait for a response.
      *
      * @var string
      */
-    const CONNECTION_WAIT = "wait";
+    public const CONNECTION_WAIT = 'wait';
 
     /**
-     * "Connection" header option to forget and not wait for a response.
+     * 'Connection' header option to forget and not wait for a response.
      *
      * @var string
      */
-    const CONNECTION_FORGET = "forget";
+    public const CONNECTION_FORGET = 'forget';
 
     /**
      * Constant for the high priority.
      */
-    const PRIORITY_HIGH = 1000;
+    public const PRIORITY_HIGH = 1000;
 
     /**
      * Constant for the medium priority.
      */
-    const PRIORITY_MEDIUM = 500;
+    public const PRIORITY_MEDIUM = 500;
 
     /**
      * Constant for the low priority.
      */
-    const PRIORITY_LOW = 0;
+    public const PRIORITY_LOW = 0;
 
     /**
      * Constant for the minimum priority.
      */
-    const PRIORITY_0 = 0;
+    public const PRIORITY_0 = 0;
 
     /**
      * Constant for the low priority.
      */
-    const PRIORITY_250 = 250;
+    public const PRIORITY_250 = 250;
 
     /**
      * Constant for the medium priority.
      */
-    const PRIORITY_500 = 500;
+    public const PRIORITY_500 = 500;
 
     /**
      * Constant for the high priority.
      */
-    const PRIORITY_750 = 750;
+    public const PRIORITY_750 = 750;
 
     /**
      * Constant for the higher priority.
      */
-    const PRIORITY_850 = 850;
+    public const PRIORITY_850 = 850;
 
     /**
      * Constant for the maximum priority.
      */
-    const PRIORITY_1000 = 1000;
+    public const PRIORITY_1000 = 1000;
 
     /**
      * Constant for the location of the file to look for to disable processing
      * new jobs.
      */
-    const ADMIN_DOWN_FILE_LOCATION = '/var/tmp/ADMIN_DOWN';
+    public const ADMIN_DOWN_FILE_LOCATION = '/var/tmp/ADMIN_DOWN';
 
     /**
      * Calls the Jobs plugin.
@@ -191,7 +191,7 @@ class Jobs extends Plugin
      */
     public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null, $overwrite = true)
     {
-        $this->client->getLogger()->info("Create job", ['name' => $name]);
+        $this->client->getLogger()->info('Create job', ['name' => $name]);
         $commitCounts = Client::getCommitCounts();
 
         $response = $this->call(
@@ -221,13 +221,14 @@ class Jobs extends Plugin
     /**
      * Schedules a list of jobs.
      *
-     * @param array $jobs JSON array containing each job. Each job should include the same parameters as jobs define in CreateJob
+     * @param array  $jobs       JSON array containing each job. Each job should include the same parameters as jobs define in CreateJob
+     * @param string $connection (optional) Specify 'Connection' header using constants defined in this class.
      *
      * @return array - contain the jobIDs with the unique identifier of the created jobs
      */
-    public function createJobs(array $jobs): array
+    public function createJobs(array $jobs, string $connection = self::CONNECTION_WAIT): array
     {
-        $this->client->getLogger()->info("Create jobs", ['jobs' => $jobs]);
+        $this->client->getLogger()->info('Create jobs', ['jobs' => $jobs]);
 
         // We renamed the `priority` param to `jobPriority` because `priority` is a generic param of any bedrock command.
         foreach ($jobs as $i => $job) {
@@ -251,7 +252,8 @@ class Jobs extends Plugin
             [
                 'jobs' => $jobs,
                 'idempotent' => $areAllJobsUnique,
-            ]
+                'Connection' => $connection,
+            ],
         );
 
         $this->client->getLogger()->info('Jobs created', ['jobIDs' => $response['body']['jobIDs'] ?? null]);
@@ -268,9 +270,9 @@ class Jobs extends Plugin
      */
     public function getJob($name)
     {
-        $headers = ["name" => $name];
+        $headers = ['name' => $name];
 
-        return $this->call("GetJob", $headers);
+        return $this->call('GetJob', $headers);
     }
 
     /**
@@ -281,13 +283,13 @@ class Jobs extends Plugin
     public function getJobs(string $name, int $numResults, array $params = []): array
     {
         $headers = [
-            "name" => $name,
-            "numResults" => $numResults,
+            'name' => $name,
+            'numResults' => $numResults,
         ];
 
         $headers = array_merge($headers, $params);
 
-        return $this->call("GetJobs", $headers);
+        return $this->call('GetJobs', $headers);
     }
 
     /**
@@ -304,13 +306,13 @@ class Jobs extends Plugin
     {
         $commitCounts = Client::getCommitCounts();
         return $this->call(
-            "UpdateJob",
+            'UpdateJob',
             [
-                "jobID" => $jobID,
-                "data" => array_merge($data ?? [], count($commitCounts) ? ['_commitCounts' => $commitCounts] : []),
-                "repeat" => $repeat,
-                "jobPriority" => $priority,
-                "idempotent" => true,
+                'jobID' => $jobID,
+                'data' => array_merge($data ?? [], count($commitCounts) ? ['_commitCounts' => $commitCounts] : []),
+                'repeat' => $repeat,
+                'jobPriority' => $priority,
+                'idempotent' => true,
                 'nextRun' => $nextRun,
             ]
         );
@@ -327,11 +329,11 @@ class Jobs extends Plugin
     public function finishJob($jobID, $data = null)
     {
         return $this->call(
-            "FinishJob",
+            'FinishJob',
             [
-                "jobID" => $jobID,
-                "data" => $data,
-                "idempotent" => true,
+                'jobID' => $jobID,
+                'data' => $data,
+                'idempotent' => true,
             ]
         );
     }
@@ -342,9 +344,9 @@ class Jobs extends Plugin
     public function cancelJob(int $jobID): array
     {
         return $this->call(
-            "CancelJob",
+            'CancelJob',
             [
-                "jobID" => $jobID,
+                'jobID' => $jobID,
             ]
         );
     }
@@ -359,10 +361,10 @@ class Jobs extends Plugin
     public function deleteJob($jobID)
     {
         return $this->call(
-            "DeleteJob",
+            'DeleteJob',
             [
-                "jobID" => $jobID,
-                "idempotent" => true,
+                'jobID' => $jobID,
+                'idempotent' => true,
             ]
         );
     }
@@ -377,10 +379,10 @@ class Jobs extends Plugin
     public function failJob($jobID)
     {
         return $this->call(
-            "FailJob",
+            'FailJob',
             [
-                "jobID" => $jobID,
-                "idempotent" => true,
+                'jobID' => $jobID,
+                'idempotent' => true,
             ]
         );
     }
@@ -391,14 +393,14 @@ class Jobs extends Plugin
     public function retryJob(int $jobID, int $delay = 0, array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false): array
     {
         return $this->call(
-            "RetryJob",
+            'RetryJob',
             [
-                "jobID" => $jobID,
-                "delay" => $delay,
-                "data" => $data,
-                "name" => $name,
-                "nextRun" => $nextRun,
-                "idempotent" => true,
+                'jobID' => $jobID,
+                'delay' => $delay,
+                'data' => $data,
+                'name' => $name,
+                'nextRun' => $nextRun,
+                'idempotent' => true,
                 'jobPriority' => $priority,
                 'ignoreRepeat' => $ignoreRepeat,
             ]
@@ -411,11 +413,11 @@ class Jobs extends Plugin
     public function requeueJobs(array $jobIDs, string $name = ''): array
     {
         return $this->call(
-            "RequeueJobs",
+            'RequeueJobs',
             [
-                "jobIDs" => implode(',', $jobIDs),
-                "name" => $name,
-                "idempotent" => true,
+                'jobIDs' => implode(',', $jobIDs),
+                'name' => $name,
+                'idempotent' => true,
             ]
         );
     }
@@ -440,10 +442,10 @@ class Jobs extends Plugin
     public function queryJob($jobID)
     {
         $bedrockResponse = $this->call(
-            "QueryJob",
+            'QueryJob',
             [
-                "jobID" => $jobID,
-                "idempotent" => true,
+                'jobID' => $jobID,
+                'idempotent' => true,
             ]
         );
 
@@ -466,7 +468,7 @@ class Jobs extends Plugin
      *
      * @return array Containing "jobID"
      */
-    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, string $retryAfter = "", bool $overwrite = true)
+    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, string $retryAfter = '', bool $overwrite = true)
     {
         $bedrock = Client::getInstance();
         try {

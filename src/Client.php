@@ -590,7 +590,7 @@ class Client implements LoggerAwareInterface
             // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
             $cachedHostsAndPorts = [];
             foreach ($cachedHostConfigs as $hostName => $config) {
-                $cachedHostsAndPorts[$hostName] = $config['port'];
+                $cachedHostsAndPorts[$hostName] = $config['port'] ?? null;
             }
             asort($cachedHostsAndPorts);
             $uncachedHostsAndPort = [];

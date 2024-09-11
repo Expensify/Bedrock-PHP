@@ -1,0 +1,66 @@
+name: Test Suite
+on:
+  push:
+    branches:
+    - "**/*"
+    - "!main"
+concurrency:
+  group: "${{ github.ref }}"
+  cancel-in-progress: true
+env:
+  TRAVIS_COMMIT: ${{ github.sha }}
+  TRAVIS_BRANCH: ${{ github.ref }}
+jobs:
+  PHP_Phan:
+    name: Phan
+    runs-on: ubuntu-20.04
+    timeout-minutes: 15
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4.1.0
+      with:
+        # Set fetch-depth to 100 so that we can compare HEAD with a good chunk of git log history
+        fetch-depth: 100
+
+    # Run this after the packages are installed to ensure our apt-mirror is set up.
+    - name: Install PHP and Libraries
+      uses: shivammathur/setup-php@e6f75134d35752277f093989e72e140eaa222f35 # v2.28.0
+      with:
+        tools: composer:v2.7.1
+        php-version: 8.1.28
+        coverage: none
+      env:
+        GITHUB_TOKEN: ${{ secrets.CODE_EXPENSIFY_TOKEN }}
+        fail-fast: true
+
+    - name: Setup Composer Cache
+      uses: ./.github/actions/composite/setup-composer-cache
+
+    - name: Run Phan tests
+      run: "php ./ci/phan.php"
+  PHP_Style:
+    name: PHP Style
+    runs-on: ubuntu-20.04
+    timeout-minutes: 15
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4.1.0
+      with:
+        # Set fetch-depth to 100 so that we can compare HEAD with a good chunk of git log history
+        fetch-depth: 100
+
+    - name: Install PHP and Libraries
+      uses: shivammathur/setup-php@e6f75134d35752277f093989e72e140eaa222f35 # v2.28.0
+      with:
+        tools: composer:v2.7.1
+        php-version: 8.1.28
+        coverage: none
+      env:
+        GITHUB_TOKEN: ${{ secrets.CODE_EXPENSIFY_TOKEN }}
+        fail-fast: true
+
+    - name: Setup Composer Cache
+      uses: ./.github/actions/composite/setup-composer-cache
+
+    - name: Test for Style
+      run: "php ./ci/style.php"

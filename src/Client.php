@@ -336,7 +336,7 @@ class Client implements LoggerAwareInterface
             $headers['mockRequest'] = true;
         }
 
-        if ($this->commandPriority) {
+        if ($this->commandPriority && !isset($headers['priority'])) {
             $headers['priority'] = $this->commandPriority;
         }
 

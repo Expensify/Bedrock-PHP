@@ -707,13 +707,17 @@ class Client implements LoggerAwareInterface
         // We'll parse the body *only* if this is `application/json` or blank.
         $isJSON = !isset($responseHeaders['Content-Type']) || !strcasecmp($responseHeaders['Content-Type'], 'application/json');
 
-        return [
+        $result = [
             'headers' => $responseHeaders,
             'body' => $isJSON ? $this->parseRawBody($responseHeaders, $response) : $response,
             'size' => $totalDataReceived,
             'codeLine' => $codeLine,
             'code' => intval($codeLine),
         ];
+        if ($isJSON) {
+            $result['rawBody'] = $response;
+        }
+        return $result;
     }
 
     /**

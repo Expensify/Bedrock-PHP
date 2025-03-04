@@ -13,7 +13,7 @@ env:
 jobs:
   PHP_Phan:
     name: Phan
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
     - name: checkout
@@ -24,7 +24,7 @@ jobs:
 
     # Run this after the packages are installed to ensure our apt-mirror is set up.
     - name: Install PHP and Libraries
-      uses: shivammathur/setup-php@e6f75134d35752277f093989e72e140eaa222f35 # v2.28.0
+      uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2.32.0
       with:
         tools: composer:v2.7.1
         php-version: 8.3.15
@@ -40,7 +40,7 @@ jobs:
       run: "php ./ci/phan.php"
   PHP_Style:
     name: PHP Style
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
     - name: checkout
@@ -50,7 +50,7 @@ jobs:
         fetch-depth: 100
 
     - name: Install PHP and Libraries
-      uses: shivammathur/setup-php@e6f75134d35752277f093989e72e140eaa222f35 # v2.28.0
+      uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2.32.0
       with:
         tools: composer:v2.7.1
         php-version: 8.3.15

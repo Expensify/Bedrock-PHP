@@ -585,7 +585,7 @@ class Client implements LoggerAwareInterface
             } else {
                 $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
             }
-            $this->logger->info('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
+            $this->logger->debug('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
 
             // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
             $cachedHostsAndPorts = [];

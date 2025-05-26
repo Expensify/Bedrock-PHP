@@ -13,7 +13,7 @@ use SQLite3;
  */
 class LocalDB
 {
-    /** @var SQLite3 */
+    /** @var SQLite3|null */
     private $handle;
 
     /** @var string */
@@ -42,7 +42,7 @@ class LocalDB
      */
     public function open()
     {
-        if (!isset($this->handle)) {
+        if ($this->handle === null) {
             $this->handle = new SQLite3($this->location);
             $this->handle->busyTimeout(15000);
             $this->handle->enableExceptions(true);
@@ -54,9 +54,9 @@ class LocalDB
      */
     public function close()
     {
-        if (isset($this->handle)) {
+        if ($this->handle !== null) {
             $this->handle->close();
-            unset($this->handle);
+            $this->handle = null;
         }
     }
 
@@ -117,7 +117,7 @@ class LocalDB
      */
     public function getLastInsertedRowID()
     {
-        if (!isset($this->handle)) {
+        if ($this->handle === null) {
             return null;
         }
 

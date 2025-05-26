@@ -55,11 +55,8 @@ class LocalDB
     public function close()
     {
         if (isset($this->handle)) {
-            $this->stats->benchmark('bedrockWorkerManager.db.close', function () {
-                $startTime = microtime(true);
-                $this->handle->close();
-                unset($this->handle);
-            });
+            $this->handle->close();
+            unset($this->handle);
         }
     }
 

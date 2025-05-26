@@ -36,10 +36,10 @@ if (php_sapi_name() !== 'cli') {
 
 // Parse the command line and verify the required settings are provided
 $options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 'stats::', 'workerPath::',
-'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::',
-'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'backoffThreshold::',
-'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
-'jobsToAddPerSecond::', 'profileChangeThreshold::', ]);
+    'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::',
+    'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'backoffThreshold::',
+    'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
+    'jobsToAddPerSecond::', 'profileChangeThreshold::', ]);
 
 $workerPath = $options['workerPath'] ?? null;
 if (!$workerPath) {
@@ -487,10 +487,10 @@ try {
                     }
                     // Otherwise we are the parent thread -- continue execution
                     $logger->info('Successfully ran job', [
-                            'name' => $job['name'],
-                            'id' => $job['jobID'],
-                            'pid' => $pid,
-                        ]);
+                        'name' => $job['name'],
+                        'id' => $job['jobID'],
+                        'pid' => $pid,
+                    ]);
                 } else {
                     // No worker for this job
                     $logger->warning('No worker found, ignoring', ['jobName' => $job['name']]);
@@ -519,18 +519,18 @@ $logger->info('Stopped BedrockWorkerManager, will not wait for children');
 function getNumberOfJobsToQueue(): int
 {
     global $backoffThreshold,
-           $doubleBackoffPreventionIntervalFraction,
-           $enableLoadHandler,
-           $intervalDurationSeconds,
-           $jobsToAddPerSecond,
-           $lastBackoff,
-           $lastRun,
-           $localDB,
-           $logger,
-           $maxJobsForSingleRun,
-           $minSafeJobs,
-           $multiplicativeDecreaseFraction,
-           $target;
+    $doubleBackoffPreventionIntervalFraction,
+    $enableLoadHandler,
+    $intervalDurationSeconds,
+    $jobsToAddPerSecond,
+    $lastBackoff,
+    $lastRun,
+    $localDB,
+    $logger,
+    $maxJobsForSingleRun,
+    $minSafeJobs,
+    $multiplicativeDecreaseFraction,
+    $target;
 
     // Allow for disabling of the load handler.
     if (!$enableLoadHandler) {

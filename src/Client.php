@@ -57,31 +57,31 @@ class Client implements LoggerAwareInterface
     private static $preloadedCommitCounts = [];
 
     /**
-     *  @var ?int The last commit count of the node we talked to. This is used to ensure if we make a subsequent
-     *            request to a different node in the same session, that the node waits until it is at least
-     *            up to date with the commits as the node we originally queried.
+     * @var ?int The last commit count of the node we talked to. This is used to ensure if we make a subsequent
+     *           request to a different node in the same session, that the node waits until it is at least
+     *           up to date with the commits as the node we originally queried.
      */
-    public $commitCount = null;
+    public $commitCount;
 
     /**
-     *  @var resource|Socket|null Socket to the server.
+     * @var resource|Socket|null Socket to the server.
      */
-    private $socket = null;
+    private $socket;
 
     /**
      * @var string|null Name of the bedrock cluster we are talking to. If you have more than one bedrock cluster, you
      *                  can pass in different names for them in order to have separate statistics collected and caches of failed servers.
      */
-    private $clusterName = null;
+    private $clusterName;
 
     /**
-     *  @var array List of hosts to use as first choice. It will pick just one of these randomly and try it first.
+     * @var array List of hosts to use as first choice. It will pick just one of these randomly and try it first.
      */
     private $mainHostConfigs = [];
 
     /**
-     *  @var array List of failovers we attempt if the first didn't work. We randomize the list and try on several of
-     *             them (depending on the number of retries configured).
+     * @var array List of failovers we attempt if the first didn't work. We randomize the list and try on several of
+     *            them (depending on the number of retries configured).
      */
     private $failoverHostConfigs = [];
 
@@ -570,6 +570,7 @@ class Client implements LoggerAwareInterface
     /**
      * @param ?string $preferredHost If passed, it will prefer this host over any of the configured ones. This does not
      *                               ensure it will use that host, but it will try to use it if its not blacklisted.
+     *
      * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
      */
     private function getPossibleHosts(?string $preferredHost, bool $resetHosts = false)
@@ -577,7 +578,7 @@ class Client implements LoggerAwareInterface
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
         // is so that we don't keep the old cache after changing the hosts or failover configuration.
-        if ((!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING)) {
+        if (!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             if ($resetHosts) {
                 $this->logger->info('Bedrock\Client - Resetting host configs');

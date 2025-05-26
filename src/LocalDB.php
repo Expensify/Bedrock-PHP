@@ -13,13 +13,13 @@ use SQLite3;
  */
 class LocalDB
 {
-    /** @var SQLite3 $handle */
+    /** @var SQLite3 */
     private $handle;
 
-    /** @var string $location */
+    /** @var string */
     private $location;
 
-    /** @var LoggerInterface $logger */
+    /** @var LoggerInterface */
     private $logger;
 
     /** @var Stats\StatsInterface */
@@ -78,9 +78,9 @@ class LocalDB
                 break;
             } catch (Exception $e) {
                 if ($e->getMessage() === 'database is locked') {
-                    $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    $this->logger->info('Query failed, retrying', ['query' => $query, 'error' => $e->getMessage()]);
                 } else {
-                    $this->logger->info("Query failed, not retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    $this->logger->info('Query failed, not retrying', ['query' => $query, 'error' => $e->getMessage()]);
                     throw $e;
                 }
             }
@@ -104,9 +104,9 @@ class LocalDB
                 break;
             } catch (Exception $e) {
                 if ($e->getMessage() === 'database is locked') {
-                    $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    $this->logger->info('Query failed, retrying', ['query' => $query, 'error' => $e->getMessage()]);
                 } else {
-                    $this->logger->info("Query failed, not retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    $this->logger->info('Query failed, not retrying', ['query' => $query, 'error' => $e->getMessage()]);
                     throw $e;
                 }
             }

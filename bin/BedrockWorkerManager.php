@@ -323,7 +323,6 @@ try {
                 $workerName = explode('/', $job['name'])[1];
                 $workerFilename = $workerPath."/$workerName.php";
                 $stats->timer('bedrockJob.lateBy.'.$job['name'], (time() - strtotime($job['nextRun'])) * 1000);
-                $logger->info("Looking for worker '$workerFilename'");
                 if (file_exists($workerFilename)) {
                     // The file seems to exist -- fork it so we can run it.
                     //
@@ -355,9 +354,7 @@ try {
                             $safeJobName = SQLite3::escapeString($job['name']);
                             $safeRetryAfter = SQLite3::escapeString($job['retryAfter'] ?? '');
                             $jobStartTime = microtime(true);
-                            $stats->benchmark('bedrockWorkerManager.db.write.insert', function () use ($localDB, $job, $safeJobName, $safeRetryAfter, $jobStartTime, $myPid) {
-                                $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, retryAfter) VALUES ({$job['jobID']}, '$safeJobName', '$jobStartTime', $myPid, '$safeRetryAfter');");
-                            });
+                            $localDB->write("INSERT INTO localJobs (jobID, jobName, started, workerPID, retryAfter) VALUES ({$job['jobID']}, '$safeJobName', '$jobStartTime', $myPid, '$safeRetryAfter');");
                             $localJobID = $localDB->getLastInsertedRowID();
                         }
 

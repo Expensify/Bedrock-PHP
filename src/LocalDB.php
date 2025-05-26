@@ -43,11 +43,9 @@ class LocalDB
     public function open()
     {
         if (!isset($this->handle)) {
-            $this->stats->benchmark('bedrockWorkerManager.db.open', function () {
-                $this->handle = new SQLite3($this->location);
-                $this->handle->busyTimeout(15000);
-                $this->handle->enableExceptions(true);
-            });
+            $this->handle = new SQLite3($this->location);
+            $this->handle->busyTimeout(15000);
+            $this->handle->enableExceptions(true);
         }
     }
 

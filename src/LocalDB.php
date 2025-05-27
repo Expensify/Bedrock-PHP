@@ -13,13 +13,13 @@ use SQLite3;
  */
 class LocalDB
 {
-    /** @var SQLite3 $handle */
+    /** @var SQLite3|null */
     private $handle;
 
-    /** @var string $location */
+    /** @var string */
     private $location;
 
-    /** @var LoggerInterface $logger */
+    /** @var LoggerInterface */
     private $logger;
 
     /** @var Stats\StatsInterface */
@@ -42,12 +42,10 @@ class LocalDB
      */
     public function open()
     {
-        if (!isset($this->handle)) {
-            $this->stats->benchmark('bedrockWorkerManager.db.open', function () {
-                $this->handle = new SQLite3($this->location);
-                $this->handle->busyTimeout(15000);
-                $this->handle->enableExceptions(true);
-            });
+        if ($this->handle === null) {
+            $this->handle = new SQLite3($this->location);
+            $this->handle->busyTimeout(15000);
+            $this->handle->enableExceptions(true);
         }
     }
 
@@ -56,12 +54,9 @@ class LocalDB
      */
     public function close()
     {
-        if (isset($this->handle)) {
-            $this->stats->benchmark('bedrockWorkerManager.db.close', function () {
-                $startTime = microtime(true);
-                $this->handle->close();
-                unset($this->handle);
-            });
+        if ($this->handle !== null) {
+            $this->handle->close();
+            $this->handle = null;
         }
     }
 
@@ -80,9 +75,9 @@ class LocalDB
                 break;
             } catch (Exception $e) {
                 if ($e->getMessage() === 'database is locked') {
-                    $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    $this->logger->info('Query failed, retrying', ['query' => $query, 'error' => $e->getMessage()]);
                 } else {
-                    $this->logger->info("Query failed, not retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    $this->logger->info('Query failed, not retrying', ['query' => $query, 'error' => $e->getMessage()]);
                     throw $e;
                 }
             }
@@ -106,9 +101,9 @@ class LocalDB
                 break;
             } catch (Exception $e) {
                 if ($e->getMessage() === 'database is locked') {
-                    $this->logger->info("Query failed, retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    $this->logger->info('Query failed, retrying', ['query' => $query, 'error' => $e->getMessage()]);
                 } else {
-                    $this->logger->info("Query failed, not retrying", ['query' => $query, 'error' => $e->getMessage()]);
+                    $this->logger->info('Query failed, not retrying', ['query' => $query, 'error' => $e->getMessage()]);
                     throw $e;
                 }
             }
@@ -122,7 +117,7 @@ class LocalDB
      */
     public function getLastInsertedRowID()
     {
-        if (!isset($this->handle)) {
+        if ($this->handle === null) {
             return null;
         }
 

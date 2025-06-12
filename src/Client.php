@@ -91,9 +91,19 @@ class Client implements LoggerAwareInterface
     private $connectionTimeout;
 
     /**
+     * @var int Microsecond timeout for connecting to the server.
+     */
+    private $connectionTimeoutMicroseconds;
+
+    /**
      * @var int Timeout for reading the response from the server.
      */
     private $readTimeout;
+
+    /**
+     * @var int Microsecond timeout for reading the response from the server.
+     */
+    private $readTimeoutMicroseconds;
 
     /**
      * @var int Timeout to pass to bedrock.
@@ -149,7 +159,9 @@ class Client implements LoggerAwareInterface
      *                      array|null           mainHostConfigs     List of hosts to attempt first
      *                      array|null           failovers           List of hosts to use as failovers
      *                      int|null             connectionTimeout   Timeout to use when connecting
+     *                      int|null             connectionTimeoutMicroseconds Microsecond timeout to use when connecting
      *                      int|null             readTimeout         Timeout to use when reading
+     *                      int|null             readTimeoutMicroseconds Microsecond timeout to use when reading
      *                      int|null             bedrockTimeout      Timeout to use for bedrock commands
      *                      LoggerInterface|null logger              Class to use for logging
      *                      StatsInterface|null  stats               Class to use for statistics tracking
@@ -167,7 +179,9 @@ class Client implements LoggerAwareInterface
         $this->mainHostConfigs = $config['mainHostConfigs'];
         $this->failoverHostConfigs = $config['failoverHostConfigs'];
         $this->connectionTimeout = $config['connectionTimeout'];
+        $this->connectionTimeoutMicroseconds = $config['connectionTimeoutMicroseconds'];
         $this->readTimeout = $config['readTimeout'];
+        $this->readTimeoutMicroseconds = $config['readTimeoutMicroseconds'];
         $this->bedrockTimeout = $config['bedrockTimeout'];
         $this->logger = $config['logger'];
         $this->stats = $config['stats'];
@@ -241,7 +255,9 @@ class Client implements LoggerAwareInterface
             'mainHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
             'failoverHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
             'connectionTimeout' => 1,
+            'connectionTimeoutMicroseconds' => 0,
             'readTimeout' => 120,
+            'readTimeoutMicroseconds' => 0,
             'bedrockTimeout' => 110,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
@@ -531,8 +547,8 @@ class Client implements LoggerAwareInterface
             }
 
             // Configure this socket and try to connect to it
-            socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => 0]);
-            socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => 0]);
+            socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => $this->connectionTimeoutMicroseconds]);
+            socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
             @socket_connect($this->socket, $host, $port);
             $socketErrorCode = socket_last_error($this->socket);
             if ($socketErrorCode === 115) {

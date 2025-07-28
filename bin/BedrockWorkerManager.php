@@ -333,6 +333,7 @@ try {
                     //       zombie process.)
                     $logger->info('Forking and running a worker.', [
                         'workerFileName' => $workerFilename,
+                        'jobID' => $job['jobID'],
                     ]);
 
                     // Do the fork

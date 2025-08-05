@@ -552,29 +552,7 @@ class Client implements LoggerAwareInterface
             @socket_connect($this->socket, $host, $port);
             $socketErrorCode = socket_last_error($this->socket);
             if ($socketErrorCode === 115) {
-                $this->logger->info('Bedrock\Client - socket_connect returned EINPROGRESS, waiting for connection to complete');
-
-                // Use select to wait for the socket to become writable (indicates connection completion)
-                $write = [$this->socket];
-                $read = null;
-                $except = null;
-
-                $selectResult = socket_select($read, $write, $except, $this->connectionTimeout, $this->connectionTimeoutMicroseconds);
-                if ($selectResult === false) {
-                    $socketError = socket_strerror(socket_last_error());
-                    throw new ConnectionFailure("Failed to select on socket for host $host:$port. Error: $socketError");
-                } elseif ($selectResult === 0) {
-                    throw new ConnectionFailure("Connection timeout while waiting for EINPROGRESS completion for host $host:$port");
-                }
-
-                // Check if connection completed successfully
-                $connectionError = socket_get_option($this->socket, SOL_SOCKET, SO_ERROR);
-                if ($connectionError !== 0) {
-                    $socketError = socket_strerror($connectionError);
-                    throw new ConnectionFailure("Connection failed after EINPROGRESS for host $host:$port. Error: $connectionError $socketError");
-                }
-
-                $this->logger->info('Bedrock\Client - EINPROGRESS connection completed successfully');
+                $this->logger->info('Bedrock\Client - socket_connect returned error 115, continuing.');
             } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");

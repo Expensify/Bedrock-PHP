@@ -28,7 +28,7 @@ jobs:
       uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2.32.0
       with:
         tools: composer:v2.7.1
-        php-version: 8.3.20
+        php-version: 8.3.23
         coverage: none
       env:
         GITHUB_TOKEN: ${{ secrets.CODE_EXPENSIFY_TOKEN }}
@@ -55,7 +55,7 @@ jobs:
       uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2.32.0
       with:
         tools: composer:v2.7.1
-        php-version: 8.3.20
+        php-version: 8.3.23
         coverage: none
       env:
         GITHUB_TOKEN: ${{ secrets.CODE_EXPENSIFY_TOKEN }}

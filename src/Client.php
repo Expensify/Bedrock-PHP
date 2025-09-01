@@ -707,7 +707,7 @@ class Client implements LoggerAwareInterface
         // are talking to.
         // We only set it if process time was returned, which means we did a write. We don't care about saving the commit
         // count for reads, since we did not change anything in the DB.
-        if (isset($responseHeaders['commitCount']) && (($responseHeaders['processTime'] ?? 0) > 0 || ($responseHeaders['upstreamProcessTime'] ?? 0) > 0)) {
+        if ($responseHeaders['shouldSaveCommitCount'] ?? false || (isset($responseHeaders['commitCount']) && (($responseHeaders['processTime'] ?? 0) > 0 || ($responseHeaders['upstreamProcessTime'] ?? 0) > 0))) {
             $this->commitCount = (int) $responseHeaders['commitCount'];
         }
 

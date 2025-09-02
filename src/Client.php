@@ -708,7 +708,7 @@ class Client implements LoggerAwareInterface
         // We only set it if process time was returned, which means we did a write. We don't care about saving the commit
         // count for reads, since we did not change anything in the DB.
         if ($responseHeaders['shouldSaveCommitCount'] ?? false || (isset($responseHeaders['commitCount']) && (($responseHeaders['processTime'] ?? 0) > 0 || ($responseHeaders['upstreamProcessTime'] ?? 0) > 0))) {
-            $this->commitCount = (int) $responseHeaders['commitCount'];
+            $this->commitCount = (int) ($responseHeaders['commitCount'] ?? 0);
         }
 
         // We treat this '555 Timeout', which is a command timeout (not a query timeout), as a ConnectionFailure so that it gets retried regardless of if it is idempotent or not.

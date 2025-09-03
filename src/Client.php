@@ -703,10 +703,9 @@ class Client implements LoggerAwareInterface
             }
         } while (is_null($responseLength) || strlen($response) < $responseLength);
 
-        // We save the commitCount for future requests. This is useful if for some reason we change the bedrock node we
-        // are talking to.
-        // We only set it if process time was returned, which means we did a write. We don't care about saving the commit
-        // count for reads, since we did not change anything in the DB.
+        // Save the commit count if needed.
+        // In some cases, Auth will return a header instructing the client to save the commit count. It is useful for determining if stale data was used for certain read commands.
+        // Commit counts are saved for all write commands, identified by process time being non-zero, because it can be useful for future requests if for some reason we change the bedrock node we are talking to.
         if ($responseHeaders['shouldSaveCommitCount'] ?? false || (isset($responseHeaders['commitCount']) && (($responseHeaders['processTime'] ?? 0) > 0 || ($responseHeaders['upstreamProcessTime'] ?? 0) > 0))) {
             $this->commitCount = (int) ($responseHeaders['commitCount'] ?? 0);
         }

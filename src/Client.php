@@ -438,6 +438,27 @@ class Client implements LoggerAwareInterface
                 $this->sendRawRequest($hostName, $port, $rawRequest);
                 $response = $this->receiveResponse();
             } catch (ConnectionFailure $e) {
+                // Enhanced diagnostic for EAGAIN errors - check socket state when error occurs
+                $lastSocketError = $this->socket ? socket_last_error($this->socket) : null;
+                
+                if ($lastSocketError === 11 && $this->socket) { // EAGAIN/EWOULDBLOCK
+                    $write = [$this->socket];
+                    $read = [];
+                    $except = [];
+                    $selectResult = @socket_select($read, $write, $except, 0, 0);
+                    $peerConnected = @socket_getpeername($this->socket, $peerHost, $peerPort);
+                    
+                    $this->logger->error('EAGAIN Error Diagnostic', [
+                        'host' => $hostName,
+                        'socket_error_code' => $lastSocketError,
+                        'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
+                        'peer_connected' => $peerConnected ? 'YES' : 'NO',
+                        'select_result' => $selectResult,
+                        'error_message' => $e->getMessage(),
+                        'pid' => getmypid()
+                    ]);
+                }
+                
                 // The error happened during connection (or before we sent any data, or in a case where we know the
                 // command was never processed) so we can retry it safely.
                 $this->markHostAsFailed($hostName);
@@ -570,21 +591,7 @@ class Client implements LoggerAwareInterface
             $socketErrorCode = socket_last_error();
             $socketError = socket_strerror($socketErrorCode);
             
-            // Debug for EAGAIN errors (Error 11) - check if socket was ready
-            if ($socketErrorCode === 11) {
-                $write = [$this->socket];
-                $read = [];
-                $except = [];
-                $selectResult = @socket_select($read, $write, $except, 0, 0);
-                $peerConnected = @socket_getpeername($this->socket, $peerHost, $peerPort);
-                
-                $this->logger->error('EAGAIN Error Diagnostic', [
-                    'host' => $host,
-                    'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
-                    'peer_connected' => $peerConnected ? 'YES' : 'NO',
-                    'request_size_bytes' => strlen($rawRequest)
-                ]);
-            }
+
             
             throw new ConnectionFailure("Failed to send request to bedrock host $host:$port. Error: $socketErrorCode $socketError");
         }

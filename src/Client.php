@@ -590,9 +590,6 @@ class Client implements LoggerAwareInterface
         if ($bytesSent === false) {
             $socketErrorCode = socket_last_error();
             $socketError = socket_strerror($socketErrorCode);
-            
-
-            
             throw new ConnectionFailure("Failed to send request to bedrock host $host:$port. Error: $socketErrorCode $socketError");
         }
 
@@ -880,6 +877,4 @@ class Client implements LoggerAwareInterface
 
         return array_filter($commitCounts);
     }
-
-
 }

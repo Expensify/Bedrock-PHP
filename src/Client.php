@@ -441,7 +441,8 @@ class Client implements LoggerAwareInterface
                 // Debug EAGAIN errors - check socket state when error occurs
                 $lastSocketError = $this->socket ? socket_last_error($this->socket) : null;
 
-                if ($lastSocketError === 11 && $this->socket) { // EAGAIN/EWOULDBLOCK
+				// Log more data to diagnose problems with EAGAIN/EWOULDBLOCK
+                if ($lastSocketError === 11) { 
                     $write = [$this->socket];
                     $read = [];
                     $except = [];

@@ -451,7 +451,7 @@ class Client implements LoggerAwareInterface
                     $this->logger->info('EAGAIN Debugging information', [
                         'host' => $hostName,
                         'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
-                        'peer_connected' => $peerConnected ? 'YES' : 'NO',
+                        'peer_connection_result' => $peerConnected,
                         'pid' => getmypid(),
                     ]);
                 }

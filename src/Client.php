@@ -450,11 +450,8 @@ class Client implements LoggerAwareInterface
                     
                     $this->logger->error('EAGAIN Error Diagnostic', [
                         'host' => $hostName,
-                        'socket_error_code' => $lastSocketError,
                         'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
                         'peer_connected' => $peerConnected ? 'YES' : 'NO',
-                        'select_result' => $selectResult,
-                        'error_message' => $e->getMessage(),
                         'pid' => getmypid()
                     ]);
                 }

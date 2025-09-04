@@ -438,7 +438,7 @@ class Client implements LoggerAwareInterface
                 $this->sendRawRequest($hostName, $port, $rawRequest);
                 $response = $this->receiveResponse();
             } catch (ConnectionFailure $e) {
-                // Enhanced diagnostic for EAGAIN errors - check socket state when error occurs
+                // Debug EAGAIN errors - check socket state when error occurs
                 $lastSocketError = $this->socket ? socket_last_error($this->socket) : null;
 
                 if ($lastSocketError === 11 && $this->socket) { // EAGAIN/EWOULDBLOCK
@@ -448,7 +448,7 @@ class Client implements LoggerAwareInterface
                     $selectResult = @socket_select($read, $write, $except, 0, 0);
                     $peerConnected = @socket_getpeername($this->socket, $peerHost, $peerPort);
 
-                    $this->logger->error('EAGAIN Error Diagnostic', [
+                    $this->logger->info('EAGAIN Debugging information', [
                         'host' => $hostName,
                         'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
                         'peer_connected' => $peerConnected ? 'YES' : 'NO',

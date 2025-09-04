@@ -440,22 +440,22 @@ class Client implements LoggerAwareInterface
             } catch (ConnectionFailure $e) {
                 // Enhanced diagnostic for EAGAIN errors - check socket state when error occurs
                 $lastSocketError = $this->socket ? socket_last_error($this->socket) : null;
-                
+
                 if ($lastSocketError === 11 && $this->socket) { // EAGAIN/EWOULDBLOCK
                     $write = [$this->socket];
                     $read = [];
                     $except = [];
                     $selectResult = @socket_select($read, $write, $except, 0, 0);
                     $peerConnected = @socket_getpeername($this->socket, $peerHost, $peerPort);
-                    
+
                     $this->logger->error('EAGAIN Error Diagnostic', [
                         'host' => $hostName,
                         'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
                         'peer_connected' => $peerConnected ? 'YES' : 'NO',
-                        'pid' => getmypid()
+                        'pid' => getmypid(),
                     ]);
                 }
-                
+
                 // The error happened during connection (or before we sent any data, or in a case where we know the
                 // command was never processed) so we can retry it safely.
                 $this->markHostAsFailed($hostName);

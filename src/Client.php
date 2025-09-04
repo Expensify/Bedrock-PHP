@@ -438,6 +438,25 @@ class Client implements LoggerAwareInterface
                 $this->sendRawRequest($hostName, $port, $rawRequest);
                 $response = $this->receiveResponse();
             } catch (ConnectionFailure $e) {
+                // Debug EAGAIN errors - check socket state when error occurs
+                $lastSocketError = $this->socket ? socket_last_error($this->socket) : null;
+
+                // Log more data to diagnose problems with EAGAIN/EWOULDBLOCK
+                if ($lastSocketError === 11) {
+                    $write = [$this->socket];
+                    $read = [];
+                    $except = [];
+                    $selectResult = socket_select($read, $write, $except, 0, 0);
+                    $peerConnected = socket_getpeername($this->socket, $peerHost, $peerPort);
+
+                    $this->logger->info('EAGAIN Debugging information', [
+                        'host' => $hostName,
+                        'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
+                        'peer_connection_result' => $peerConnected,
+                        'pid' => getmypid(),
+                    ]);
+                }
+
                 // The error happened during connection (or before we sent any data, or in a case where we know the
                 // command was never processed) so we can retry it safely.
                 $this->markHostAsFailed($hostName);

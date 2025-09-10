@@ -451,6 +451,9 @@ class Client implements LoggerAwareInterface
                     $this->logger->info('EAGAIN Debugging information', [
                         'host' => $hostName,
                         'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
+                        'socket_was_reused' => $this->lastHost === $hostName && $this->socket !== null,
+                        'last_host' => $this->lastHost,
+                        'current_host' => $hostName,
                         'pid' => getmypid(),
                     ]);
                 }

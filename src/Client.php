@@ -447,12 +447,10 @@ class Client implements LoggerAwareInterface
                     $read = [];
                     $except = [];
                     $selectResult = socket_select($read, $write, $except, 0, 0);
-                    $peerConnected = socket_getpeername($this->socket, $peerHost, $peerPort);
 
                     $this->logger->info('EAGAIN Debugging information', [
                         'host' => $hostName,
                         'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
-                        'peer_connection_result' => $peerConnected,
                         'pid' => getmypid(),
                     ]);
                 }

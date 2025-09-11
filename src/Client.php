@@ -151,6 +151,11 @@ class Client implements LoggerAwareInterface
     private $logParam;
 
     /**
+     * @var bool Tracks whether the current request used a reused socket
+     */
+    private $lastRequestUsedReusedSocket = false;
+
+    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
@@ -451,7 +456,7 @@ class Client implements LoggerAwareInterface
                     $this->logger->info('EAGAIN Debugging information', [
                         'host' => $hostName,
                         'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
-                        'socket_was_reused' => $this->lastHost === $hostName && $this->socket !== null,
+                        'socket_was_reused' => $this->lastRequestUsedReusedSocket,
                         'last_host' => $this->lastHost,
                         'current_host' => $hostName,
                         'pid' => getmypid(),
@@ -556,6 +561,7 @@ class Client implements LoggerAwareInterface
     {
         // Try to connect to the requested host
         $pid = getmypid();
+        $this->lastRequestUsedReusedSocket = false;
         if (!$this->socket) {
             $this->logger->info('Bedrock\Client - Opening new socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
             $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
@@ -578,6 +584,7 @@ class Client implements LoggerAwareInterface
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
             }
         } else {
+            $this->lastRequestUsedReusedSocket = true;
             $this->logger->info('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
         }
         socket_clear_error($this->socket);

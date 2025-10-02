@@ -614,7 +614,7 @@ class Client implements LoggerAwareInterface
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
         // is so that we don't keep the old cache after changing the hosts or failover configuration.
-        if (!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) {
+        if (!defined('GITHUB_RUNNING') || !GITHUB_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             if ($resetHosts) {
                 $this->logger->info('Bedrock\Client - Resetting host configs');

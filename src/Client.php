@@ -607,7 +607,7 @@ class Client implements LoggerAwareInterface
      * @param ?string $preferredHost If passed, it will prefer this host over any of the configured ones. This does not
      *                               ensure it will use that host, but it will try to use it if its not blacklisted.
      *
-     * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
+     * @suppress PhanUndeclaredConstant - suppresses GITHUB_RUNNING
      */
     private function getPossibleHosts(?string $preferredHost, bool $resetHosts = false)
     {
@@ -838,12 +838,12 @@ class Client implements LoggerAwareInterface
      * configuration.
      * We also close and clear the socket from the cache, so we don't reuse it.
      *
-     * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
+     * @suppress PhanUndeclaredConstant - suppresses GITHUB_RUNNING
      */
     private function markHostAsFailed(string $host)
     {
         $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
-        if (!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) {
+        if (!defined('GITHUB_RUNNING') || !GITHUB_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $hostConfigs = apcu_fetch($apcuKey);
             $hostConfigs[$host]['blacklistedUntil'] = $blacklistedUntil;

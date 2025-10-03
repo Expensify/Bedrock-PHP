@@ -8,4 +8,4 @@
 
 ## Deployment
 
-- [ ] I followed the steps in the [README](../README.md#publishing-your-changes) to ensure this PR is deployed properly
+- [ ] I followed the steps in the [README](../blob/main/README.md#publishing-your-changes) to ensure this PR is deployed properly

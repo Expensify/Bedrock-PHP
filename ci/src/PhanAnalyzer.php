@@ -35,12 +35,12 @@ class PhanAnalyzer extends CommandLine
 
         $this->checkoutBranch($this->branch);
 
-        Travis::fold("start", "phan.analyze");
+        Travis::fold('start', 'phan.analyze');
         Travis::timeStart();
         echo 'Analyze PHP using Phan'.PHP_EOL;
-        $changedFiles = $this->eexec("git diff main...{$this->branch} --name-status | egrep \"^[A|M].*\\.php$\" | cut -f 2");
-        echo "Analyzing files:".PHP_EOL;
-        $lintErrors = $this->eexec("./vendor/bin/phan -p -z --processes 5", false);
+        $changedFiles = $this->eexec('git diff main...{$this->branch} --name-status | egrep \"^[A|M].*\\.php$\" | cut -f 2');
+        echo 'Analyzing files:'.PHP_EOL;
+        $lintErrors = $this->eexec('./vendor/bin/phan -p -z --processes 5', false);
         $lintOK = true;
         foreach ($lintErrors as $lintError) {
             foreach ($changedFiles as $file) {
@@ -52,7 +52,7 @@ class PhanAnalyzer extends CommandLine
             }
         }
         Travis::timeFinish();
-        Travis::fold("end", "phan.analyze");
+        Travis::fold('end', 'phan.analyze');
 
         return $lintOK;
     }

@@ -718,7 +718,7 @@ class Client implements LoggerAwareInterface
                 $responseHeaderLines = explode(self::HEADER_FIELD_SEPARATOR, $responseHeadersStr);
                 $codeLine = array_shift($responseHeaderLines);
                 $responseHeaders = $this->extractResponseHeaders($responseHeaderLines);
-                $responseLength = (int) $responseHeaders['Content-Length'];
+                $responseLength = (int) ($responseHeaders['Content-Length'] ?? 0);
                 $response = substr($response, $dataOffset + strlen(self::HEADER_DELIMITER));
             }
         } while (is_null($responseLength) || strlen($response) < $responseLength);

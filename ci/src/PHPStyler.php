@@ -89,8 +89,6 @@ class PHPStyler extends CommandLine
             return false;
         }
 
-        echo 'boop';
-
         Travis::foldCall('git.checkout2', 'git checkout {$this->commit} 2>&1');
 
         return true;

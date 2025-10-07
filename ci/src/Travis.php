@@ -7,7 +7,7 @@ namespace Expensify\Bedrock\CI;
  */
 class Travis
 {
-    const ANSI_CLEAR = "\033[0K";
+    public const ANSI_CLEAR = "\033[0K";
 
     protected static $timerID;
     protected static $timerStart;
@@ -19,7 +19,7 @@ class Travis
 
     public static function foldCall($foldName, $cmd, $includeTimer = true)
     {
-        self::fold("start", $foldName);
+        self::fold('start', $foldName);
 
         if ($includeTimer) {
             self::timeStart();
@@ -31,7 +31,7 @@ class Travis
             self::timeFinish();
         }
 
-        self::fold("end", $foldName);
+        self::fold('end', $foldName);
 
         if ($retVal !== 0) {
             exit($retVal);
@@ -40,9 +40,9 @@ class Travis
 
     public static function timeStart()
     {
-        self::$timerID = sprintf("%08x", rand() * rand());
+        self::$timerID = sprintf('%08x', rand() * rand());
         self::$timerStart = self::getNanosecondsTime();
-        echo "travis_time:start:".self::$timerID."\r".self::ANSI_CLEAR;
+        echo 'travis_time:start:'.self::$timerID."\r".self::ANSI_CLEAR;
     }
 
     public static function timeFinish()
@@ -50,7 +50,7 @@ class Travis
         $start = self::$timerStart;
         $end = self::getNanosecondsTime();
         $duration = bcsub($end, $start);
-        echo "travis_time:end:".self::$timerID.":start=$start,finish=$end,duration=$duration\r".self::ANSI_CLEAR;
+        echo 'travis_time:end:'.self::$timerID.":start=$start,finish=$end,duration=$duration\r".self::ANSI_CLEAR;
     }
 
     public static function getNanosecondsTime()

@@ -122,13 +122,13 @@ class Jobs extends Plugin
      * @param array  $headers Headers to send
      * @param string $body    Body of the request
      *
+     * @return array
+     *
      * @throws DoesNotExist
      * @throws IllegalAction
      * @throws MalformedAttribute
      * @throws SqlFailed
      * @throws GenericError
-     *
-     * @return array
      */
     public function call($method, $headers = [], $body = '')
     {
@@ -390,7 +390,7 @@ class Jobs extends Plugin
     /**
      * Retry a job. Job must be in a RUNNING state to be able to be retried.
      */
-    public function retryJob(int $jobID, int $delay = 0, array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false): array
+    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false): array
     {
         return $this->call(
             'RetryJob',

@@ -34,16 +34,15 @@ class RetryableException extends BedrockError
     /**
      * RetryableException constructor.
      *
-     * @param string     $message      Message of the exception
-     * @param int        $delay        Time to delay the retry (in seconds; maximum value is currently 999)
-     * @param ?int       $code         Code of the exception
-     * @param ?Exception $previous
-     * @param string     $name         New name for the job
-     * @param string     $nextRun      When to retry the job (takes precedence over delay; expects format Y-m-d H:i:s)
-     * @param bool       $ignoreRepeat When calculating when to retry the job, should we ignore the repeat parameter and
-     *                                 use $delay or $nextRun instead
+     * @param string $message      Message of the exception
+     * @param int    $delay        Time to delay the retry (in seconds; maximum value is currently 999)
+     * @param ?int   $code         Code of the exception
+     * @param string $name         New name for the job
+     * @param string $nextRun      When to retry the job (takes precedence over delay; expects format Y-m-d H:i:s)
+     * @param bool   $ignoreRepeat When calculating when to retry the job, should we ignore the repeat parameter and
+     *                             use $delay or $nextRun instead
      */
-    public function __construct(string $message, int $delay = 0, int $code = null, Exception $previous = null, string $name = '', string $nextRun = '', bool $ignoreRepeat = false)
+    public function __construct(string $message, int $delay = 0, ?int $code = null, ?Exception $previous = null, string $name = '', string $nextRun = '', bool $ignoreRepeat = false)
     {
         $code = $code ?? 666;
         $this->delay = $delay;

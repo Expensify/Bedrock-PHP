@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Sample BedrockWorkerManager worker class.
  */

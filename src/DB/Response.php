@@ -10,7 +10,7 @@ use JsonSerializable;
  */
 class Response implements JsonSerializable, Countable
 {
-    protected $container = null;
+    protected $container;
 
     public function __construct(array $leValue)
     {
@@ -47,9 +47,6 @@ class Response implements JsonSerializable, Countable
      * Shortcut method to access the value inside the container.
      *
      * @param string|array $index
-     * @param mixed        $default
-     *
-     * @return mixed
      */
     protected function getFromContainer($index, $default = null)
     {
@@ -80,9 +77,6 @@ class Response implements JsonSerializable, Countable
      * Shortcut function to set data inside the container.
      *
      * @param string|int|array $index
-     * @param mixed            $value
-     *
-     * @return mixed
      */
     protected function setContainerValue($index, $value)
     {

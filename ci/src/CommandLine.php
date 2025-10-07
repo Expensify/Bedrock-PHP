@@ -14,10 +14,10 @@ class CommandLine
      */
     protected function checkoutBranch($branch)
     {
-        Travis::fold("start", "git.checkout.".get_called_class());
+        Travis::fold('start', 'git.checkout.'.get_called_class());
         $this->call("git checkout $branch 2>&1");
         $this->call('git fetch origin main:main 2>&1');
-        Travis::fold("end", "git.checkout.".get_called_class());
+        Travis::fold('end', 'git.checkout.'.get_called_class());
     }
 
     /**

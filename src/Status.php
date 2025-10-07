@@ -14,6 +14,6 @@ class Status extends Plugin
      */
     public function ping()
     {
-        return $this->client->call("Ping");
+        return $this->client->call('Ping');
     }
 }

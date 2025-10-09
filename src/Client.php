@@ -564,64 +564,6 @@ class Client implements LoggerAwareInterface
         return $response;
     }
 
-    /**
-     * Checks if the current socket is still healthy and usable for sending data.
-     *
-     * @return bool True if socket is healthy, false if it's stale or closed
-     */
-    private function isSocketHealthy(): bool
-    {
-        if (!$this->socket) {
-            return false;
-        }
-
-        // Calculate socket metrics for logging
-        $now = microtime(true);
-        $socketAgeSeconds = $this->socketOpenTime ? round($now - $this->socketOpenTime, 3) : null;
-        $socketIdleSeconds = $this->socketLastUsedTime ? round($now - $this->socketLastUsedTime, 3) : null;
-
-        // Check if the remote end has closed the connection by peeking at the socket
-        $buf = '';
-        $result = @socket_recv($this->socket, $buf, 1, MSG_PEEK | MSG_DONTWAIT);
-
-        // If recv returns 0, the connection has been closed by the remote end
-        if ($result === 0) {
-            $this->logger->info('Bedrock\Client - Socket detected as closed by remote end', [
-                'host' => $this->lastHost,
-                'cluster' => $this->clusterName,
-                'socketAgeSeconds' => $socketAgeSeconds,
-                'socketIdleSeconds' => $socketIdleSeconds,
-                'requestsOnSocket' => $this->socketRequestCount,
-            ]);
-            return false;
-        }
-
-        // If recv returned false, check the error code
-        if ($result === false) {
-            $errorCode = socket_last_error($this->socket);
-
-            // EAGAIN/EWOULDBLOCK (11) is expected when no data is available but socket is healthy
-            if ($errorCode === 11 /* EAGAIN/EWOULDBLOCK */) {
-                socket_clear_error($this->socket);
-                return true;
-            }
-
-            // Any other error means the socket is not healthy
-            $this->logger->info('Bedrock\Client - Socket detected as unhealthy', [
-                'host' => $this->lastHost,
-                'cluster' => $this->clusterName,
-                'errorCode' => $errorCode,
-                'error' => socket_strerror($errorCode),
-                'socketAgeSeconds' => $socketAgeSeconds,
-                'socketIdleSeconds' => $socketIdleSeconds,
-                'requestsOnSocket' => $this->socketRequestCount,
-            ]);
-            return false;
-        }
-
-        // Socket has data available or is healthy
-        return true;
-    }
 
     /**
      * Sends the request on a new socket, if a previous one existed, it closes the connection first.
@@ -695,41 +637,6 @@ class Client implements LoggerAwareInterface
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
             }
-        } else {
-            // Calculate socket metrics
-            $now = microtime(true);
-            $socketAgeSeconds = $this->socketOpenTime ? round($now - $this->socketOpenTime, 3) : null;
-            $socketIdleSeconds = $this->socketLastUsedTime ? round($now - $this->socketLastUsedTime, 3) : null;
-
-            // Check if the existing socket is still healthy before reusing it
-            if (!$this->isSocketHealthy()) {
-                $this->logger->info('Bedrock\Client - Existing socket is stale, closing and reconnecting', [
-                    'host' => $host,
-                    'cluster' => $this->clusterName,
-                    'pid' => $pid,
-                    'socketAgeSeconds' => $socketAgeSeconds,
-                    'socketIdleSeconds' => $socketIdleSeconds,
-                    'requestsOnSocket' => $this->socketRequestCount,
-                ]);
-
-                @socket_close($this->socket);
-                $this->socket = null;
-                $this->socketOpenTime = null;
-                $this->socketLastUsedTime = null;
-                $this->socketRequestCount = 0;
-
-                // Recursively call to open a new socket
-                return $this->sendRawRequest($host, $port, $rawRequest);
-            }
-
-            $this->logger->info('Bedrock\Client - Reusing socket', [
-                'host' => $host,
-                'cluster' => $this->clusterName,
-                'pid' => $pid,
-                'socketAgeSeconds' => $socketAgeSeconds,
-                'socketIdleSeconds' => $socketIdleSeconds,
-                'requestsOnSocket' => $this->socketRequestCount,
-            ]);
         }
         socket_clear_error($this->socket);
 

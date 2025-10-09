@@ -39,7 +39,7 @@ jobs:
   PHP_Style:
     name: PHP Style
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
     - name: checkout
       # v4.1.0

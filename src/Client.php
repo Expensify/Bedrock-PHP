@@ -269,7 +269,7 @@ class Client implements LoggerAwareInterface
             'clusterName' => 'bedrock',
             'mainHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
             'failoverHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
-            'connectionTimeout' => 1,
+            'connectionTimeout' => 5,
             'connectionTimeoutMicroseconds' => 0,
             'readTimeout' => 120,
             'readTimeoutMicroseconds' => 0,
@@ -643,16 +643,54 @@ class Client implements LoggerAwareInterface
                 throw new ConnectionFailure("Could not connect to create socket: $socketError");
             }
 
+            // Set socket to non-blocking mode IMMEDIATELY after creation (PHP 8 compatibility)
+            socket_set_nonblock($this->socket);
+
             // Track socket creation time
             $this->socketOpenTime = microtime(true);
             $this->socketRequestCount = 0;
-    
+            
             socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => $this->connectionTimeoutMicroseconds]);
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
+            $connectStart = microtime(true);
             @socket_connect($this->socket, $host, $port);
+            $connectTime = (microtime(true) - $connectStart) * 1000; // Convert to milliseconds
             $socketErrorCode = socket_last_error($this->socket);
             if ($socketErrorCode === 115) {
-                $this->logger->info('Bedrock\Client - socket_connect returned error 115, continuing.');
+                $this->logger->info('EINPROGRESS_WAIT: socket_connect returned error 115, waiting for connection to complete.', [
+                    'host' => $host,
+                    'connect_attempt_time_ms' => round($connectTime, 3),
+                    'pid' => getmypid()
+                ]);
+                
+                // Wait for the socket to be ready for writing after EINPROGRESS
+                $write = [$this->socket];
+                $read = [];
+                $except = [];
+                $selectResult = socket_select($read, $write, $except, $this->connectionTimeout, $this->connectionTimeoutMicroseconds);
+                
+                if ($selectResult === false) {
+                    $socketError = socket_strerror(socket_last_error($this->socket));
+                    throw new ConnectionFailure("socket_select failed after EINPROGRESS for $host:$port. Error: $socketError");
+                } elseif ($selectResult === 0) {
+                    throw new ConnectionFailure("Socket not ready for writing within timeout after EINPROGRESS for $host:$port");
+                } elseif (empty($write)) {
+                    $socketErrorCode = socket_last_error($this->socket);
+                    $socketError = socket_strerror($socketErrorCode);
+                    throw new ConnectionFailure("Socket had error after EINPROGRESS for $host:$port. Error: $socketErrorCode $socketError");
+                }
+                
+                $selectTime = (microtime(true) - $connectStart) * 1000; // Total time from connect to ready
+                
+                // Set socket back to blocking mode for normal operations
+                socket_set_block($this->socket);
+                
+                $this->logger->info('EINPROGRESS_SUCCESS: Socket ready for writing after EINPROGRESS.', [
+                    'host' => $host,
+                    'total_connection_time_ms' => round($selectTime, 3),
+                    'select_wait_time_ms' => round($selectTime - $connectTime, 3),
+                    'pid' => getmypid()
+                ]);
             } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");

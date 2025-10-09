@@ -269,7 +269,7 @@ class Client implements LoggerAwareInterface
             'clusterName' => 'bedrock',
             'mainHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
             'failoverHostConfigs' => ['localhost' => ['blacklistedUntil' => 0, 'port' => 8888]],
-            'connectionTimeout' => 5,
+            'connectionTimeout' => 1,
             'connectionTimeoutMicroseconds' => 0,
             'readTimeout' => 120,
             'readTimeoutMicroseconds' => 0,

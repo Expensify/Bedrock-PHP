@@ -7,4 +7,6 @@ use Expensify\Bedrock\CI\PHPStyler;
 
 $styler = new PHPStyler($_SERVER['GITHUB_REF'], $_SERVER['GITHUB_SHA']);
 $valid = $styler->check();
+echo 'this should still work';
+echo $valid;
 exit((int) !$valid);

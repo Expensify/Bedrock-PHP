@@ -631,10 +631,13 @@ class Client implements LoggerAwareInterface
      */
     private function sendRawRequest(string $host, int $port, string $rawRequest)
     {
+        // Try to connect to the requested host
         $pid = getmypid();
         if (!$this->socket) {
             $this->logger->info('Bedrock\Client - Opening new socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
             $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
+
+            // Make sure we succeed to create a socket
             if ($this->socket === false) {
                 $socketError = socket_strerror(socket_last_error());
                 throw new ConnectionFailure("Could not connect to create socket: $socketError");
@@ -646,28 +649,10 @@ class Client implements LoggerAwareInterface
     
             socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => $this->connectionTimeoutMicroseconds]);
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
-    
             @socket_connect($this->socket, $host, $port);
             $socketErrorCode = socket_last_error($this->socket);
-    
-            if ($socketErrorCode === 115 /* EINPROGRESS */) {
-                // Wait for connect to complete (socket becomes writable), then check SO_ERROR
-                $write = [$this->socket];
-                $read = $except = [];
-                $sec  = $this->connectionTimeout;
-                $usec = $this->connectionTimeoutMicroseconds;
-                $sel  = @socket_select($read, $write, $except, $sec, $usec);
-                if ($sel === 1) {
-                    $soError = 0;
-                    $len = 4; // int
-                    @socket_get_option($this->socket, SOL_SOCKET, SO_ERROR, $soError);
-                    if (!empty($soError)) {
-                        $errStr = socket_strerror($soError);
-                        throw new ConnectionFailure("Connect completion failed to $host:$port. Error: $soError $errStr");
-                    }
-                } else {
-                    throw new ConnectionFailure("Connect to $host:$port timed out waiting for completion");
-                }
+            if ($socketErrorCode === 115) {
+                $this->logger->info('Bedrock\Client - socket_connect returned error 115, continuing.');
             } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
@@ -708,43 +693,26 @@ class Client implements LoggerAwareInterface
                 'requestsOnSocket' => $this->socketRequestCount,
             ]);
         }
-    
         socket_clear_error($this->socket);
-    
-        // --- robust send with EAGAIN handling ---
-        $total = strlen($rawRequest);
-        $sent  = 0;
-        while ($sent < $total) {
-            $chunk = substr($rawRequest, $sent);
-            $bytesSent = @socket_send($this->socket, $chunk, strlen($chunk), MSG_EOF);
-    
-            if ($bytesSent === false) {
-                $code = socket_last_error($this->socket);
-                if ($code === 11 /* EAGAIN/EWOULDBLOCK */) {
-                    // Wait until writable, then retry
-                    $write = [$this->socket];
-                    $read = $except = [];
-                    $sec  = $this->connectionTimeout;
-                    $usec = $this->connectionTimeoutMicroseconds;
-                    $sel  = @socket_select($read, $write, $except, $sec, $usec);
-                    if ($sel === 1) {
-                        continue; // try send again
-                    }
-                    throw new ConnectionFailure("Send to $host:$port timed out waiting for socket writable");
-                }
-                $err = socket_strerror($code);
-                throw new ConnectionFailure("Failed to send request to bedrock host $host:$port. Error: $code $err");
-            }
-    
-            if ($bytesSent === 0) {
-                // treat like would-block; wait once then retry
-                $write = [$this->socket];
-                $read = $except = [];
-                @socket_select($read, $write, $except, $this->connectionTimeout, $this->connectionTimeoutMicroseconds);
-                continue;
-            }
-    
-            $sent += $bytesSent;
+
+        // Send the information to the socket
+        $bytesSent = @socket_send($this->socket, $rawRequest, strlen($rawRequest), MSG_EOF);
+
+        // Failed to send anything
+        if ($bytesSent === false) {
+            $socketErrorCode = socket_last_error();
+            $socketError = socket_strerror($socketErrorCode);
+            throw new ConnectionFailure("Failed to send request to bedrock host $host:$port. Error: $socketErrorCode $socketError");
+        }
+
+        // We sent something; can't retry or else we might double-send the same request. Let's make sure we sent the
+        // whole thing, else there's a problem.
+        if ($bytesSent < strlen($rawRequest)) {
+            $this->logger->info('Bedrock\Client - Could not send the whole request', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
+            throw new ConnectionFailure("Sent partial request to bedrock host $host:$port");
+        } elseif ($bytesSent > strlen($rawRequest)) {
+            $this->logger->info('Bedrock\Client - sent more data than needed', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
+            throw new BedrockError("Sent more content than expected to host $host:$port");
         }
 
         // Update socket usage metrics after successful send

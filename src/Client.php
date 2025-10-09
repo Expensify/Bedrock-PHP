@@ -151,6 +151,21 @@ class Client implements LoggerAwareInterface
     private $logParam;
 
     /**
+     * @var float|null Timestamp (from microtime(true)) when the current socket was opened
+     */
+    private $socketOpenTime = null;
+
+    /**
+     * @var float|null Timestamp (from microtime(true)) when the socket was last used for a request
+     */
+    private $socketLastUsedTime = null;
+
+    /**
+     * @var int Number of requests made on the current socket
+     */
+    private $socketRequestCount = 0;
+
+    /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
      *
@@ -523,6 +538,9 @@ class Client implements LoggerAwareInterface
             $this->logger->info('Closing socket after use');
             @socket_close($this->socket);
             $this->socket = null;
+            $this->socketOpenTime = null;
+            $this->socketLastUsedTime = null;
+            $this->socketRequestCount = 0;
         }
 
         // Log how long this particular call took
@@ -557,6 +575,11 @@ class Client implements LoggerAwareInterface
             return false;
         }
 
+        // Calculate socket metrics for logging
+        $now = microtime(true);
+        $socketAgeSeconds = $this->socketOpenTime ? round($now - $this->socketOpenTime, 3) : null;
+        $socketIdleSeconds = $this->socketLastUsedTime ? round($now - $this->socketLastUsedTime, 3) : null;
+
         // Check if the remote end has closed the connection by peeking at the socket
         $buf = '';
         $result = @socket_recv($this->socket, $buf, 1, MSG_PEEK | MSG_DONTWAIT);
@@ -566,6 +589,9 @@ class Client implements LoggerAwareInterface
             $this->logger->info('Bedrock\Client - Socket detected as closed by remote end', [
                 'host' => $this->lastHost,
                 'cluster' => $this->clusterName,
+                'socketAgeSeconds' => $socketAgeSeconds,
+                'socketIdleSeconds' => $socketIdleSeconds,
+                'requestsOnSocket' => $this->socketRequestCount,
             ]);
             return false;
         }
@@ -586,6 +612,9 @@ class Client implements LoggerAwareInterface
                 'cluster' => $this->clusterName,
                 'errorCode' => $errorCode,
                 'error' => socket_strerror($errorCode),
+                'socketAgeSeconds' => $socketAgeSeconds,
+                'socketIdleSeconds' => $socketIdleSeconds,
+                'requestsOnSocket' => $this->socketRequestCount,
             ]);
             return false;
         }
@@ -610,6 +639,10 @@ class Client implements LoggerAwareInterface
                 $socketError = socket_strerror(socket_last_error());
                 throw new ConnectionFailure("Could not connect to create socket: $socketError");
             }
+
+            // Track socket creation time
+            $this->socketOpenTime = microtime(true);
+            $this->socketRequestCount = 0;
     
             socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => $this->connectionTimeoutMicroseconds]);
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
@@ -640,22 +673,40 @@ class Client implements LoggerAwareInterface
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
             }
         } else {
+            // Calculate socket metrics
+            $now = microtime(true);
+            $socketAgeSeconds = $this->socketOpenTime ? round($now - $this->socketOpenTime, 3) : null;
+            $socketIdleSeconds = $this->socketLastUsedTime ? round($now - $this->socketLastUsedTime, 3) : null;
+
             // Check if the existing socket is still healthy before reusing it
             if (!$this->isSocketHealthy()) {
                 $this->logger->info('Bedrock\Client - Existing socket is stale, closing and reconnecting', [
                     'host' => $host,
                     'cluster' => $this->clusterName,
                     'pid' => $pid,
+                    'socketAgeSeconds' => $socketAgeSeconds,
+                    'socketIdleSeconds' => $socketIdleSeconds,
+                    'requestsOnSocket' => $this->socketRequestCount,
                 ]);
 
                 @socket_close($this->socket);
                 $this->socket = null;
+                $this->socketOpenTime = null;
+                $this->socketLastUsedTime = null;
+                $this->socketRequestCount = 0;
 
                 // Recursively call to open a new socket
                 return $this->sendRawRequest($host, $port, $rawRequest);
             }
 
-            $this->logger->info('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
+            $this->logger->info('Bedrock\Client - Reusing socket', [
+                'host' => $host,
+                'cluster' => $this->clusterName,
+                'pid' => $pid,
+                'socketAgeSeconds' => $socketAgeSeconds,
+                'socketIdleSeconds' => $socketIdleSeconds,
+                'requestsOnSocket' => $this->socketRequestCount,
+            ]);
         }
     
         socket_clear_error($this->socket);
@@ -695,6 +746,10 @@ class Client implements LoggerAwareInterface
     
             $sent += $bytesSent;
         }
+
+        // Update socket usage metrics after successful send
+        $this->socketLastUsedTime = microtime(true);
+        $this->socketRequestCount++;
     }
 
     /**
@@ -949,6 +1004,9 @@ class Client implements LoggerAwareInterface
         if ($this->socket) {
             @socket_close($this->socket);
             $this->socket = null;
+            $this->socketOpenTime = null;
+            $this->socketLastUsedTime = null;
+            $this->socketRequestCount = 0;
         }
     }
 

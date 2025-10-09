@@ -150,20 +150,6 @@ class Client implements LoggerAwareInterface
      */
     private $logParam;
 
-    /**
-     * @var float|null Timestamp (from microtime(true)) when the current socket was opened
-     */
-    private $socketOpenTime = null;
-
-    /**
-     * @var float|null Timestamp (from microtime(true)) when the socket was last used for a request
-     */
-    private $socketLastUsedTime = null;
-
-    /**
-     * @var int Number of requests made on the current socket
-     */
-    private $socketRequestCount = 0;
 
     /**
      * Creates a reusable Bedrock instance.
@@ -538,9 +524,6 @@ class Client implements LoggerAwareInterface
             $this->logger->info('Closing socket after use');
             @socket_close($this->socket);
             $this->socket = null;
-            $this->socketOpenTime = null;
-            $this->socketLastUsedTime = null;
-            $this->socketRequestCount = 0;
         }
 
         // Log how long this particular call took
@@ -588,9 +571,6 @@ class Client implements LoggerAwareInterface
             // Set socket to non-blocking mode IMMEDIATELY after creation (PHP 8 compatibility)
             socket_set_nonblock($this->socket);
 
-            // Track socket creation time
-            $this->socketOpenTime = microtime(true);
-            $this->socketRequestCount = 0;
             
             socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => $this->connectionTimeoutMicroseconds]);
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
@@ -599,7 +579,7 @@ class Client implements LoggerAwareInterface
             $connectTime = (microtime(true) - $connectStart) * 1000; // Convert to milliseconds
             $socketErrorCode = socket_last_error($this->socket);
             if ($socketErrorCode === 115) {
-                $this->logger->info('EINPROGRESS_WAIT: socket_connect returned error 115, waiting for connection to complete.', [
+                $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', [
                     'host' => $host,
                     'connect_attempt_time_ms' => round($connectTime, 3),
                     'pid' => getmypid()
@@ -627,7 +607,7 @@ class Client implements LoggerAwareInterface
                 // Set socket back to blocking mode for normal operations
                 socket_set_block($this->socket);
                 
-                $this->logger->info('EINPROGRESS_SUCCESS: Socket ready for writing after EINPROGRESS.', [
+                $this->logger->info('Bedrock\Client - Socket ready for writing after EINPROGRESS.', [
                     'host' => $host,
                     'total_connection_time_ms' => round($selectTime, 3),
                     'select_wait_time_ms' => round($selectTime - $connectTime, 3),
@@ -637,6 +617,8 @@ class Client implements LoggerAwareInterface
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
             }
+        } else {
+            $this->logger->info('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
         }
         socket_clear_error($this->socket);
 
@@ -660,9 +642,6 @@ class Client implements LoggerAwareInterface
             throw new BedrockError("Sent more content than expected to host $host:$port");
         }
 
-        // Update socket usage metrics after successful send
-        $this->socketLastUsedTime = microtime(true);
-        $this->socketRequestCount++;
     }
 
     /**
@@ -917,9 +896,6 @@ class Client implements LoggerAwareInterface
         if ($this->socket) {
             @socket_close($this->socket);
             $this->socket = null;
-            $this->socketOpenTime = null;
-            $this->socketLastUsedTime = null;
-            $this->socketRequestCount = 0;
         }
     }
 

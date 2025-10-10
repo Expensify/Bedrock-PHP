@@ -568,7 +568,7 @@ class Client implements LoggerAwareInterface
                 throw new ConnectionFailure("Could not connect to create socket: $socketError");
             }
 
-            // Set socket to non-blocking mode IMMEDIATELY after creation (PHP 8 compatibility)
+            // PHP 8 Socket objects need explicit non-blocking mode to prevent EINPROGRESS timeouts
             socket_set_nonblock($this->socket);
 
             

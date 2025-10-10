@@ -8,12 +8,12 @@ namespace Expensify\Bedrock\CI;
 class PHPStyler extends CommandLine
 {
     /**
-     * @var string Branch we are checking (usually coming from['TRAVIS_BRANCH'])
+     * @var string Branch we are checking (usually coming from['GITHUB_REF'])
      */
     private $branch;
 
     /**
-     * @var string Commit we are checking (usually coming from['TRAVIS_COMMIT'])
+     * @var string Commit we are checking (usually coming from['GITHUB_SHA'])
      */
     private $commit;
 

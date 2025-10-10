@@ -150,7 +150,6 @@ class Client implements LoggerAwareInterface
      */
     private $logParam;
 
-
     /**
      * Creates a reusable Bedrock instance.
      * All params are optional and values set in `configure` would be used if are not passed here.
@@ -547,7 +546,6 @@ class Client implements LoggerAwareInterface
         return $response;
     }
 
-
     /**
      * Sends the request on a new socket, if a previous one existed, it closes the connection first.
      *
@@ -570,8 +568,6 @@ class Client implements LoggerAwareInterface
 
             // PHP 8 Socket objects need explicit non-blocking mode to prevent EINPROGRESS timeouts
             socket_set_nonblock($this->socket);
-
-            
             socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => $this->connectionTimeoutMicroseconds]);
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
             $connectStart = microtime(true);
@@ -641,7 +637,6 @@ class Client implements LoggerAwareInterface
             $this->logger->info('Bedrock\Client - sent more data than needed', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
             throw new BedrockError("Sent more content than expected to host $host:$port");
         }
-
     }
 
     /**

@@ -578,15 +578,15 @@ class Client implements LoggerAwareInterface
                 $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', [
                     'host' => $host,
                     'connect_attempt_time_ms' => round($connectTime, 3),
-                    'pid' => getmypid()
+                    'pid' => getmypid(),
                 ]);
-                
+
                 // Wait for the socket to be ready for writing after EINPROGRESS
                 $write = [$this->socket];
                 $read = [];
                 $except = [];
                 $selectResult = socket_select($read, $write, $except, $this->connectionTimeout, $this->connectionTimeoutMicroseconds);
-                
+
                 if ($selectResult === false) {
                     $socketError = socket_strerror(socket_last_error($this->socket));
                     throw new ConnectionFailure("socket_select failed after EINPROGRESS for $host:$port. Error: $socketError");
@@ -597,17 +597,17 @@ class Client implements LoggerAwareInterface
                     $socketError = socket_strerror($socketErrorCode);
                     throw new ConnectionFailure("Socket had error after EINPROGRESS for $host:$port. Error: $socketErrorCode $socketError");
                 }
-                
+
                 $selectTime = (microtime(true) - $connectStart) * 1000; // Total time from connect to ready
-                
+
                 // Set socket back to blocking mode for normal operations
                 socket_set_block($this->socket);
-                
+
                 $this->logger->info('Bedrock\Client - Socket ready for writing after EINPROGRESS.', [
                     'host' => $host,
                     'total_connection_time_ms' => round($selectTime, 3),
                     'select_wait_time_ms' => round($selectTime - $connectTime, 3),
-                    'pid' => getmypid()
+                    'pid' => getmypid(),
                 ]);
             } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);

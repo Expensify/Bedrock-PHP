@@ -602,7 +602,7 @@ class Client implements LoggerAwareInterface
                 }
 
                 // Total time from connect to ready
-                $totalTime = (microtime(true) - $connectStart) * 1000; 
+                $totalTime = (microtime(true) - $connectStart) * 1000;
 
                 // Set socket back to blocking mode for normal operations
                 socket_set_block($this->socket);

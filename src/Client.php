@@ -565,7 +565,9 @@ class Client implements LoggerAwareInterface
                 throw new ConnectionFailure("Could not connect to create socket: $socketError");
             }
 
-            // PHP 8 Socket objects need explicit non-blocking mode to prevent EINPROGRESS timeouts
+            // Use non-blocking mode for connection to avoid timeouts. On non-blocking sockets, socket_connect()
+            // may return immediately for reasons unclear with EINPROGRESS (error 115), allowing us to use socket_select() to wait
+            // with a proper timeout. This prevents connection attempts from hanging indefinitely.
             socket_set_nonblock($this->socket);
             socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => $this->connectionTimeoutMicroseconds]);
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);

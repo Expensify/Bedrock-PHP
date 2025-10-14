@@ -589,7 +589,7 @@ class Client implements LoggerAwareInterface
                 $except = [];
                 $selectStart = microtime(true);
                 $selectResult = socket_select($read, $write, $except, $this->connectionTimeout, $this->connectionTimeoutMicroseconds);
-                
+
                 // Time for socket_select call
                 $selectTime = (microtime(true) - $selectStart) * 1000;
 

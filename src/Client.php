@@ -583,7 +583,10 @@ class Client implements LoggerAwareInterface
                 $write = [$this->socket];
                 $read = [];
                 $except = [];
+                $selectStart = microtime(true);
                 $selectResult = socket_select($read, $write, $except, $this->connectionTimeout, $this->connectionTimeoutMicroseconds);
+                // Time for socket_select call
+                $selectTime = (microtime(true) - $selectStart) * 1000;
 
                 if ($selectResult === false) {
                     $socketError = socket_strerror(socket_last_error($this->socket));
@@ -596,15 +599,16 @@ class Client implements LoggerAwareInterface
                     throw new ConnectionFailure("Socket had error after EINPROGRESS for $host:$port. Error: $socketErrorCode $socketError");
                 }
 
-                $selectTime = (microtime(true) - $connectStart) * 1000; // Total time from connect to ready
+                // Total time from connect to ready
+                $totalTime = (microtime(true) - $connectStart) * 1000; 
 
                 // Set socket back to blocking mode for normal operations
                 socket_set_block($this->socket);
 
                 $this->logger->info('Bedrock\Client - Socket ready for writing after EINPROGRESS.', [
                     'host' => $host,
-                    'totalConnectionTimeMs' => round($selectTime, 3),
-                    'selectWaitTimeMs' => round($selectTime - $connectTime, 3),
+                    'totalConnectionTimeMs' => round($totalTime, 3),
+                    'selectWaitTimeMs' => round($selectTime, 3),
                 ]);
             } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);

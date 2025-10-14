@@ -555,6 +555,7 @@ class Client implements LoggerAwareInterface
     private function sendRawRequest(string $host, int $port, string $rawRequest)
     {
         // Try to connect to the requested host
+        $pid = getmypid();
         if (!$this->socket) {
             $this->logger->info('Bedrock\Client - Opening new socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
             $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
@@ -565,6 +566,7 @@ class Client implements LoggerAwareInterface
                 throw new ConnectionFailure("Could not connect to create socket: $socketError");
             }
 
+            // Configure this socket and try to connect to it
             // Use non-blocking mode for connection to avoid timeouts. On non-blocking sockets, socket_connect()
             // may return immediately for reasons unclear with EINPROGRESS (error 115), allowing us to use socket_select() to wait
             // with a proper timeout. This prevents connection attempts from hanging indefinitely.
@@ -573,7 +575,7 @@ class Client implements LoggerAwareInterface
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
             $connectStart = microtime(true);
             @socket_connect($this->socket, $host, $port);
-            $connectTime = (microtime(true) - $connectStart) * 1000; // Convert to milliseconds
+            $connectTime = (microtime(true) - $connectStart) * 1000;
             $socketErrorCode = socket_last_error($this->socket);
             if ($socketErrorCode === 115) {
                 $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', [

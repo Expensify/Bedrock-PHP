@@ -648,14 +648,14 @@ class Client implements LoggerAwareInterface
      * @param ?string $preferredHost If passed, it will prefer this host over any of the configured ones. This does not
      *                               ensure it will use that host, but it will try to use it if its not blacklisted.
      *
-     * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
+     * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
     private function getPossibleHosts(?string $preferredHost, bool $resetHosts = false)
     {
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
         // is so that we don't keep the old cache after changing the hosts or failover configuration.
-        if (!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) {
+        if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             if ($resetHosts) {
                 $this->logger->info('Bedrock\Client - Resetting host configs');
@@ -879,12 +879,12 @@ class Client implements LoggerAwareInterface
      * configuration.
      * We also close and clear the socket from the cache, so we don't reuse it.
      *
-     * @suppress PhanUndeclaredConstant - suppresses TRAVIS_RUNNING
+     * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
     private function markHostAsFailed(string $host)
     {
         $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
-        if (!defined('TRAVIS_RUNNING') || !TRAVIS_RUNNING) {
+        if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $hostConfigs = apcu_fetch($apcuKey);
             $hostConfigs[$host]['blacklistedUntil'] = $blacklistedUntil;

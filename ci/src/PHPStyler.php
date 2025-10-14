@@ -8,12 +8,12 @@ namespace Expensify\Bedrock\CI;
 class PHPStyler extends CommandLine
 {
     /**
-     * @var string Branch we are checking (usually coming from['TRAVIS_BRANCH'])
+     * @var string Branch we are checking (usually coming from['GITHUB_REF'])
      */
     private $branch;
 
     /**
-     * @var string Commit we are checking (usually coming from['TRAVIS_COMMIT'])
+     * @var string Commit we are checking (usually coming from['GITHUB_SHA'])
      */
     private $commit;
 
@@ -39,7 +39,7 @@ class PHPStyler extends CommandLine
         $PHPLintCommand = "find . -name '*.php' -not \\( -path './externalLib/*' -or -path './vendor/*' -or -path './build/*' \\) -print0 | xargs -0 -L 1 -n 1 -P 8 php -l 1>/dev/null";
 
         if ($this->branch === 'main') {
-            Travis::foldCall("lintmaster.php", $PHPLintCommand);
+            Travis::foldCall('lintmaster.php', $PHPLintCommand);
 
             echo 'Skipping style check for merge commits';
 
@@ -48,9 +48,9 @@ class PHPStyler extends CommandLine
 
         $this->checkoutBranch($this->branch);
 
-        Travis::foldCall("lint.php", $PHPLintCommand);
+        Travis::foldCall('lint.php', $PHPLintCommand);
 
-        Travis::fold("start", "style.php");
+        Travis::fold('start', 'style.php');
         Travis::timeStart();
         echo 'Enforce PHP style'.PHP_EOL;
         $output = $this->getModifiedFiles($this->branch);
@@ -83,13 +83,13 @@ class PHPStyler extends CommandLine
         }
 
         Travis::timeFinish();
-        Travis::fold("end", "style.php");
+        Travis::fold('end', 'style.php');
 
         if (!$lintOK) {
             return false;
         }
 
-        Travis::foldCall("git.checkout2", "git checkout {$this->commit} 2>&1");
+        Travis::foldCall('git.checkout2', "git checkout {$this->commit} 2>&1");
 
         return true;
     }

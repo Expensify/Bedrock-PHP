@@ -555,7 +555,6 @@ class Client implements LoggerAwareInterface
     private function sendRawRequest(string $host, int $port, string $rawRequest)
     {
         // Try to connect to the requested host
-        $pid = getmypid();
         if (!$this->socket) {
             $this->logger->info('Bedrock\Client - Opening new socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
             $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
@@ -577,8 +576,7 @@ class Client implements LoggerAwareInterface
             if ($socketErrorCode === 115) {
                 $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', [
                     'host' => $host,
-                    'connect_attempt_time_ms' => round($connectTime, 3),
-                    'pid' => getmypid(),
+                    'connectAttemptTimeMs' => round($connectTime, 3),
                 ]);
 
                 // Wait for the socket to be ready for writing after EINPROGRESS
@@ -605,9 +603,8 @@ class Client implements LoggerAwareInterface
 
                 $this->logger->info('Bedrock\Client - Socket ready for writing after EINPROGRESS.', [
                     'host' => $host,
-                    'total_connection_time_ms' => round($selectTime, 3),
-                    'select_wait_time_ms' => round($selectTime - $connectTime, 3),
-                    'pid' => getmypid(),
+                    'totalConnectionTimeMs' => round($selectTime, 3),
+                    'selectWaitTimeMs' => round($selectTime - $connectTime, 3),
                 ]);
             } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);

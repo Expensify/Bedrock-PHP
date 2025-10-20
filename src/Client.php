@@ -611,7 +611,7 @@ class Client implements LoggerAwareInterface
                     $sendBufferSize = socket_get_option($this->socket, SOL_SOCKET, SO_SNDBUF);
                     $receiveBufferSize = socket_get_option($this->socket, SOL_SOCKET, SO_RCVBUF);
 
-                    $this->logger->error('Bedrock\Client - Socket timeout after EINPROGRESS', [
+                    $this->logger->info('Bedrock\Client - Socket timeout after EINPROGRESS', [
                         'localAddress' => $localAddress,
                         'localPort' => $localPort,
                         'remoteHost' => $host,

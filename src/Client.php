@@ -577,6 +577,12 @@ class Client implements LoggerAwareInterface
             @socket_connect($this->socket, $host, $port);
             $connectTime = (microtime(true) - $connectStart) * 1000;
             $socketErrorCode = socket_last_error($this->socket);
+            
+            // Get local socket information for logging (available after socket_connect call)
+            $localAddress = '';
+            $localPort = 0;
+            socket_getsockname($this->socket, $localAddress, $localPort);
+            
             if ($socketErrorCode === 115) {
                 $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', [
                     'host' => $host,
@@ -595,49 +601,18 @@ class Client implements LoggerAwareInterface
 
                 if ($selectResult === false) {
                     $socketError = socket_strerror(socket_last_error($this->socket));
-                    // Attempt to get local socket information for debugging
-                    $localAddress = '';
-                    $localPort = 0;
-                    if (socket_getsockname($this->socket, $localAddress, $localPort)) {
-                        $this->logger->error('Bedrock\Client - socket_select failed', [
-                            'localAddress' => $localAddress,
-                            'localPort' => $localPort,
-                            'remoteHost' => $host,
-                            'remotePort' => $port,
-                            'error' => $socketError,
-                        ]);
-                    }
                     throw new ConnectionFailure("socket_select failed after EINPROGRESS for $host:$port. Error: $socketError");
                 } elseif ($selectResult === 0) {
-                    // Attempt to get local socket information for debugging
-                    $localAddress = '';
-                    $localPort = 0;
-                    if (socket_getsockname($this->socket, $localAddress, $localPort)) {
-                        $this->logger->error('Bedrock\Client - Socket timeout after EINPROGRESS', [
-                            'localAddress' => $localAddress,
-                            'localPort' => $localPort,
-                            'remoteHost' => $host,
-                            'remotePort' => $port,
-                            'timeoutSeconds' => $this->connectionTimeout,
-                        ]);
-                    }
+                    $this->logger->error('Bedrock\Client - Socket timeout after EINPROGRESS', [
+                        'localAddress' => $localAddress,
+                        'localPort' => $localPort,
+                        'remoteHost' => $host,
+                        'remotePort' => $port,
+                    ]);
                     throw new ConnectionFailure("Socket not ready for writing within timeout after EINPROGRESS for $host:$port");
                 } elseif (empty($write)) {
                     $socketErrorCode = socket_last_error($this->socket);
                     $socketError = socket_strerror($socketErrorCode);
-                    // Attempt to get local socket information for debugging
-                    $localAddress = '';
-                    $localPort = 0;
-                    if (socket_getsockname($this->socket, $localAddress, $localPort)) {
-                        $this->logger->error('Bedrock\Client - Socket error after EINPROGRESS', [
-                            'localAddress' => $localAddress,
-                            'localPort' => $localPort,
-                            'remoteHost' => $host,
-                            'remotePort' => $port,
-                            'errorCode' => $socketErrorCode,
-                            'error' => $socketError,
-                        ]);
-                    }
                     throw new ConnectionFailure("Socket had error after EINPROGRESS for $host:$port. Error: $socketErrorCode $socketError");
                 }
 
@@ -654,32 +629,7 @@ class Client implements LoggerAwareInterface
                 ]);
             } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);
-                // Attempt to get local socket information for debugging
-                $localAddress = '';
-                $localPort = 0;
-                if (socket_getsockname($this->socket, $localAddress, $localPort)) {
-                    $this->logger->error('Bedrock\Client - Connection failed', [
-                        'localAddress' => $localAddress,
-                        'localPort' => $localPort,
-                        'remoteHost' => $host,
-                        'remotePort' => $port,
-                        'errorCode' => $socketErrorCode,
-                        'error' => $socketError,
-                    ]);
-                }
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
-            }
-
-            // Log the local port assigned to this socket connection
-            $localAddress = '';
-            $localPort = 0;
-            if (socket_getsockname($this->socket, $localAddress, $localPort)) {
-                $this->logger->info('Bedrock\Client - Socket connection established', [
-                    'localAddress' => $localAddress,
-                    'localPort' => $localPort,
-                    'remoteHost' => $host,
-                    'remotePort' => $port,
-                ]);
             }
         } else {
             $this->logger->info('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);

@@ -577,12 +577,12 @@ class Client implements LoggerAwareInterface
             @socket_connect($this->socket, $host, $port);
             $connectTime = (microtime(true) - $connectStart) * 1000;
             $socketErrorCode = socket_last_error($this->socket);
-            
+
             // Get local socket information for logging (available after socket_connect call)
             $localAddress = '';
             $localPort = 0;
             socket_getsockname($this->socket, $localAddress, $localPort);
-            
+
             if ($socketErrorCode === 115) {
                 $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', [
                     'host' => $host,
@@ -606,11 +606,11 @@ class Client implements LoggerAwareInterface
                     // Check if there's a pending error on the socket that might explain the timeout
                     $pendingError = socket_get_option($this->socket, SOL_SOCKET, SO_ERROR);
                     $pendingErrorStr = $pendingError ? socket_strerror($pendingError) : 'none';
-                    
+
                     // Get socket buffer sizes to check for misconfigurations
                     $sendBufferSize = socket_get_option($this->socket, SOL_SOCKET, SO_SNDBUF);
                     $receiveBufferSize = socket_get_option($this->socket, SOL_SOCKET, SO_RCVBUF);
-                    
+
                     $this->logger->error('Bedrock\Client - Socket timeout after EINPROGRESS', [
                         'localAddress' => $localAddress,
                         'localPort' => $localPort,

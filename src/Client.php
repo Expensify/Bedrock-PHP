@@ -603,11 +603,17 @@ class Client implements LoggerAwareInterface
                     $socketError = socket_strerror(socket_last_error($this->socket));
                     throw new ConnectionFailure("socket_select failed after EINPROGRESS for $host:$port. Error: $socketError");
                 } elseif ($selectResult === 0) {
+                    // Check if there's a pending error on the socket that might explain the timeout
+                    $pendingError = socket_get_option($this->socket, SOL_SOCKET, SO_ERROR);
+                    $pendingErrorStr = $pendingError ? socket_strerror($pendingError) : 'none';
+                    
                     $this->logger->error('Bedrock\Client - Socket timeout after EINPROGRESS', [
                         'localAddress' => $localAddress,
                         'localPort' => $localPort,
                         'remoteHost' => $host,
                         'remotePort' => $port,
+                        'pendingErrorCode' => $pendingError,
+                        'pendingError' => $pendingErrorStr,
                     ]);
                     throw new ConnectionFailure("Socket not ready for writing within timeout after EINPROGRESS for $host:$port");
                 } elseif (empty($write)) {

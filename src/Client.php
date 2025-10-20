@@ -607,6 +607,10 @@ class Client implements LoggerAwareInterface
                     $pendingError = socket_get_option($this->socket, SOL_SOCKET, SO_ERROR);
                     $pendingErrorStr = $pendingError ? socket_strerror($pendingError) : 'none';
                     
+                    // Get socket buffer sizes to check for misconfigurations
+                    $sendBufferSize = socket_get_option($this->socket, SOL_SOCKET, SO_SNDBUF);
+                    $receiveBufferSize = socket_get_option($this->socket, SOL_SOCKET, SO_RCVBUF);
+                    
                     $this->logger->error('Bedrock\Client - Socket timeout after EINPROGRESS', [
                         'localAddress' => $localAddress,
                         'localPort' => $localPort,
@@ -614,6 +618,8 @@ class Client implements LoggerAwareInterface
                         'remotePort' => $port,
                         'pendingErrorCode' => $pendingError,
                         'pendingError' => $pendingErrorStr,
+                        'sendBufferSize' => $sendBufferSize,
+                        'receiveBufferSize' => $receiveBufferSize,
                     ]);
                     throw new ConnectionFailure("Socket not ready for writing within timeout after EINPROGRESS for $host:$port");
                 } elseif (empty($write)) {

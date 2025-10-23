@@ -1,0 +1,139 @@
+name: Create new version
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+
+    # botify will update the version on `main`, so this check is important to prevent an infinite loop
+    if: ${{ github.actor != 'botify' }}
+
+    steps:
+      # Running this action ensures that only one instance of this job will run at a time.
+      # This is important to prevent race conditions when multiple pull requests are merged in quick succession
+      - uses: softprops/turnstyle@8db075d65b19bf94e6e8687b504db69938dc3c65
+        with:
+          poll-interval-seconds: 10
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/checkout@v2
+        with:
+          ref: main
+
+      - name: Get merged pull request
+        id: getMergedPullRequest
+        run: echo "ORIG_PR_URL=$(gh pr list --state merged --json 'mergeCommit,url' --jq '.[] | select(.mergeCommit.oid | contains("${{ github.sha }}")) | .url')" >> $GITHUB_ENV
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decrypt & Import Botify GPG key
+        run: |
+          cd .github
+          gpg --quiet --batch --yes --decrypt --passphrase="$LARGE_SECRET_PASSPHRASE" --output Botify-private-key.asc Botify-private-key.asc.gpg
+          gpg --import --batch Botify-private-key.asc
+        env:
+          LARGE_SECRET_PASSPHRASE: ${{ secrets.LARGE_SECRET_PASSPHRASE }}
+
+      - name: Set up git for Botify
+        run: |
+          git config --global user.signingkey F34C92C6A7FB2652
+          git config --global commit.gpgsign true
+          git config --global user.name botify
+          git config --global user.email infra+botify@expensify.com
+          # This is so we can push using botify specifically
+          git remote set-url origin https://botify:${{ secrets.BOTIFY_TOKEN }}@github.com/Expensify/Bedrock-PHP.git
+          # This is an auth header GH adds that we don't want for the rest of this job, so we can specifically make requests as botify
+          git config --unset http.https://github.com/.extraheader
+
+      - name: Generate branch name
+        run: echo "BRANCH_NAME=botify-bump-version-$(uuidgen)" >> $GITHUB_ENV
+
+      - name: Create branch for version-bump pull request
+        run: git checkout -b ${{ env.BRANCH_NAME }}
+
+      - name: Run version bump script
+        run: ./package.py
+
+      - name: Get new version
+        run: echo "NEW_VERSION=$(sed -n -e '/"version"/p' composer.json | grep -o "[0-9]*\.[0-9]*\.[0-9]*" )" >> $GITHUB_ENV
+
+      - name: Commit new version
+        run: |
+          git add composer.json
+          git commit -m "Update version to ${{ env.NEW_VERSION }}"
+          git push -u origin ${{ env.BRANCH_NAME }}
+
+      - name: Create PR
+        run: |
+          echo "PR_NUMBER=$(gh pr create \
+          -B main \
+          -H ${{ env.BRANCH_NAME }} \
+          --title 'Update version to ${{ env.NEW_VERSION }}' \
+          --body 'Update version to ${{ env.NEW_VERSION }} - Originating pull request: ${{ env.ORIG_PR_URL }}' \
+          -l 'automerge' | egrep -o '[0-9]+')" >> $GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ secrets.BOTIFY_TOKEN }}
+
+      - name: Auto-approve pull request
+        # Version: 2.0.0
+        uses: hmarr/auto-approve-action@6a9ec7556f0a7fa5b49527a1eea4878b8a22d2e0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pull-request-number: ${{ env.PR_NUMBER }}
+
+      - name: Wait for PR checks to complete successfully
+        run: ./tools/waitForChecks.sh ${{ env.PR_NUMBER }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-merge pull request
+        # Version: 0.16.3
+        uses: pascalgn/automerge-action@d1203c0bf94a827b991e5de69d662e9163304fa0
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOTIFY_TOKEN }}
+          PULL_REQUEST: ${{ env.PR_NUMBER }}
+          MERGE_ERROR_FAIL: "true"
+
+      - name: Checkout updated main branch
+        run: |
+          git checkout main
+          git pull
+
+      - name: Tag new version
+        run: |
+          git tag -a "${{ env.NEW_VERSION }}" -m "${{ env.NEW_VERSION }}"
+          git push --tags
+
+      - name: Comment in PR with new version
+        run: gh pr comment ${{ env.ORIG_PR_URL }} --body "🚀 Released in version ${{ env.NEW_VERSION }} 🚀"
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOTIFY_TOKEN }}
+
+      - name: Job failed Slack notification
+        uses: 8398a7/action-slack@v3
+        if: ${{ failure() }}
+        with:
+          status: custom
+          fields: workflow, repo
+          custom_payload: |
+            {
+              channel: '#announce',
+              attachments: [{
+                color: "#DB4545",
+                pretext: `<!here>`,
+                text: `💥 ${process.env.AS_REPO} failed on ${process.env.AS_WORKFLOW} workflow 💥`,
+              }]
+            }
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+      - name: Delete any PR if it was created in failure
+        if: ${{ failure() }}
+        run: gh pr close ${{ env.PR_NUMBER }} -c "Closing because of failure in version bumping action."
+        env:
+          GH_TOKEN: ${{ secrets.BOTIFY_TOKEN }}

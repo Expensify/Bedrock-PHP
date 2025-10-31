@@ -438,26 +438,6 @@ class Client implements LoggerAwareInterface
                 $this->sendRawRequest($hostName, $port, $rawRequest);
                 $response = $this->receiveResponse();
             } catch (ConnectionFailure $e) {
-                // Debug EAGAIN errors - check socket state when error occurs
-                $lastSocketError = $this->socket ? socket_last_error($this->socket) : null;
-
-                // Log more data to diagnose problems with EAGAIN/EWOULDBLOCK
-                if ($lastSocketError === 11) {
-                    $write = [$this->socket];
-                    $read = [];
-                    $except = [];
-                    $selectResult = socket_select($read, $write, $except, 0, 0);
-
-                    $this->logger->info('EAGAIN Debugging information', [
-                        'host' => $hostName,
-                        'socket_ready_for_writing' => ($selectResult === 1 && !empty($write)) ? 'YES' : 'NO',
-                        'socket_was_reused' => $this->lastHost === $hostName && $this->socket !== null,
-                        'last_host' => $this->lastHost,
-                        'current_host' => $hostName,
-                        'pid' => getmypid(),
-                    ]);
-                }
-
                 // The error happened during connection (or before we sent any data, or in a case where we know the
                 // command was never processed) so we can retry it safely.
                 $this->markHostAsFailed($hostName);
@@ -567,78 +547,12 @@ class Client implements LoggerAwareInterface
             }
 
             // Configure this socket and try to connect to it
-            // Use non-blocking mode for connection to avoid timeouts. On non-blocking sockets, socket_connect()
-            // may return immediately for reasons unclear with EINPROGRESS (error 115), allowing us to use socket_select() to wait
-            // with a proper timeout. This prevents connection attempts from hanging indefinitely.
-            socket_set_nonblock($this->socket);
             socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => $this->connectionTimeoutMicroseconds]);
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
-            $connectStart = microtime(true);
             @socket_connect($this->socket, $host, $port);
-            $connectTime = (microtime(true) - $connectStart) * 1000;
             $socketErrorCode = socket_last_error($this->socket);
-
-            // Get local socket information for logging (available after socket_connect call)
-            $localAddress = '';
-            $localPort = 0;
-            socket_getsockname($this->socket, $localAddress, $localPort);
-
             if ($socketErrorCode === 115) {
-                $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', [
-                    'host' => $host,
-                    'connectAttemptTimeMs' => round($connectTime, 3),
-                ]);
-
-                // Wait for the socket to be ready for writing after EINPROGRESS
-                $write = [$this->socket];
-                $read = [];
-                $except = [];
-                $selectStart = microtime(true);
-                $selectResult = socket_select($read, $write, $except, $this->connectionTimeout, $this->connectionTimeoutMicroseconds);
-
-                // Time for socket_select call
-                $selectTime = (microtime(true) - $selectStart) * 1000;
-
-                if ($selectResult === false) {
-                    $socketError = socket_strerror(socket_last_error($this->socket));
-                    throw new ConnectionFailure("socket_select failed after EINPROGRESS for $host:$port. Error: $socketError");
-                } elseif ($selectResult === 0) {
-                    // Check if there's a pending error on the socket that might explain the timeout
-                    $pendingError = socket_get_option($this->socket, SOL_SOCKET, SO_ERROR);
-                    $pendingErrorStr = $pendingError ? socket_strerror($pendingError) : 'none';
-
-                    // Get socket buffer sizes to check for misconfigurations
-                    $sendBufferSize = socket_get_option($this->socket, SOL_SOCKET, SO_SNDBUF);
-                    $receiveBufferSize = socket_get_option($this->socket, SOL_SOCKET, SO_RCVBUF);
-
-                    $this->logger->info('Bedrock\Client - Socket timeout after EINPROGRESS', [
-                        'localAddress' => $localAddress,
-                        'localPort' => $localPort,
-                        'remoteHost' => $host,
-                        'remotePort' => $port,
-                        'pendingErrorCode' => $pendingError,
-                        'pendingError' => $pendingErrorStr,
-                        'sendBufferSize' => $sendBufferSize,
-                        'receiveBufferSize' => $receiveBufferSize,
-                    ]);
-                    throw new ConnectionFailure("Socket not ready for writing within timeout after EINPROGRESS for $host:$port");
-                } elseif (empty($write)) {
-                    $socketErrorCode = socket_last_error($this->socket);
-                    $socketError = socket_strerror($socketErrorCode);
-                    throw new ConnectionFailure("Socket had error after EINPROGRESS for $host:$port. Error: $socketErrorCode $socketError");
-                }
-
-                // Total time from connect to ready
-                $totalTime = (microtime(true) - $connectStart) * 1000;
-
-                // Set socket back to blocking mode for normal operations
-                socket_set_block($this->socket);
-
-                $this->logger->info('Bedrock\Client - Socket ready for writing after EINPROGRESS.', [
-                    'host' => $host,
-                    'totalConnectionTimeMs' => round($totalTime, 3),
-                    'selectWaitTimeMs' => round($selectTime, 3),
-                ]);
+                $this->logger->info('Bedrock\Client - socket_connect returned error 115, continuing.');
             } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");

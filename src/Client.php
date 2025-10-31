@@ -552,7 +552,7 @@ class Client implements LoggerAwareInterface
             @socket_connect($this->socket, $host, $port);
             $socketErrorCode = socket_last_error($this->socket);
             if ($socketErrorCode === 115) {
-                $this->logger->info('Bedrock\Client - socket_connect returned error 115, continuing.');
+                $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.');
             } elseif ($socketErrorCode) {
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");

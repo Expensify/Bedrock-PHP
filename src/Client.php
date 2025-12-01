@@ -555,14 +555,14 @@ class Client implements LoggerAwareInterface
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
             @socket_connect($this->socket, $host, $port);
             $socketErrorCode = socket_last_error($this->socket);
-            
+
             if ($socketErrorCode === 115) {
                 // Wait for the socket to be ready for writing after EINPROGRESS
                 $write = [$this->socket];
                 $read = [];
                 $except = [];
                 $selectResult = socket_select($read, $write, $except, $this->connectionTimeout, $this->connectionTimeoutMicroseconds);
-                
+
                 if ($selectResult === false) {
                     $socketError = socket_strerror(socket_last_error($this->socket));
                     throw new ConnectionFailure("socket_select failed after EINPROGRESS for $host:$port. Error: $socketError");
@@ -573,7 +573,7 @@ class Client implements LoggerAwareInterface
                     $socketError = socket_strerror($socketErrorCode);
                     throw new ConnectionFailure("Socket had error after EINPROGRESS for $host:$port. Error: $socketErrorCode $socketError");
                 }
-                
+
                 // Set socket back to blocking mode for normal operations
                 socket_set_block($this->socket);
             } elseif ($socketErrorCode) {

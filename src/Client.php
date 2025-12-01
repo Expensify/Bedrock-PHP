@@ -557,6 +557,8 @@ class Client implements LoggerAwareInterface
             $socketErrorCode = socket_last_error($this->socket);
 
             if ($socketErrorCode === 115) {
+                $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', ['host' => $host]);
+
                 // Wait for the socket to be ready for writing after EINPROGRESS
                 $write = [$this->socket];
                 $read = [];

@@ -13,7 +13,7 @@ env:
 jobs:
   PHP_Phan:
     name: Phan
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
     - name: checkout
@@ -41,7 +41,7 @@ jobs:
       run: "php ./ci/phan.php"
   PHP_Style:
     name: PHP Style
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
     - name: checkout

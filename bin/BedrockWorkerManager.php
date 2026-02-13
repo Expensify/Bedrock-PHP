@@ -344,6 +344,9 @@ try {
                         $errorMessage = pcntl_strerror(pcntl_get_last_error());
                         throw new Exception("Unable to fork because '$errorMessage', aborting.");
                     } elseif ($pid == 0) {
+                        // We are the child process. Restore the signal handler for SIGCHLD to its default behavior.
+                        pcntl_signal(SIGCHLD, SIG_DFL);
+
                         // Get a new localDB handle
                         $localDB = new LocalDB($pathToDB, $logger, $stats);
                         $localDB->open();

@@ -3,3 +3,4 @@ vendor
 .php_cs.cache
 composer.json-e
 .DS_Store
+.php-cs-fixer.cache

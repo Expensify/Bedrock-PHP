@@ -709,10 +709,16 @@ class Client implements LoggerAwareInterface
             $this->commitCount = (int) ($responseHeaders['commitCount'] ?? 0);
         }
 
-        // We treat this '555 Timeout', which is a command timeout (not a query timeout), as a ConnectionFailure so that it gets retried regardless of if it is idempotent or not.
-        // For other exceptions that have different error codes/messages, we do not throw here, so it gets handled like any regular exception.
-        if ($codeLine === '555 Timeout') {
-            throw new ConnectionFailure('Internal Bedrock command timeout (555 Timeout)');
+        // A command timeout (not a query timeout) is reported with a '555 Timeout' code line, optionally suffixed with
+        // the phase it timed out in ('555 Timeout peeking command', '555 Timeout processing command', etc.). We treat
+        // these as a ConnectionFailure so they get retried regardless of whether the command is idempotent, because the
+        // command timed out before committing and its transaction was rolled back, so no work was applied.
+        // The one exception is '555 Timeout postProcessing command': postProcess runs only after the command has
+        // already committed (200 OK), so retrying it would re-run an already-applied command and could double-apply a
+        // non-idempotent one. We let that case fall through and surface as a regular error.
+        // For any other error code/message we do not throw here, so it gets handled like any regular response.
+        if (str_starts_with($codeLine, '555 Timeout') && $codeLine !== '555 Timeout postProcessing command') {
+            throw new ConnectionFailure("Internal Bedrock command timeout ($codeLine)");
         }
 
         if ($codeLine === '500 Internal Server Error') {

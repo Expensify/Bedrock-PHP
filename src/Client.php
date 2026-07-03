@@ -827,7 +827,11 @@ class Client implements LoggerAwareInterface
      */
     private function markHostAsFailed(string $host)
     {
-        $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
+        $blacklistLength = min(rand(1, $this->maxBlackListTimeout), $this->maxBlackListTimeout);
+        if (!$blacklistLength) {
+            return;
+        }
+        $blacklistedUntil = time() + $blacklistLength;
         if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $hostConfigs = apcu_fetch($apcuKey);

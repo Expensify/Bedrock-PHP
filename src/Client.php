@@ -830,8 +830,7 @@ class Client implements LoggerAwareInterface
         if (!$this->maxBlackListTimeout) {
             return;
         }
-        $blacklistLength = rand(1, $this->maxBlackListTimeout);
-        $blacklistedUntil = time() + $blacklistLength;
+        $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
         if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $hostConfigs = apcu_fetch($apcuKey);

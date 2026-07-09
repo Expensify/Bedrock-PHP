@@ -30,6 +30,18 @@ class Client implements LoggerAwareInterface
     public const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
+     * APCu key prefixes for the (per-cluster, box-wide) circuit breaker and retry-budget state.
+     */
+    public const CIRCUIT_BREAKER_CACHE_PREFIX = 'bedrockCircuitBreaker-';
+    public const RETRY_BUDGET_CACHE_PREFIX = 'bedrockRetryBudget-';
+
+    /**
+     * Attempts needed in the current minute before the retry-budget ratio is enforced (avoids a cold-start
+     * where a single early retry trips the ratio).
+     */
+    public const RETRY_BUDGET_MIN_SAMPLE = 100;
+
+    /**
      * Priorities a command can have.
      */
     public const PRIORITY_MIN = 0;
@@ -131,6 +143,21 @@ class Client implements LoggerAwareInterface
     private $maxBlackListTimeout;
 
     /**
+     * @var int Consecutive cluster-unreachable failures before the circuit breaker opens. 0 disables it.
+     */
+    private $circuitBreakerThreshold;
+
+    /**
+     * @var int Seconds the circuit breaker stays open (failing fast) once tripped.
+     */
+    private $circuitBreakerCooldown;
+
+    /**
+     * @var float Max retries as a fraction of total attempts per cluster per minute (box-wide). 0 disables it.
+     */
+    private $retryBudgetRatio;
+
+    /**
      * @var bool Set this to true to add a `mockRequest` header to all outgoing requests.
      */
     private $mockRequests;
@@ -169,6 +196,9 @@ class Client implements LoggerAwareInterface
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      *                      int|null             commandPriority     The priority to send the commands with
      *                      string|null          logParam            Extra data to add to the bedrock logs
+     *                      int|null             circuitBreakerThreshold Cluster-unreachable failures before the breaker opens (0 disables)
+     *                      int|null             circuitBreakerCooldown  Seconds the breaker stays open once tripped
+     *                      float|null           retryBudgetRatio        Max retries as a fraction of attempts/cluster/minute (0 disables)
      *
      * @throws BedrockError
      */
@@ -187,6 +217,9 @@ class Client implements LoggerAwareInterface
         $this->stats = $config['stats'];
         $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
+        $this->circuitBreakerThreshold = $config['circuitBreakerThreshold'];
+        $this->circuitBreakerCooldown = $config['circuitBreakerCooldown'];
+        $this->retryBudgetRatio = $config['retryBudgetRatio'];
         $this->commandPriority = $config['commandPriority'];
         $this->logParam = $config['logParam'];
 
@@ -263,6 +296,9 @@ class Client implements LoggerAwareInterface
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
+            'circuitBreakerThreshold' => 0,
+            'circuitBreakerCooldown' => 5,
+            'retryBudgetRatio' => 0,
             'commandPriority' => null,
             'logParam' => null,
         ], self::$defaultConfig, $config);
@@ -315,6 +351,38 @@ class Client implements LoggerAwareInterface
     }
 
     /**
+     * Makes a call to Bedrock, guarded by a per-cluster circuit breaker: once the cluster has been
+     * repeatedly unreachable, calls fail fast instead of each tying up a worker until it exhausts every
+     * host. A ConnectionFailure (no usable response from any host) counts toward tripping the breaker;
+     * command-level BedrockErrors do not.
+     *
+     * @param string $method  Request method
+     * @param array  $headers Request headers (optional)
+     * @param string $body    Request body (optional)
+     *
+     * @return array JSON response
+     *
+     * @throws BedrockError
+     * @throws ConnectionFailure
+     */
+    public function call($method, $headers = [], $body = '')
+    {
+        if (!$this->circuitBreakerAllowsRequest()) {
+            $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName]);
+            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName");
+        }
+        try {
+            $response = $this->doCall($method, $headers, $body);
+        } catch (ConnectionFailure $e) {
+            $this->recordCircuitFailure();
+            throw $e;
+        }
+        $this->recordCircuitSuccess();
+
+        return $response;
+    }
+
+    /**
      * Makes a direct call to Bedrock.
      *
      * @param string $method  Request method
@@ -326,7 +394,7 @@ class Client implements LoggerAwareInterface
      * @throws BedrockError
      * @throws ConnectionFailure
      */
-    public function call($method, $headers = [], $body = '')
+    private function doCall($method, $headers = [], $body = '')
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
@@ -411,7 +479,16 @@ class Client implements LoggerAwareInterface
 
         $hostName = null;
         $retriedAllHosts = false;
+        $attempt = 0;
         while (!$response && count($hostConfigs)) {
+            // Every attempt after the first is a retry; a box-wide retry budget keeps a cluster-wide
+            // outage from turning each request into a burst of cross-host retries (retry amplification).
+            if ($attempt > 0 && !$this->consumeRetryBudget()) {
+                $this->logger->info('Bedrock\Client - Retry budget exhausted, not retrying', ['clusterName' => $this->clusterName]);
+                break;
+            }
+            $this->recordAttempt();
+            $attempt++;
             $exception = null;
             reset($hostConfigs);
             $numRetriesLeft = count($hostConfigs) - 1;
@@ -861,6 +938,98 @@ class Client implements LoggerAwareInterface
             @socket_close($this->socket);
             $this->socket = null;
         }
+    }
+
+    /**
+     * Whether APCu-backed shared state (circuit breaker, retry budget) is usable in this environment.
+     *
+     * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
+     */
+    private function apcuAvailable(): bool
+    {
+        return (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING)
+            && function_exists('apcu_enabled') && apcu_enabled();
+    }
+
+    /**
+     * Returns false when the per-cluster circuit breaker is open, so the caller fails fast instead of
+     * attempting a request that is likely to block until it exhausts every host.
+     */
+    private function circuitBreakerAllowsRequest(): bool
+    {
+        if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
+            return true;
+        }
+        $state = apcu_fetch(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName);
+
+        return !is_array($state) || ($state['openUntil'] ?? 0) <= time();
+    }
+
+    /**
+     * Records a cluster-unreachable failure. Once failures reach the threshold, the breaker opens for the
+     * cooldown window and subsequent calls fail fast until a probe after cooldown succeeds.
+     */
+    private function recordCircuitFailure(): void
+    {
+        if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
+            return;
+        }
+        $key = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName;
+        $state = apcu_fetch($key);
+        $failures = (is_array($state) ? ($state['failures'] ?? 0) : 0) + 1;
+        $ttl = $this->circuitBreakerCooldown + 60;
+        if ($failures >= $this->circuitBreakerThreshold) {
+            $this->logger->info('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
+            apcu_store($key, ['failures' => 0, 'openUntil' => time() + $this->circuitBreakerCooldown], $ttl);
+        } else {
+            apcu_store($key, ['failures' => $failures, 'openUntil' => 0], $ttl);
+        }
+    }
+
+    /**
+     * Clears the circuit breaker after a successful call so a recovered cluster resumes immediately.
+     */
+    private function recordCircuitSuccess(): void
+    {
+        if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
+            return;
+        }
+        apcu_delete(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName);
+    }
+
+    /**
+     * Counts one attempt (first try or retry) toward the current minute's box-wide retry-budget window.
+     */
+    private function recordAttempt(): void
+    {
+        if ($this->retryBudgetRatio <= 0 || !$this->apcuAvailable()) {
+            return;
+        }
+        $success = false;
+        apcu_inc(self::RETRY_BUDGET_CACHE_PREFIX.$this->clusterName.'-att-'.floor(time() / 60), 1, $success, 120);
+    }
+
+    /**
+     * Enforces a box-wide retry budget: retries are allowed only while they stay under retryBudgetRatio of
+     * total attempts this minute, capping retry amplification during an outage without throttling normal
+     * failover. Returns true when a retry is permitted.
+     */
+    private function consumeRetryBudget(): bool
+    {
+        if ($this->retryBudgetRatio <= 0 || !$this->apcuAvailable()) {
+            return true;
+        }
+        $minute = floor(time() / 60);
+        $attempts = apcu_fetch(self::RETRY_BUDGET_CACHE_PREFIX.$this->clusterName.'-att-'.$minute) ?: 0;
+        $success = false;
+        $retries = apcu_inc(self::RETRY_BUDGET_CACHE_PREFIX.$this->clusterName.'-ret-'.$minute, 1, $success, 120);
+
+        // Allow retries freely until there's a meaningful sample this minute; low traffic can't storm anyway.
+        if ($attempts < self::RETRY_BUDGET_MIN_SAMPLE) {
+            return true;
+        }
+
+        return ($retries / $attempts) <= $this->retryBudgetRatio;
     }
 
     /**

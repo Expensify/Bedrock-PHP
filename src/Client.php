@@ -536,8 +536,6 @@ class Client implements LoggerAwareInterface
             $socketErrorCode = socket_last_error($this->socket);
 
             if ($socketErrorCode === 115) {
-                $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', ['host' => $host]);
-
                 // Wait for the socket to be ready for writing after EINPROGRESS
                 $write = [$this->socket];
                 $read = [];
@@ -561,8 +559,6 @@ class Client implements LoggerAwareInterface
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
             }
-        } else {
-            $this->logger->info('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
         }
         socket_clear_error($this->socket);
 
@@ -648,7 +644,6 @@ class Client implements LoggerAwareInterface
             $this->getLogger()->info('Bedrock\Client - All possible hosts have been blacklisted, using full list instead');
             $nonBlackListedHosts = $cachedHostConfigs;
         }
-        $this->getLogger()->info('Bedrock\Client - Possible hosts', ['nonBlacklistedHosts' => array_keys($nonBlackListedHosts)]);
 
         return $nonBlackListedHosts;
     }

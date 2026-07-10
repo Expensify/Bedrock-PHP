@@ -944,29 +944,27 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
             return true;
         }
-        $state = apcu_fetch(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName);
+        $openUntil = apcu_fetch(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open');
 
-        return !is_array($state) || ($state['openUntil'] ?? 0) <= time();
+        return $openUntil === false || $openUntil <= time();
     }
 
     /**
-     * Records a cluster-unreachable failure. Once failures reach the threshold, the breaker opens for the
-     * cooldown window and subsequent calls fail fast until a probe after cooldown succeeds.
+     * Records a cluster-unreachable failure. The failure count is an atomic APCu counter so concurrent
+     * workers can't lose increments; once it reaches the threshold the breaker opens for the cooldown
+     * window and subsequent calls fail fast until a probe after cooldown succeeds.
      */
     private function recordCircuitFailure(): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
             return;
         }
-        $key = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName;
-        $state = apcu_fetch($key);
-        $failures = (is_array($state) ? ($state['failures'] ?? 0) : 0) + 1;
         $ttl = $this->circuitBreakerCooldown + 60;
+        $incremented = false;
+        $failures = apcu_inc(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails', 1, $incremented, $ttl);
         if ($failures >= $this->circuitBreakerThreshold) {
             $this->logger->info('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
-            apcu_store($key, ['failures' => 0, 'openUntil' => time() + $this->circuitBreakerCooldown], $ttl);
-        } else {
-            apcu_store($key, ['failures' => $failures, 'openUntil' => 0], $ttl);
+            apcu_store(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open', time() + $this->circuitBreakerCooldown, $ttl);
         }
     }
 
@@ -978,7 +976,8 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
             return;
         }
-        apcu_delete(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName);
+        apcu_delete(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails');
+        apcu_delete(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open');
     }
 
     /**

@@ -352,9 +352,10 @@ class Client implements LoggerAwareInterface
 
     /**
      * Makes a call to Bedrock, guarded by a per-cluster circuit breaker: once the cluster has been
-     * repeatedly unreachable, calls fail fast instead of each tying up a worker until it exhausts every
-     * host. A ConnectionFailure (no usable response from any host) counts toward tripping the breaker;
-     * command-level BedrockErrors do not.
+     * repeatedly unreachable/unresponsive, calls fail fast instead of each tying up a worker until it
+     * exhausts every host. Any thrown BedrockError (connection failure, read timeout, empty/garbled
+     * response) counts toward tripping the breaker; command-level errors are returned, not thrown, so
+     * they never trip it.
      *
      * @param string $method  Request method
      * @param array  $headers Request headers (optional)
@@ -373,7 +374,7 @@ class Client implements LoggerAwareInterface
         }
         try {
             $response = $this->doCall($method, $headers, $body);
-        } catch (ConnectionFailure $e) {
+        } catch (BedrockError $e) {
             $this->recordCircuitFailure();
             throw $e;
         }

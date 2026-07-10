@@ -478,7 +478,6 @@ class Client implements LoggerAwareInterface
         }
 
         $hostName = null;
-        $retriedAllHosts = false;
         $attempt = 0;
         while (!$response && count($hostConfigs)) {
             // Every attempt after the first is a retry; a box-wide retry budget keeps a cluster-wide
@@ -521,11 +520,7 @@ class Client implements LoggerAwareInterface
                 if ($numRetriesLeft) {
                     $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
                 } else {
-                    if ($retriedAllHosts) {
-                        $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                    } else {
-                        $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying in all hosts', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                    }
+                    $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     $exception = $e;
                 }
             } catch (BedrockError $e) {
@@ -539,11 +534,7 @@ class Client implements LoggerAwareInterface
                 if ($numRetriesLeft) {
                     $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
                 } else {
-                    if ($retriedAllHosts) {
-                        $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                    } else {
-                        $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying in all hosts', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                    }
+                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     $exception = $e;
                 }
             } finally {
@@ -553,20 +544,8 @@ class Client implements LoggerAwareInterface
                 }, ARRAY_FILTER_USE_KEY);
             }
 
-            // All non blacklisted hosts failed, this could be because we are in the middle of a cluster version flip.
-            // ie: We have version 1 and version 2, we've installed version 2 in less than half the cluster, a previous
-            // request already marked all servers in version 2 as failed (since 1 is the current version) in this request
-            // we have installed version 2 in one more server, making it the current version. So now all the servers that
-            // were marked as failed in the previous request are the ones serving requests and all the ones that were good
-            // before are now in the old version and not serving requests. So to cover this, we retry in all servers
-            // once hoping it will find a server that works.
             if ($exception) {
-                if ($retriedAllHosts) {
-                    throw $exception;
-                }
-                $retriedAllHosts = true;
-                $this->logger->info('All non blacklisted hosts failed, as a last resort try again in all hosts');
-                $hostConfigs = $this->getPossibleHosts($preferredHost, true);
+                throw $exception;
             }
         }
 
@@ -634,7 +613,7 @@ class Client implements LoggerAwareInterface
             $socketErrorCode = socket_last_error($this->socket);
 
             if ($socketErrorCode === 115) {
-                $this->logger->info('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', ['host' => $host]);
+                $this->logger->debug('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', ['host' => $host]);
 
                 // Wait for the socket to be ready for writing after EINPROGRESS
                 $write = [$this->socket];
@@ -660,7 +639,7 @@ class Client implements LoggerAwareInterface
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
             }
         } else {
-            $this->logger->info('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
+            $this->logger->debug('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
         }
         socket_clear_error($this->socket);
 
@@ -691,19 +670,14 @@ class Client implements LoggerAwareInterface
      *
      * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
-    private function getPossibleHosts(?string $preferredHost, bool $resetHosts = false)
+    private function getPossibleHosts(?string $preferredHost)
     {
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
         // is so that we don't keep the old cache after changing the hosts or failover configuration.
         if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
-            if ($resetHosts) {
-                $this->logger->info('Bedrock\Client - Resetting host configs');
-                $cachedHostConfigs = [];
-            } else {
-                $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
-            }
+            $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
             $this->logger->debug('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
 
             // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
@@ -751,7 +725,7 @@ class Client implements LoggerAwareInterface
             $this->getLogger()->info('Bedrock\Client - All possible hosts have been blacklisted, using full list instead');
             $nonBlackListedHosts = $cachedHostConfigs;
         }
-        $this->getLogger()->info('Bedrock\Client - Possible hosts', ['nonBlacklistedHosts' => array_keys($nonBlackListedHosts)]);
+        $this->getLogger()->debug('Bedrock\Client - Possible hosts', ['nonBlacklistedHosts' => array_keys($nonBlackListedHosts)]);
 
         return $nonBlackListedHosts;
     }
@@ -812,10 +786,16 @@ class Client implements LoggerAwareInterface
             $this->commitCount = (int) ($responseHeaders['commitCount'] ?? 0);
         }
 
-        // We treat this '555 Timeout', which is a command timeout (not a query timeout), as a ConnectionFailure so that it gets retried regardless of if it is idempotent or not.
-        // For other exceptions that have different error codes/messages, we do not throw here, so it gets handled like any regular exception.
-        if ($codeLine === '555 Timeout') {
-            throw new ConnectionFailure('Internal Bedrock command timeout (555 Timeout)');
+        // A command timeout (not a query timeout) is reported with a '555 Timeout' code line, optionally suffixed with
+        // the phase it timed out in ('555 Timeout peeking command', '555 Timeout processing command', etc.). We treat
+        // these as a ConnectionFailure so they get retried regardless of whether the command is idempotent, because the
+        // command timed out before committing and its transaction was rolled back, so no work was applied.
+        // The one exception is '555 Timeout postProcessing command': postProcess runs only after the command has
+        // already committed (200 OK), so retrying it would re-run an already-applied command and could double-apply a
+        // non-idempotent one. We let that case fall through and surface as a regular error.
+        // For any other error code/message we do not throw here, so it gets handled like any regular response.
+        if (str_starts_with($codeLine, '555 Timeout') && $codeLine !== '555 Timeout postProcessing command') {
+            throw new ConnectionFailure("Internal Bedrock command timeout ($codeLine)");
         }
 
         if ($codeLine === '500 Internal Server Error') {
@@ -924,6 +904,9 @@ class Client implements LoggerAwareInterface
      */
     private function markHostAsFailed(string $host)
     {
+        if (!$this->maxBlackListTimeout) {
+            return;
+        }
         $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
         if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;

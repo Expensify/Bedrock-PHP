@@ -296,9 +296,9 @@ class Client implements LoggerAwareInterface
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
-            'circuitBreakerThreshold' => 0,
-            'circuitBreakerCooldown' => 5,
-            'retryBudgetRatio' => 0,
+            'circuitBreakerThreshold' => 10,
+            'circuitBreakerCooldown' => 10,
+            'retryBudgetRatio' => 0.1,
             'commandPriority' => null,
             'logParam' => null,
         ], self::$defaultConfig, $config);

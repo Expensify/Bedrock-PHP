@@ -926,9 +926,17 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Records a cluster-unreachable failure. The failure count is an atomic APCu counter so concurrent
-     * workers can't lose increments; once it reaches the threshold the breaker opens for the cooldown
-     * window and subsequent calls fail fast until a probe after cooldown succeeds.
+     * Records a cluster-unreachable failure.
+     *
+     * If the breaker is already tripped (the '-open' key exists — i.e. we're in the post-cooldown probe
+     * window), a single failure re-opens it immediately and refreshes that key, so a still-down cluster
+     * stays tripped for the whole outage without having to re-accumulate the threshold. Otherwise the
+     * breaker is closed and we count failures toward the threshold with an atomic apcu_inc (so concurrent
+     * workers can't lose increments).
+     *
+     * TTLs are cooldown + 60s: long enough that the '-open' key always outlives its cooldown window (so
+     * the breaker never closes early) and the '-fails' count survives a burst, but short enough to
+     * self-clean once traffic goes quiet.
      */
     private function recordCircuitFailure(): void
     {
@@ -936,11 +944,17 @@ class Client implements LoggerAwareInterface
             return;
         }
         $ttl = $this->circuitBreakerCooldown + 60;
+        $openKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open';
+        if (apcu_fetch($openKey) !== false) {
+            apcu_store($openKey, time() + $this->circuitBreakerCooldown, $ttl);
+
+            return;
+        }
         $incremented = false;
         $failures = apcu_inc(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails', 1, $incremented, $ttl);
         if ($failures >= $this->circuitBreakerThreshold) {
             $this->logger->info('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
-            apcu_store(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open', time() + $this->circuitBreakerCooldown, $ttl);
+            apcu_store($openKey, time() + $this->circuitBreakerCooldown, $ttl);
         }
     }
 

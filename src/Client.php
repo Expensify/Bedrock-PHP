@@ -30,16 +30,9 @@ class Client implements LoggerAwareInterface
     public const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
-     * APCu key prefixes for the (per-cluster, box-wide) circuit breaker and retry-budget state.
+     * APCu key prefix for the (per-cluster, box-wide) circuit breaker state.
      */
     public const CIRCUIT_BREAKER_CACHE_PREFIX = 'bedrockCircuitBreaker-';
-    public const RETRY_BUDGET_CACHE_PREFIX = 'bedrockRetryBudget-';
-
-    /**
-     * Attempts needed in the current minute before the retry-budget ratio is enforced (avoids a cold-start
-     * where a single early retry trips the ratio).
-     */
-    public const RETRY_BUDGET_MIN_SAMPLE = 100;
 
     /**
      * Priorities a command can have.
@@ -153,11 +146,6 @@ class Client implements LoggerAwareInterface
     private $circuitBreakerCooldown;
 
     /**
-     * @var float Max retries as a fraction of total attempts per cluster per minute (box-wide). 0 disables it.
-     */
-    private $retryBudgetRatio;
-
-    /**
      * @var bool Set this to true to add a `mockRequest` header to all outgoing requests.
      */
     private $mockRequests;
@@ -198,7 +186,6 @@ class Client implements LoggerAwareInterface
      *                      string|null          logParam            Extra data to add to the bedrock logs
      *                      int|null             circuitBreakerThreshold Cluster-unreachable failures before the breaker opens (0 disables)
      *                      int|null             circuitBreakerCooldown  Seconds the breaker stays open once tripped
-     *                      float|null           retryBudgetRatio        Max retries as a fraction of attempts/cluster/minute (0 disables)
      *
      * @throws BedrockError
      */
@@ -219,7 +206,6 @@ class Client implements LoggerAwareInterface
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
         $this->circuitBreakerThreshold = $config['circuitBreakerThreshold'];
         $this->circuitBreakerCooldown = $config['circuitBreakerCooldown'];
-        $this->retryBudgetRatio = $config['retryBudgetRatio'];
         $this->commandPriority = $config['commandPriority'];
         $this->logParam = $config['logParam'];
 
@@ -298,7 +284,6 @@ class Client implements LoggerAwareInterface
             'maxBlackListTimeout' => 1,
             'circuitBreakerThreshold' => 10,
             'circuitBreakerCooldown' => 10,
-            'retryBudgetRatio' => 0.1,
             'commandPriority' => null,
             'logParam' => null,
         ], self::$defaultConfig, $config);
@@ -479,16 +464,7 @@ class Client implements LoggerAwareInterface
         }
 
         $hostName = null;
-        $attempt = 0;
         while (!$response && count($hostConfigs)) {
-            // Every attempt after the first is a retry; a box-wide retry budget keeps a cluster-wide
-            // outage from turning each request into a burst of cross-host retries (retry amplification).
-            if ($attempt > 0 && !$this->consumeRetryBudget()) {
-                $this->logger->info('Bedrock\Client - Retry budget exhausted, not retrying', ['clusterName' => $this->clusterName]);
-                break;
-            }
-            $this->recordAttempt();
-            $attempt++;
             $exception = null;
             reset($hostConfigs);
             $numRetriesLeft = count($hostConfigs) - 1;
@@ -978,41 +954,6 @@ class Client implements LoggerAwareInterface
         }
         apcu_delete(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails');
         apcu_delete(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open');
-    }
-
-    /**
-     * Counts one attempt (first try or retry) toward the current minute's box-wide retry-budget window.
-     */
-    private function recordAttempt(): void
-    {
-        if ($this->retryBudgetRatio <= 0 || !$this->apcuAvailable()) {
-            return;
-        }
-        $success = false;
-        apcu_inc(self::RETRY_BUDGET_CACHE_PREFIX.$this->clusterName.'-att-'.floor(time() / 60), 1, $success, 120);
-    }
-
-    /**
-     * Enforces a box-wide retry budget: retries are allowed only while they stay under retryBudgetRatio of
-     * total attempts this minute, capping retry amplification during an outage without throttling normal
-     * failover. Returns true when a retry is permitted.
-     */
-    private function consumeRetryBudget(): bool
-    {
-        if ($this->retryBudgetRatio <= 0 || !$this->apcuAvailable()) {
-            return true;
-        }
-        $minute = floor(time() / 60);
-        $attempts = apcu_fetch(self::RETRY_BUDGET_CACHE_PREFIX.$this->clusterName.'-att-'.$minute) ?: 0;
-        $success = false;
-        $retries = apcu_inc(self::RETRY_BUDGET_CACHE_PREFIX.$this->clusterName.'-ret-'.$minute, 1, $success, 120);
-
-        // Allow retries freely until there's a meaningful sample this minute; low traffic can't storm anyway.
-        if ($attempts < self::RETRY_BUDGET_MIN_SAMPLE) {
-            return true;
-        }
-
-        return ($retries / $attempts) <= $this->retryBudgetRatio;
     }
 
     /**

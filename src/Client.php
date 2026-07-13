@@ -901,7 +901,7 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Whether APCu-backed shared state (circuit breaker, retry budget) is usable in this environment.
+     * Whether APCu-backed shared state (the circuit breaker) is usable in this environment.
      *
      * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
@@ -953,8 +953,10 @@ class Client implements LoggerAwareInterface
         $incremented = false;
         $failures = apcu_inc(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails', 1, $incremented, $ttl);
         if ($failures >= $this->circuitBreakerThreshold) {
-            $this->logger->info('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
-            apcu_store($openKey, time() + $this->circuitBreakerCooldown, $ttl);
+            // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
+            if (apcu_add($openKey, time() + $this->circuitBreakerCooldown, $ttl)) {
+                $this->logger->info('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
+            }
         }
     }
 
@@ -966,8 +968,14 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
             return;
         }
-        apcu_delete(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails');
-        apcu_delete(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open');
+        $failsKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails';
+        $openKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open';
+        // Only take the write lock when there is actually state to clear, so a successful call on a
+        // healthy cluster (the vast majority) does cheap reads and no writes.
+        if (apcu_fetch($failsKey) !== false || apcu_fetch($openKey) !== false) {
+            apcu_delete($failsKey);
+            apcu_delete($openKey);
+        }
     }
 
     /**

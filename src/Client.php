@@ -184,8 +184,8 @@ class Client implements LoggerAwareInterface
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      *                      int|null             commandPriority     The priority to send the commands with
      *                      string|null          logParam            Extra data to add to the bedrock logs
-     *                      int|null             circuitBreakerThreshold Cluster-unreachable failures before the breaker opens (0 disables)
-     *                      int|null             circuitBreakerCooldown  Seconds the breaker stays open once tripped
+     *                      int                  circuitBreakerThreshold Cluster-unreachable failures before the breaker opens (0 disables)
+     *                      int                  circuitBreakerCooldown  Seconds the breaker stays open once tripped
      *
      * @throws BedrockError
      */

@@ -905,7 +905,7 @@ class Client implements LoggerAwareInterface
      *
      * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
-    private function apcuAvailable(): bool
+    private function isApcuAvailable(): bool
     {
         return (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING)
             && function_exists('apcu_enabled') && apcu_enabled();
@@ -917,7 +917,7 @@ class Client implements LoggerAwareInterface
      */
     private function circuitBreakerAllowsRequest(): bool
     {
-        if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
+        if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return true;
         }
         $openUntil = apcu_fetch(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open');
@@ -940,7 +940,7 @@ class Client implements LoggerAwareInterface
      */
     private function recordCircuitFailure(): void
     {
-        if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
+        if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
         $ttl = $this->circuitBreakerCooldown + 60;
@@ -965,7 +965,7 @@ class Client implements LoggerAwareInterface
      */
     private function recordCircuitSuccess(): void
     {
-        if ($this->circuitBreakerThreshold <= 0 || !$this->apcuAvailable()) {
+        if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
         $failsKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails';

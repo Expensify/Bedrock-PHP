@@ -644,15 +644,13 @@ class Client implements LoggerAwareInterface
     /**
      * @param ?string $preferredHost If passed, it will prefer this host over any of the configured ones. This does not
      *                               ensure it will use that host, but it will try to use it if its not blacklisted.
-     *
-     * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
     private function getPossibleHosts(?string $preferredHost)
     {
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
         // is so that we don't keep the old cache after changing the hosts or failover configuration.
-        if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
+        if ($this->isApcuAvailable()) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
             $this->logger->debug('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
@@ -876,8 +874,6 @@ class Client implements LoggerAwareInterface
      * know it's down. The blacklist time is a random amount of time between 1 second and the maxBlackListTimeout
      * configuration.
      * We also close and clear the socket from the cache, so we don't reuse it.
-     *
-     * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
     private function markHostAsFailed(string $host)
     {
@@ -885,7 +881,7 @@ class Client implements LoggerAwareInterface
             return;
         }
         $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
-        if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
+        if ($this->isApcuAvailable()) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $hostConfigs = apcu_fetch($apcuKey);
             $hostConfigs[$host]['blacklistedUntil'] = $blacklistedUntil;

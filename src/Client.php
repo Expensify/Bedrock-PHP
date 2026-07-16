@@ -347,9 +347,6 @@ class Client implements LoggerAwareInterface
      * @param string $body    Request body (optional)
      *
      * @return array JSON response
-     *
-     * @throws BedrockError
-     * @throws ConnectionFailure
      */
     public function call($method, $headers = [], $body = '')
     {

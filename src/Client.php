@@ -30,6 +30,11 @@ class Client implements LoggerAwareInterface
     public const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
+     * APCu key prefix for the (per-cluster, box-wide) circuit breaker state.
+     */
+    public const CIRCUIT_BREAKER_CACHE_PREFIX = 'bedrockCircuitBreaker-';
+
+    /**
      * Priorities a command can have.
      */
     public const PRIORITY_MIN = 0;
@@ -131,6 +136,16 @@ class Client implements LoggerAwareInterface
     private $maxBlackListTimeout;
 
     /**
+     * @var int Consecutive cluster-unreachable failures before the circuit breaker opens. 0 disables it.
+     */
+    private $circuitBreakerThreshold;
+
+    /**
+     * @var int Seconds the circuit breaker stays open (failing fast) once tripped.
+     */
+    private $circuitBreakerCooldown;
+
+    /**
      * @var bool Set this to true to add a `mockRequest` header to all outgoing requests.
      */
     private $mockRequests;
@@ -169,6 +184,8 @@ class Client implements LoggerAwareInterface
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      *                      int|null             commandPriority     The priority to send the commands with
      *                      string|null          logParam            Extra data to add to the bedrock logs
+     *                      int                  circuitBreakerThreshold Cluster-unreachable failures before the breaker opens (0 disables)
+     *                      int                  circuitBreakerCooldown  Seconds the breaker stays open once tripped
      *
      * @throws BedrockError
      */
@@ -187,6 +204,8 @@ class Client implements LoggerAwareInterface
         $this->stats = $config['stats'];
         $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
+        $this->circuitBreakerThreshold = $config['circuitBreakerThreshold'];
+        $this->circuitBreakerCooldown = $config['circuitBreakerCooldown'];
         $this->commandPriority = $config['commandPriority'];
         $this->logParam = $config['logParam'];
 
@@ -263,6 +282,8 @@ class Client implements LoggerAwareInterface
             'stats' => new NullStats(),
             'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
+            'circuitBreakerThreshold' => 10,
+            'circuitBreakerCooldown' => 10,
             'commandPriority' => null,
             'logParam' => null,
         ], self::$defaultConfig, $config);
@@ -315,6 +336,36 @@ class Client implements LoggerAwareInterface
     }
 
     /**
+     * Makes a call to Bedrock, guarded by a per-cluster circuit breaker: once the cluster has been
+     * repeatedly unreachable/unresponsive, calls fail fast instead of each tying up a worker until it
+     * exhausts every host. Any thrown BedrockError (connection failure, read timeout, empty/garbled
+     * response) counts toward tripping the breaker; command-level errors are returned, not thrown, so
+     * they never trip it.
+     *
+     * @param string $method  Request method
+     * @param array  $headers Request headers (optional)
+     * @param string $body    Request body (optional)
+     *
+     * @return array JSON response
+     */
+    public function call($method, $headers = [], $body = '')
+    {
+        if (!$this->circuitBreakerAllowsRequest()) {
+            $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName]);
+            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName");
+        }
+        try {
+            $response = $this->doCall($method, $headers, $body);
+        } catch (BedrockError $e) {
+            $this->recordCircuitFailure();
+            throw $e;
+        }
+        $this->recordCircuitSuccess();
+
+        return $response;
+    }
+
+    /**
      * Makes a direct call to Bedrock.
      *
      * @param string $method  Request method
@@ -326,7 +377,7 @@ class Client implements LoggerAwareInterface
      * @throws BedrockError
      * @throws ConnectionFailure
      */
-    public function call($method, $headers = [], $body = '')
+    private function doCall($method, $headers = [], $body = '')
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
@@ -590,15 +641,13 @@ class Client implements LoggerAwareInterface
     /**
      * @param ?string $preferredHost If passed, it will prefer this host over any of the configured ones. This does not
      *                               ensure it will use that host, but it will try to use it if its not blacklisted.
-     *
-     * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
     private function getPossibleHosts(?string $preferredHost)
     {
         // We get the host configs from the APC cache. Then, we check the configuration there with the passed
         // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
         // is so that we don't keep the old cache after changing the hosts or failover configuration.
-        if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
+        if ($this->isApcuAvailable()) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
             $this->logger->debug('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
@@ -822,8 +871,6 @@ class Client implements LoggerAwareInterface
      * know it's down. The blacklist time is a random amount of time between 1 second and the maxBlackListTimeout
      * configuration.
      * We also close and clear the socket from the cache, so we don't reuse it.
-     *
-     * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
     private function markHostAsFailed(string $host)
     {
@@ -831,7 +878,7 @@ class Client implements LoggerAwareInterface
             return;
         }
         $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
-        if (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING) {
+        if ($this->isApcuAvailable()) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $hostConfigs = apcu_fetch($apcuKey);
             $hostConfigs[$host]['blacklistedUntil'] = $blacklistedUntil;
@@ -843,6 +890,84 @@ class Client implements LoggerAwareInterface
         if ($this->socket) {
             @socket_close($this->socket);
             $this->socket = null;
+        }
+    }
+
+    /**
+     * Whether APCu-backed shared state (the circuit breaker) is usable in this environment.
+     *
+     * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
+     */
+    private function isApcuAvailable(): bool
+    {
+        return (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING)
+            && function_exists('apcu_enabled') && apcu_enabled();
+    }
+
+    /**
+     * Returns false when the per-cluster circuit breaker is open, so the caller fails fast instead of
+     * attempting a request that is likely to block until it exhausts every host.
+     */
+    private function circuitBreakerAllowsRequest(): bool
+    {
+        if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
+            return true;
+        }
+        $openUntil = apcu_fetch(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open');
+
+        return $openUntil === false || $openUntil <= time();
+    }
+
+    /**
+     * Records a cluster-unreachable failure.
+     *
+     * If the breaker is already tripped (the '-open' key exists — i.e. we're in the post-cooldown probe
+     * window), a single failure re-opens it immediately and refreshes that key, so a still-down cluster
+     * stays tripped for the whole outage without having to re-accumulate the threshold. Otherwise the
+     * breaker is closed and we count failures toward the threshold with an atomic apcu_inc (so concurrent
+     * workers can't lose increments).
+     *
+     * TTLs are cooldown + 60s: long enough that the '-open' key always outlives its cooldown window (so
+     * the breaker never closes early) and the '-fails' count survives a burst, but short enough to
+     * self-clean once traffic goes quiet.
+     */
+    private function recordCircuitFailure(): void
+    {
+        if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
+            return;
+        }
+        $ttl = $this->circuitBreakerCooldown + 60;
+        $openKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open';
+        if (apcu_fetch($openKey) !== false) {
+            apcu_store($openKey, time() + $this->circuitBreakerCooldown, $ttl);
+
+            return;
+        }
+        $incremented = false;
+        $failures = apcu_inc(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails', 1, $incremented, $ttl);
+        if ($failures >= $this->circuitBreakerThreshold) {
+            // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
+            if (apcu_add($openKey, time() + $this->circuitBreakerCooldown, $ttl)) {
+                $this->logger->info('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
+            }
+        }
+    }
+
+    /**
+     * Clears the circuit breaker after a successful call so a recovered cluster resumes immediately.
+     */
+    private function recordCircuitSuccess(): void
+    {
+        if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
+            return;
+        }
+        $failsKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails';
+        $openKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open';
+        // Only take the write lock when there is actually state to clear, so a successful call on a
+        // healthy cluster (the vast majority) does cheap reads and no writes.
+        if (apcu_fetch($failsKey) !== false || apcu_fetch($openKey) !== false) {
+            apcu_delete($failsKey);
+            apcu_delete($openKey);
         }
     }
 

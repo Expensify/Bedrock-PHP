@@ -948,7 +948,7 @@ class Client implements LoggerAwareInterface
         if ($failures >= $this->circuitBreakerThreshold) {
             // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
             if (apcu_add($openKey, time() + $this->circuitBreakerCooldown, $ttl)) {
-                $this->logger->info('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
+                $this->logger->warning('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
             }
         }
     }

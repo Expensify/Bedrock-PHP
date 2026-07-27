@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+use Expensify\Bedrock\Aimd\AimdConfig;
+use Expensify\Bedrock\Aimd\AimdController;
+use Expensify\Bedrock\Aimd\AimdIntervalStats;
+use Expensify\Bedrock\Aimd\PerTypeAimdConfig;
+use Expensify\Bedrock\Aimd\PerTypeAimdController;
+use Expensify\Bedrock\Aimd\PerTypeIntervalStats;
 use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Exceptions\BedrockError;
 use Expensify\Bedrock\Exceptions\Jobs\DoesNotExist;
@@ -39,7 +45,8 @@ $options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 
     'versionWatchFile::', 'writeConsistency::', 'enableLoadHandler', 'minSafeJobs::', 'maxJobsInSingleRun::',
     'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'backoffThreshold::',
     'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
-    'jobsToAddPerSecond::', 'profileChangeThreshold::', ]);
+    'jobsToAddPerSecond::', 'profileChangeThreshold::', 'enablePerTypeAimd',
+    'criticalTypeFloors::', 'maxSafeTimeOverrides::', ]);
 
 $workerPath = $options['workerPath'] ?? null;
 if (!$workerPath) {
@@ -57,6 +64,17 @@ $maxJobsForSingleRun = intval($options['maxJobsInSingleRun'] ?? 10);
 $maxSafeTime = intval($options['maxSafeTime'] ?? 0); // The maximum job time before we start paying attention
 $debugThrottle = isset($options['debugThrottle']); // Set to true to maintain a debug history
 $enableLoadHandler = isset($options['enableLoadHandler']); // Enables the AIMD load handler
+
+// Enables the per-type AIMD load handler (tracks a target per job type) instead of the scalar one.
+// Requires --enableLoadHandler. Flag-gated so it can be rolled out to a subset of hosts.
+$enablePerTypeAimd = isset($options['enablePerTypeAimd']);
+
+// Per-type AIMD overrides, supplied as JSON so app-specific job names stay out of this generic
+// library. --criticalTypeFloors maps a bare job name to a guaranteed floor (e.g. {"SendValidateCode":10});
+// --maxSafeTimeOverrides maps a bare job name to a per-type latency threshold in seconds (e.g.
+// {"SmartScan":180}).
+$criticalTypeFloors = json_decode($options['criticalTypeFloors'] ?? '{}', true) ?: [];
+$maxSafeTimeOverrides = json_decode($options['maxSafeTimeOverrides'] ?? '{}', true) ?: [];
 
 // The fraction of run time the current batch of jobs needs to be in relation to the previous batch to cause us to
 // back off our target number of jobs.
@@ -77,13 +95,6 @@ $jobsToAddPerSecond = floatval($options['jobsToAddPerSecond'] ?? 1.0);
 
 $profileChangeThreshold = floatval($options['profileChangeThreshold'] ?? 0.25);
 
-// Internal state variables for determining the number of jobs to run at one time.
-// $target is the number of jobs that we think we can safely run at one time. It defaults to the number of jobs we've
-// decided is always safe, and is continually adjusted by `getNumberOfJobsToQueue`.
-$target = $minSafeJobs;
-$lastRun = microtime(true);
-$lastBackoff = 0;
-
 // This is the name of a particular job if it made up over 50% of the jobs previously returned. Its purpose is to
 // detect when we switch job types so that we can react appropriately.
 $lastJobProfile = 'none';
@@ -94,6 +105,41 @@ $bedrock = Client::getInstance();
 $logger = $bedrock->getLogger();
 $logger->info('Starting BedrockWorkerManager', ['maxIterations' => $maxIterations]);
 $stats = $bedrock->getStats();
+
+// The AIMD load handler. Holds the target job count and adjusts it each loop based on how job
+// timings are trending. getNumberOfJobsToQueue() gathers the timing data and delegates the
+// decision to this controller. Per-type AIMD is flag-gated so it can be rolled out gradually; when
+// off we use the historical scalar controller.
+if ($enablePerTypeAimd) {
+    $activeAimd = new PerTypeAimdController(
+        new PerTypeAimdConfig(
+            backoffThreshold: $backoffThreshold,
+            doubleBackoffPreventionIntervalFraction: $doubleBackoffPreventionIntervalFraction,
+            intervalDurationSeconds: $intervalDurationSeconds,
+            jobsToAddPerSecond: $jobsToAddPerSecond,
+            multiplicativeDecreaseFraction: $multiplicativeDecreaseFraction,
+            maxSafeTime: $maxSafeTime > 0 ? (float) $maxSafeTime : 30.0,
+            defaultTypeFloor: 1,
+            criticalTypeFloors: $criticalTypeFloors,
+            maxSafeTimeOverrides: $maxSafeTimeOverrides,
+        ),
+        microtime(true),
+        $logger,
+    );
+} else {
+    $activeAimd = new AimdController(
+        new AimdConfig(
+            backoffThreshold: $backoffThreshold,
+            doubleBackoffPreventionIntervalFraction: $doubleBackoffPreventionIntervalFraction,
+            intervalDurationSeconds: $intervalDurationSeconds,
+            jobsToAddPerSecond: $jobsToAddPerSecond,
+            minSafeJobs: $minSafeJobs,
+            multiplicativeDecreaseFraction: $multiplicativeDecreaseFraction,
+        ),
+        microtime(true),
+        $logger,
+    );
+}
 
 // Set up the database for the AIMD load handler.
 $localDB = new LocalDB($pathToDB, $logger, $stats);
@@ -173,12 +219,12 @@ try {
             } elseif ($jobsToQueue >= 3) {
                 // We ensure we ask minimum 3 jobs per GetJobs call, to avoid running tons of GetJobs calls back to back
                 // to return just 1 job
-                $logger->info('[AIMD] Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('[AIMD] Safe to start a new job, checking for more work', ['jobsToQueue' => $jobsToQueue, 'target' => $activeAimd->getTarget(), 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $stats->counter('bedrockWorkerManager.currentJobsToQueue', $jobsToQueue);
-                $stats->counter('bedrockWorkerManager.targetJobsToQueue', (int) $target);
+                $stats->counter('bedrockWorkerManager.targetJobsToQueue', (int) $activeAimd->getTarget());
                 break;
             } else {
-                $logger->info('[AIMD] Not enough jobs to queue, waiting 0.5s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $target, 'load' => $load, 'MAX_LOAD' => $maxLoad]);
+                $logger->info('[AIMD] Not enough jobs to queue, waiting 0.5s and trying again.', ['jobsToQueue' => $jobsToQueue, 'target' => $activeAimd->getTarget(), 'load' => $load, 'MAX_LOAD' => $maxLoad]);
                 $localDB->write('DELETE FROM localJobs WHERE started < '.(microtime(true) - 60 * 60).' AND ended IS NULL;');
                 $isFirstTry = false;
                 usleep(500000);
@@ -522,19 +568,7 @@ $logger->info('Stopped BedrockWorkerManager, will not wait for children');
  */
 function getNumberOfJobsToQueue(): int
 {
-    global $backoffThreshold,
-    $doubleBackoffPreventionIntervalFraction,
-    $enableLoadHandler,
-    $intervalDurationSeconds,
-    $jobsToAddPerSecond,
-    $lastBackoff,
-    $lastRun,
-    $localDB,
-    $logger,
-    $maxJobsForSingleRun,
-    $minSafeJobs,
-    $multiplicativeDecreaseFraction,
-    $target;
+    global $activeAimd, $enableLoadHandler, $enablePerTypeAimd, $intervalDurationSeconds, $localDB, $logger, $maxJobsForSingleRun;
 
     // Allow for disabling of the load handler.
     if (!$enableLoadHandler) {
@@ -543,95 +577,46 @@ function getNumberOfJobsToQueue(): int
         return $maxJobsForSingleRun;
     }
     $now = microtime(true);
-
-    // Following line is only for testing.
-    // $secondElapsed = (intval($now) === intval($lastRun)) ? 0 : intval($now);
-
-    // Get timing info for the last two intervals.
-    $timeSinceLastRun = $now - $lastRun;
-    $lastRun = $now;
     $oneIntervalAgo = $now - $intervalDurationSeconds;
     $twoIntervalsAgo = $oneIntervalAgo - $intervalDurationSeconds;
 
-    // Look up how many jobs are currently in progress.
-    $numActive = intval($localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0]);
+    // Per-type AIMD needs per-type timing, so it reads the same windows grouped by jobName and lets
+    // the controller decide one target per type.
+    if ($enablePerTypeAimd && $activeAimd instanceof PerTypeAimdController) {
+        $activeRows = $localDB->readAll('SELECT jobName, COUNT(*) FROM localJobs WHERE ended IS NULL GROUP BY jobName;');
+        $lastRows = $localDB->readAll('SELECT jobName, COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$oneIntervalAgo.' GROUP BY jobName;');
+        $previousRows = $localDB->readAll('SELECT jobName, COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$twoIntervalsAgo.' AND ended < '.$oneIntervalAgo.' GROUP BY jobName;');
 
-    // Look up how many jobs we've finished recently.
-    $lastIntervalData = $localDB->read('SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$oneIntervalAgo.';');
-    $lastIntervalCount = $lastIntervalData[0];
-    $lastIntervalAverage = floatval($lastIntervalData[1]);
+        // Delete old stuff.
+        $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
 
-    $previousIntervalData = $localDB->read('SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$twoIntervalsAgo.' AND ended < '.$oneIntervalAgo.';');
-    $previousIntervalCount = $previousIntervalData[0];
-    $previousIntervalAverage = floatval($previousIntervalData[1]);
-
-    // Following block is only for testing.
-    // if ($secondElapsed) {
-    //     echo "$secondElapsed, $numActive, $target, $lastIntervalAverage\n";
-    // }
-
-    // Delete old stuff.
-    $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
-
-    // If we don't have enough data, we'll return a value based on the current target and active job count.
-    if ($lastIntervalCount === 0) {
-        $logger->info('[AIMD] No jobs finished this interval, returning default value.', ['minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
-
-        return intval(max($target - $numActive, 0));
-    } elseif ($previousIntervalCount === 0) {
-        $logger->info('[AIMD] No jobs finished previous interval, returning default value.', ['minSafeJobs' => $minSafeJobs, 'returnValue' => max($target - $numActive, 0)]);
-
-        return intval(max($target - $numActive, 0));
+        return $activeAimd->decide(PerTypeIntervalStats::fromGroupedRows($activeRows, $lastRows, $previousRows), $now);
     }
 
-    // Update our target. If the last interval average run time exceeds the previous one by too much, back off.
-    // Options:
-    // 1. Make intervalDurationSeconds longer for more data to average.
-    // 2. Make backoffThreshold higher (this seems riskier)
-    // 3. Back off by less (increase multiplicativeDecreaseFraction closer to 1).
-    //
-    // Possibly helpful ideas:
-    // Log the count and type of jobs used to calculate lastIntervalData and previousIntervalData.
-    // Also log the times for each type of job.
-    //
-    // Just knowing the count of completed jobs in the previous intervals is interesting. If it's a very small number
-    // of jobs, a high degree of variability is expected.
-    if ($lastIntervalAverage > ($previousIntervalAverage * $backoffThreshold)) {
-        // Skip backoff if we've done so too recently in the past. (within 10 seconds by default)
-        if ($lastBackoff < $now - ($intervalDurationSeconds * $doubleBackoffPreventionIntervalFraction)) {
-            $target = max($target * $multiplicativeDecreaseFraction, $minSafeJobs);
-            $lastBackoff = $now;
-            $logger->info('[AIMD] Backing off jobs target.', [
-                'target' => $target,
-                'lastIntervalAverage' => $lastIntervalAverage,
-                'previousIntervalAverage' => $previousIntervalAverage,
-                'backoffThreshold' => $backoffThreshold,
-            ]);
-        }
-    } else {
-        // Otherwise, slowly ramp up. Increase by $jobsToAddPerSecond every second, except don't increase past 2x the
-        // number of currently running jobs.
-        if (($target + $timeSinceLastRun * $jobsToAddPerSecond) < $numActive * 2) {
-            // Ok, we're running at least half this many jobs, we can increment.
-            $target += $timeSinceLastRun * $jobsToAddPerSecond;
-        }
-        $logger->info('[AIMD] Congestion Avoidance, incrementing target', ['target' => $target]);
+    // Scalar AIMD: aggregate counts across all job types.
+    if ($activeAimd instanceof AimdController) {
+        $numActive = intval($localDB->read('SELECT COUNT(*) FROM localJobs WHERE ended IS NULL;')[0]);
+        $lastIntervalData = $localDB->read('SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$oneIntervalAgo.';');
+        $previousIntervalData = $localDB->read('SELECT COUNT(*), AVG(ended - started) FROM localJobs WHERE ended IS NOT NULL AND ended > '.$twoIntervalsAgo.' AND ended < '.$oneIntervalAgo.';');
+
+        // Delete old stuff.
+        $localDB->write('DELETE FROM localJobs WHERE ended IS NOT NULL AND ended < '.$twoIntervalsAgo.';');
+
+        // Hand the timing snapshot to the AIMD controller, which updates the target and returns how
+        // many jobs it is safe to queue now.
+        return $activeAimd->decide(
+            new AimdIntervalStats(
+                $numActive,
+                intval($lastIntervalData[0]),
+                floatval($lastIntervalData[1]),
+                intval($previousIntervalData[0]),
+                floatval($previousIntervalData[1]),
+            ),
+            $now,
+        );
     }
 
-    // Now we know how many jobs we want to be running, and how many are running, so we can return the difference.
-    $numJobsToRun = intval(max($target - $numActive, 0));
-    $logger->info('[AIMD] Found number of jobs to run.', [
-        'numJobsToRun' => $numJobsToRun,
-        'target' => $target,
-        'numActive' => $numActive,
-        'lastIntervalAverage' => $lastIntervalAverage,
-        'previousIntervalAverage' => $previousIntervalAverage,
-        'lastIntervalCount' => $lastIntervalCount,
-        'previousIntervalCount' => $previousIntervalCount,
-        'timeSinceLastRun' => $timeSinceLastRun,
-    ]);
-
-    return $numJobsToRun;
+    return $maxJobsForSingleRun;
 }
 
 /**

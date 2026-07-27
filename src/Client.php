@@ -461,6 +461,10 @@ class Client implements LoggerAwareInterface
         }
 
         $hostName = null;
+        $requestID = $headers['requestID'] ?? null;
+        $attemptedHosts = [];
+        // True after an attempt failed without knowing whether its fully-sent request committed.
+        $requestAlreadySent = false;
         while (!$response && count($hostConfigs)) {
             $exception = null;
             reset($hostConfigs);
@@ -485,7 +489,17 @@ class Client implements LoggerAwareInterface
                 // We get the port from either the main or failover host configs, due to socket reuse, the host we are
                 // trying to use might not be in the picked host configs, because getPossibleHosts randomizes them.
                 $port = $this->mainHostConfigs[$hostName]['port'] ?? $this->failoverHostConfigs[$hostName]['port'];
+                $attemptedHosts[] = $hostName;
                 $this->sendRawRequest($hostName, $port, $rawRequest);
+                // sendRawRequest returned without throwing, so the whole request reached this host. If an earlier
+                // unresolved attempt had already reached a host, we have now delivered the same request more than once.
+                if ($requestAlreadySent) {
+                    $this->logger->warning('Bedrock\Client - Resending a fully-sent request; it may already have been processed and this can duplicate a write', [
+                        'command' => $method,
+                        'requestID' => $requestID,
+                        'hostsTried' => $attemptedHosts,
+                    ]);
+                }
                 $response = $this->receiveResponse();
             } catch (ConnectionFailure $e) {
                 // The error happened during connection (or before we sent any data, or in a case where we know the
@@ -499,6 +513,7 @@ class Client implements LoggerAwareInterface
                 }
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
+                $requestAlreadySent = true;
                 $this->markHostAsFailed($hostName);
                 /* @phan-suppress-next-line PhanTypeInvalidDimOffset for some reason phan says idempotent does not exist, but I have the ?? so it should not matter */
                 if (!($headers['idempotent'] ?? false)) {

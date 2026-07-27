@@ -82,20 +82,24 @@ final class PerTypeAimdController implements AimdTargetReporter
                 $this->targets[$type] = (float) $floor;
             }
 
-            // Not enough data to compare speeds this interval; hold the target and add its headroom.
-            if ($stats->lastIntervalCount === 0 || $stats->previousIntervalCount === 0) {
+            // Need at least one finished job this interval to have any latency signal for this type.
+            if ($stats->lastIntervalCount === 0) {
                 $jobsToQueue += $this->headroom($type, $stats);
                 continue;
             }
 
             $maxSafeTime = $this->config->maxSafeTimeFor($type);
             $tooSlowAbsolute = $maxSafeTime > 0.0 && $stats->lastIntervalAverage > $maxSafeTime;
-            $tooSlowRelative = $stats->lastIntervalAverage > ($stats->previousIntervalAverage * $this->config->backoffThreshold);
+            // The relative (accelerating) signal needs a previous interval to compare against; the
+            // absolute signal does not, so a type that only finishes jobs sporadically still backs
+            // off on a single slow interval.
+            $tooSlowRelative = $stats->previousIntervalCount > 0
+                && $stats->lastIntervalAverage > ($stats->previousIntervalAverage * $this->config->backoffThreshold);
 
             if ($tooSlowAbsolute || $tooSlowRelative) {
                 // Multiplicative decrease, unless we backed this type off very recently. Back off
                 // harder when it is over the absolute threshold. Additive increase is implicitly
-                // suppressed while over maxSafeTime because we never reach the else branch.
+                // suppressed while over maxSafeTime because we never reach the ramp branch.
                 if (($this->lastBackoffs[$type] ?? 0.0) < $now - ($this->config->intervalDurationSeconds * $this->config->doubleBackoffPreventionIntervalFraction)) {
                     $factor = $tooSlowAbsolute
                         ? min($this->config->multiplicativeDecreaseFraction, $this->config->absoluteDecreaseFraction)
@@ -109,8 +113,9 @@ final class PerTypeAimdController implements AimdTargetReporter
                         'reason' => $tooSlowAbsolute ? 'maxSafeTime' : 'accelerating',
                     ]);
                 }
-            } else {
-                // Ramp up, but don't outrun 2x the currently active jobs of this type.
+            } elseif ($stats->previousIntervalCount > 0) {
+                // Healthy and we have a previous interval to compare against: ramp up, but don't
+                // outrun 2x the currently active jobs of this type.
                 if (($this->targets[$type] + $timeSinceLastRun * $this->config->jobsToAddPerSecond) < $stats->numActive * 2) {
                     $this->targets[$type] += $timeSinceLastRun * $this->config->jobsToAddPerSecond;
                 }

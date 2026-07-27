@@ -212,4 +212,31 @@ final class PerTypeAimdControllerTest extends TestCase
         // Then it is clamped to the ceiling
         $this->assertSame(5, $result);
     }
+
+    public function testAbsoluteBackoffFiresEvenWithNoPreviousInterval(): void
+    {
+        // Given a type ramped up to 5
+        $c = $this->controller();
+        $this->rampFourTicks($c, ['Y']);
+
+        // When it finishes slow jobs this interval but had none the previous interval (sparse
+        // completions — the common case for slow jobs)
+        $c->decide(['Y' => $this->stats(100, 3, 40.0, 0, 0.0)], self::START + 5);
+
+        // Then the absolute threshold still backs it off — it does not wait for two consecutive
+        // intervals with completions
+        $this->assertEqualsWithDelta(2.5, $c->getTargets()['Y'], 1e-9);
+    }
+
+    public function testNoRampWithoutAPreviousIntervalToCompare(): void
+    {
+        // Given a fresh type that finished fast jobs this interval but has no previous interval
+        $c = $this->controller();
+
+        // When we decide (fast, but no comparison data and not over maxSafeTime)
+        $c->decide(['Y' => $this->stats(100, 5, 1.0, 0, 0.0)], self::START + 1);
+
+        // Then it holds at the floor rather than ramping on a single unverified interval
+        $this->assertSame(1.0, $c->getTargets()['Y']);
+    }
 }

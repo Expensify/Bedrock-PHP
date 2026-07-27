@@ -120,6 +120,7 @@ if ($enablePerTypeAimd) {
             multiplicativeDecreaseFraction: $multiplicativeDecreaseFraction,
             maxSafeTime: $maxSafeTime > 0 ? (float) $maxSafeTime : 30.0,
             defaultTypeFloor: 1,
+            minSafeJobs: $minSafeJobs,
             criticalTypeFloors: $criticalTypeFloors,
             maxSafeTimeOverrides: $maxSafeTimeOverrides,
         ),

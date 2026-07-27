@@ -54,17 +54,43 @@ final class PerTypeAimdControllerTest extends TestCase
         }
     }
 
-    public function testInsufficientDataHoldsFloorAndReturnsHeadroom(): void
+    public function testColdStartFetchesGlobalBaselineToDiscoverWork(): void
     {
-        // Given a fresh controller and a type with no finished jobs this interval
+        // Given a fresh controller and an empty local jobs DB (no known types yet)
+        $c = $this->controller();
+
+        // When we decide with no per-type stats at all
+        $result = $c->decide([], self::START + 1);
+
+        // Then we still fetch the global baseline (minSafeJobs) so new job types get discovered —
+        // without this, BWM would never pull anything on a fresh DB.
+        $this->assertSame(10, $result);
+    }
+
+    public function testInsufficientDataHoldsFloorAndFetchesBaseline(): void
+    {
+        // Given a fresh controller and a known type with no finished jobs this interval
         $c = $this->controller();
 
         // When we decide with no jobs active
         $result = $c->decide(['X' => $this->stats(0, 0, 0.0, 0, 0.0)], self::START + 1);
 
-        // Then the type is seeded at the default floor and we return its headroom (floor - active)
-        $this->assertSame(1, $result);
+        // Then the type is held at the default floor, and the fetch is lifted to the global
+        // baseline (minSafeJobs=10) since the host is otherwise idle
         $this->assertSame(1.0, $c->getTargets()['X']);
+        $this->assertSame(10, $result);
+    }
+
+    public function testBaselineDoesNotInflateFetchWhenBusy(): void
+    {
+        // Given a type with lots of active jobs (host is busy, above the baseline)
+        $c = $this->controller();
+
+        // When a healthy tick leaves no per-type headroom (target 2 < 100 active)
+        $result = $c->decide(['X' => $this->stats(100, 5, 1.0, 5, 1.0)], self::START + 1);
+
+        // Then the baseline floor (minSafeJobs - 100 active) is negative, so it does not add fetch
+        $this->assertSame(0, $result);
     }
 
     public function testHealthyTypeRampsUp(): void

@@ -74,7 +74,9 @@ final class PerTypeAimdController implements AimdTargetReporter
         $this->lastRun = $now;
 
         $jobsToQueue = 0;
+        $totalActive = 0;
         foreach ($statsByType as $type => $stats) {
+            $totalActive += $stats->numActive;
             $floor = $this->config->floorFor($type);
             if (!isset($this->targets[$type])) {
                 $this->targets[$type] = (float) $floor;
@@ -117,6 +119,10 @@ final class PerTypeAimdController implements AimdTargetReporter
 
             $jobsToQueue += $this->headroom($type, $stats);
         }
+
+        // Keep a global baseline flowing so brand-new job types get discovered and BWM never wedges
+        // on a fresh localJobs DB (no known types => no per-type headroom => nothing fetched).
+        $jobsToQueue = max($jobsToQueue, $this->config->minSafeJobs - $totalActive);
 
         return min($jobsToQueue, $this->config->maxJobsPerFetch);
     }

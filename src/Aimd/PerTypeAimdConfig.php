@@ -36,6 +36,10 @@ final class PerTypeAimdConfig
         public readonly float $maxSafeTime = 30.0,
         // Default per-type floor. Kept low so many job types don't sum to a huge fleet minimum.
         public readonly int $defaultTypeFloor = 1,
+        // Global baseline: the aggregate fetch never drops below (minSafeJobs - total active jobs),
+        // so BWM keeps discovering work (including brand-new job types not yet in the local DB) and
+        // never wedges on a fresh/idle localJobs DB. Mirrors the scalar handler's minSafeJobs floor.
+        public readonly int $minSafeJobs = 10,
         public readonly array $criticalTypeFloors = [],
         public readonly array $maxSafeTimeOverrides = [],
         // Safety ceiling on how many jobs a single GetJobs call may request.

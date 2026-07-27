@@ -91,6 +91,39 @@ class LocalDB
     }
 
     /**
+     * Runs a read query and returns every matching row as a numeric array, unlike read() which
+     * returns only the first row. Used for GROUP BY queries (e.g. per-type job stats).
+     *
+     * @return array<int, array<int, mixed>>
+     */
+    public function readAll(string $query): array
+    {
+        $result = null;
+        while (true) {
+            try {
+                $result = $this->handle->query($query);
+                break;
+            } catch (Exception $e) {
+                if ($e->getMessage() === 'database is locked') {
+                    $this->logger->info('Query failed, retrying', ['query' => $query, 'error' => $e->getMessage()]);
+                } else {
+                    $this->logger->info('Query failed, not retrying', ['query' => $query, 'error' => $e->getMessage()]);
+                    throw $e;
+                }
+            }
+        }
+
+        $rows = [];
+        if ($result) {
+            while (($row = $result->fetchArray(SQLITE3_NUM)) !== false) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
      * Runs a write query on a local database.
      */
     public function write(string $query)

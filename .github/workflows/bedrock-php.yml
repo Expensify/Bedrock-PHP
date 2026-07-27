@@ -66,3 +66,30 @@ jobs:
 
     - name: Test for Style
       run: "php ./ci/style.php"
+  PHP_Unit:
+    name: PHPUnit
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+    - name: checkout
+      # v4.1.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      with:
+        # Set fetch-depth to 100 so that we can compare HEAD with a good chunk of git log history
+        fetch-depth: 100
+
+    - name: Install PHP and Libraries
+      uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2.32.0
+      with:
+        tools: composer:v2.7.1
+        php-version: 8.3.31
+        coverage: none
+      env:
+        GITHUB_TOKEN: ${{ secrets.CODE_EXPENSIFY_TOKEN }}
+        fail-fast: true
+
+    - name: Setup Composer Cache
+      uses: ./.github/actions/composite/setup-composer-cache
+
+    - name: Run PHPUnit tests
+      run: "vendor/bin/phpunit"

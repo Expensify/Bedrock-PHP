@@ -21,7 +21,8 @@
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.64.0",
-        "phan/phan": "^5.4.5"
+        "phan/phan": "^5.4.5",
+        "phpunit/phpunit": "^10.5"
     },
     "autoload": {
         "psr-4": {
@@ -30,8 +31,12 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Expensify\\Bedrock\\CI\\": "ci/src"
+            "Expensify\\Bedrock\\CI\\": "ci/src",
+            "Expensify\\Bedrock\\Tests\\": "tests"
         }
+    },
+    "scripts": {
+        "test": "phpunit"
     },
     "bin": [
         "bin/BedrockWorkerManager.php"

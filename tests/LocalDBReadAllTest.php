@@ -7,6 +7,7 @@ namespace Expensify\Bedrock\Tests;
 use Expensify\Bedrock\LocalDB;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use stdClass;
 
 /**
  * Tests for LocalDB::readAll(), the multi-row read added for per-type GROUP BY queries.
@@ -19,7 +20,7 @@ final class LocalDBReadAllTest extends TestCase
     protected function setUp(): void
     {
         $this->path = tempnam(sys_get_temp_dir(), 'localdb-test-');
-        $this->db = new LocalDB($this->path, new NullLogger(), new \stdClass());
+        $this->db = new LocalDB($this->path, new NullLogger(), new stdClass());
         $this->db->open();
         $this->db->write('CREATE TABLE t (name TEXT, n INTEGER);');
         $this->db->write("INSERT INTO t (name, n) VALUES ('a', 1), ('a', 2), ('b', 5);");

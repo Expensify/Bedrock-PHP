@@ -16,7 +16,7 @@ final class PerTypeAimdConfig
 {
     /**
      * @param array<string, int>   $criticalTypeFloors   bare job name => guaranteed minimum target
-     * @param array<string, float> $maxSafeTimeOverrides  bare job name => per-type maxSafeTime (seconds)
+     * @param array<string, float> $maxSafeTimeOverrides bare job name => per-type maxSafeTime (seconds)
      */
     public function __construct(
         // Fraction slower this interval must be vs the previous one to back a type off.

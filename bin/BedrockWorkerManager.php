@@ -15,6 +15,7 @@ use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
 use Expensify\Bedrock\LocalDB;
+use Expensify\Bedrock\Status;
 
 /*
  * BedrockWorkerManager
@@ -46,7 +47,8 @@ $options = getopt('', ['maxLoad::', 'maxIterations::', 'jobName::', 'logger::', 
     'maxSafeTime::', 'localJobsDBPath::', 'debugThrottle', 'backoffThreshold::',
     'intervalDurationSeconds::', 'doubleBackoffPreventionIntervalFraction::', 'multiplicativeDecreaseFraction::',
     'jobsToAddPerSecond::', 'profileChangeThreshold::', 'enablePerTypeAimd',
-    'criticalTypeFloors::', 'maxSafeTimeOverrides::', ]);
+    'criticalTypeFloors::', 'maxSafeTimeOverrides::', 'maxBackendCommandCount::',
+    'healthCheckIntervalSeconds::', ]);
 
 $workerPath = $options['workerPath'] ?? null;
 if (!$workerPath) {
@@ -75,6 +77,12 @@ $enablePerTypeAimd = isset($options['enablePerTypeAimd']);
 // {"SmartScan":180}).
 $criticalTypeFloors = json_decode($options['criticalTypeFloors'] ?? '{}', true) ?: [];
 $maxSafeTimeOverrides = json_decode($options['maxSafeTimeOverrides'] ?? '{}', true) ?: [];
+
+// Backend-health gate (flag-gated OFF by default): pause fetching when the backend the jobs stress
+// is saturated. --maxBackendCommandCount is the threshold (0 disables the gate) and should be tuned
+// from baselines. The Status poll is cached for --healthCheckIntervalSeconds so we don't hammer it.
+$maxBackendCommandCount = intval($options['maxBackendCommandCount'] ?? 0);
+$healthCheckIntervalSeconds = floatval($options['healthCheckIntervalSeconds'] ?? 2.0);
 
 // The fraction of run time the current batch of jobs needs to be in relation to the previous batch to cause us to
 // back off our target number of jobs.
@@ -141,6 +149,14 @@ if ($enablePerTypeAimd) {
         $logger,
     );
 }
+
+// Backend-health gate. Polls the Status command of the backend the jobs stress and pauses fetching
+// when it is saturated — a real signal, unlike the local box's loadavg. Reuses the jobs client for
+// now; TODO(chirag-auth-health-gate): point it at Auth (the cluster that actually saturates) via a
+// dedicated client + a --healthCheckHosts config once that decision is settled.
+$healthStatus = new Status($bedrock);
+$lastHealthCheck = 0.0;
+$lastBackendCommandCount = 0;
 
 // Set up the database for the AIMD load handler.
 $localDB = new LocalDB($pathToDB, $logger, $stats);
@@ -211,10 +227,14 @@ try {
                 break 2;
             }
 
-            // Check if we can fork based on the load of our webservers
+            // Check if we can fork, based on backend health (primary) and our own host load (secondary).
             $load = sys_getloadavg()[0];
+            $backendCommandCount = getBackendCommandCount();
             $jobsToQueue = getNumberOfJobsToQueue();
-            if ($load > $maxLoad) {
+            if ($maxBackendCommandCount > 0 && $backendCommandCount > $maxBackendCommandCount) {
+                $logger->info('[AIMD] Backend saturated, pausing fetch and trying again in 1s.', ['backendCommandCount' => $backendCommandCount, 'maxBackendCommandCount' => $maxBackendCommandCount]);
+                sleep(1);
+            } elseif ($load > $maxLoad) {
                 $logger->info('[AIMD] Not safe to start a new job, load is too high, waiting 1s and trying again.', ['load' => $load, 'MAX_LOAD' => $maxLoad]);
                 sleep(1);
             } elseif ($jobsToQueue >= 3) {
@@ -561,6 +581,34 @@ try {
 }
 
 $logger->info('Stopped BedrockWorkerManager, will not wait for children');
+
+/**
+ * Returns the backend's current in-flight command count, polled from the Status command and cached
+ * for --healthCheckIntervalSeconds. Returns 0 when the gate is disabled (--maxBackendCommandCount<=0).
+ * Fails closed (treats the backend as saturated) when the health check errors, so we don't pile onto
+ * a dying node.
+ */
+function getBackendCommandCount(): int
+{
+    global $healthStatus, $lastHealthCheck, $lastBackendCommandCount, $healthCheckIntervalSeconds, $maxBackendCommandCount, $logger;
+
+    if ($maxBackendCommandCount <= 0) {
+        return 0;
+    }
+    $now = microtime(true);
+    if ($now - $lastHealthCheck < $healthCheckIntervalSeconds) {
+        return $lastBackendCommandCount;
+    }
+    $lastHealthCheck = $now;
+    try {
+        $lastBackendCommandCount = $healthStatus->getHealth()['commandCount'];
+    } catch (Throwable $e) {
+        $logger->warning('[AIMD] Backend health check failed; treating backend as saturated.', ['error' => $e->getMessage()]);
+        $lastBackendCommandCount = PHP_INT_MAX;
+    }
+
+    return $lastBackendCommandCount;
+}
 
 /**
  * Determines whether or not we call GetJob and try to start a new job

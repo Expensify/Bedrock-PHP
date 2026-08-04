@@ -358,7 +358,10 @@ class Client implements LoggerAwareInterface
         try {
             $response = $this->doCall($method, $headers, $body);
         } catch (BedrockError $e) {
-            $this->recordCircuitFailure();
+            // Timeout errors should not trigger the circuit breaker because they are caused by one command timing out
+            if (!($e instanceof TimeoutError)) {
+                $this->recordCircuitFailure();
+            }
             throw $e;
         }
         $this->recordCircuitSuccess();
@@ -512,6 +515,9 @@ class Client implements LoggerAwareInterface
                     $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     $exception = $e;
                 }
+            } catch (TimeoutError $e) {
+                // Do not retry timeout errors because they are likely to timeout on all servers
+                $exception = $e;
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $requestAlreadySent = true;
@@ -774,7 +780,7 @@ class Client implements LoggerAwareInterface
             $this->commitCount = (int) ($responseHeaders['commitCount'] ?? 0);
         }
 
-        // If a command times out, we don't want to retry it every because it will probably time out in all servers
+        // If a command times out, we don't want to retry it, as it will likely time out on all servers.
         if (str_starts_with($codeLine, '555 Timeout')) {
             throw new TimeoutError("Internal Bedrock command timeout ($codeLine)");
         }

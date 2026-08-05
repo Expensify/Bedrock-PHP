@@ -358,10 +358,7 @@ class Client implements LoggerAwareInterface
         try {
             $response = $this->doCall($method, $headers, $body);
         } catch (BedrockError $e) {
-            // Timeout errors should not trigger the circuit breaker because they are caused by one command timing out
-            if (!($e instanceof TimeoutError)) {
-                $this->recordCircuitFailure();
-            }
+            $this->recordCircuitFailure();
             throw $e;
         }
         $this->recordCircuitSuccess();

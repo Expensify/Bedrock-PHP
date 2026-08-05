@@ -363,7 +363,7 @@ class Client implements LoggerAwareInterface
         try {
             $response = $this->doCall($method, $headers, $body);
         } catch (TimeoutError $e) {
-            // A timeout is never retried on another host, so it can never fail against all of them, but it still counts.
+            // A timeout doesn't mark the host as failed, so it records none and could never pass the check below.
             $this->recordCircuitFailure(true);
             throw $e;
         } catch (BedrockError $e) {

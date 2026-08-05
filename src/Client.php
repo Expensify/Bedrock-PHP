@@ -362,6 +362,10 @@ class Client implements LoggerAwareInterface
         }
         try {
             $response = $this->doCall($method, $headers, $body);
+        } catch (TimeoutError $e) {
+            // A timeout is never retried on another host, so it can never fail against all of them, but it still counts.
+            $this->recordCircuitFailure(true);
+            throw $e;
         } catch (BedrockError $e) {
             $this->recordCircuitFailure();
             throw $e;
@@ -950,13 +954,13 @@ class Client implements LoggerAwareInterface
      * the breaker never closes early) and the '-fails' count survives a burst, but short enough to
      * self-clean once traffic goes quiet.
      */
-    private function recordCircuitFailure(): void
+    private function recordCircuitFailure(bool $skipHostCheck = false): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        // A cluster only loses its leader once 3 nodes are unreachable; below that, blacklisting routes around them.
-        if (count($this->failedHosts) < min(3, count($this->mainHostConfigs + $this->failoverHostConfigs))) {
+        // While any host can still serve the call, blacklisting the bad ones is enough.
+        if (!$skipHostCheck && count($this->failedHosts) < count($this->failoverHostConfigs ?: $this->mainHostConfigs)) {
             return;
         }
         $ttl = $this->circuitBreakerCooldown + 60;

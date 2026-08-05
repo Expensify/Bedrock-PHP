@@ -958,8 +958,8 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        // A single failed host is already handled by blacklisting it, so it must not trip the whole cluster.
-        if (count($this->failedHosts) < min(2, count($this->mainHostConfigs + $this->failoverHostConfigs))) {
+        // Blacklisting handles fewer, and the cluster only loses its leader once 3 nodes are unreachable.
+        if (count($this->failedHosts) < min(3, count($this->mainHostConfigs + $this->failoverHostConfigs))) {
             return;
         }
         $ttl = $this->circuitBreakerCooldown + 60;

@@ -146,6 +146,11 @@ class Client implements LoggerAwareInterface
     private $circuitBreakerCooldown;
 
     /**
+     * @var array<string, true> Hosts the call in progress has failed against.
+     */
+    private $failedHosts = [];
+
+    /**
      * @var bool Set this to true to add a `mockRequest` header to all outgoing requests.
      */
     private $mockRequests;
@@ -442,6 +447,7 @@ class Client implements LoggerAwareInterface
         $rawRequest .= $body;
 
         $response = null;
+        $this->failedHosts = [];
         $preferredHost = null;
         if (isset($headers['host'])) {
             $preferredHost = $headers['host'];
@@ -889,6 +895,7 @@ class Client implements LoggerAwareInterface
      */
     private function markHostAsFailed(string $host)
     {
+        $this->failedHosts[$host] = true;
         if (!$this->maxBlackListTimeout) {
             return;
         }
@@ -949,6 +956,10 @@ class Client implements LoggerAwareInterface
     private function recordCircuitFailure(): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
+            return;
+        }
+        // A single failed host is already handled by blacklisting it, so it must not trip the whole cluster.
+        if (count($this->failedHosts) < min(2, count($this->mainHostConfigs + $this->failoverHostConfigs))) {
             return;
         }
         $ttl = $this->circuitBreakerCooldown + 60;

@@ -958,7 +958,7 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        // Blacklisting handles fewer, and the cluster only loses its leader once 3 nodes are unreachable.
+        // A cluster only loses its leader once 3 nodes are unreachable; below that, blacklisting routes around them.
         if (count($this->failedHosts) < min(3, count($this->mainHostConfigs + $this->failoverHostConfigs))) {
             return;
         }

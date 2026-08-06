@@ -608,14 +608,22 @@ class Client implements LoggerAwareInterface
             if ($socketErrorCode === 115) {
                 $this->logger->debug('Bedrock\Client - socket_connect returned error 115, waiting for connection to complete.', ['host' => $host]);
 
-                // Wait for the socket to be ready for writing after EINPROGRESS
-                $write = [$this->socket];
-                $read = [];
-                $except = [];
-                $selectResult = socket_select($read, $write, $except, $this->connectionTimeout, $this->connectionTimeoutMicroseconds);
+                // Wait for the socket to be ready for writing after EINPROGRESS, retrying if a signal interrupts the
+                // wait (EINTR), which says nothing about the health of the host. The deadline bounds those retries.
+                $deadline = microtime(true) + $this->connectionTimeout + $this->connectionTimeoutMicroseconds / 1000000;
+                do {
+                    $write = [$this->socket];
+                    $read = [];
+                    $except = [];
+                    $secondsLeft = max(0, $deadline - microtime(true));
+                    $selectResult = @socket_select($read, $write, $except, (int) $secondsLeft, (int) (($secondsLeft - (int) $secondsLeft) * 1000000));
+
+                    // socket_select() sets the global socket error, not the error of any individual socket.
+                    $wasInterrupted = $selectResult === false && socket_last_error() === SOCKET_EINTR;
+                } while ($wasInterrupted && $secondsLeft > 0);
 
                 if ($selectResult === false) {
-                    $socketError = socket_strerror(socket_last_error($this->socket));
+                    $socketError = socket_strerror(socket_last_error());
                     throw new ConnectionFailure("socket_select failed after EINPROGRESS for $host:$port. Error: $socketError");
                 } elseif ($selectResult === 0) {
                     throw new ConnectionFailure("Socket not ready for writing within timeout after EINPROGRESS for $host:$port");

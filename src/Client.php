@@ -363,7 +363,8 @@ class Client implements LoggerAwareInterface
         try {
             $response = $this->doCall($method, $headers, $body);
         } catch (TimeoutError $e) {
-            // A timeout doesn't mark the host as failed, so it records none and could never pass the check below.
+            // When a timeout happens, we no longer mark the host as failed,
+            // but if all hosts are timing out, for the sake of circuit breaking, we want to keep track of this
             $this->recordCircuitFailure(true);
             throw $e;
         } catch (BedrockError $e) {
@@ -959,7 +960,7 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        // While any host can still serve the call, blacklisting the bad ones is enough.
+        // The blacklist already steers us away from the hosts that failed, so while any host is left we don't count it here.
         if (!$skipHostCheck && count($this->failedHosts) < count($this->failoverHostConfigs ?: $this->mainHostConfigs)) {
             return;
         }

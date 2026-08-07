@@ -363,7 +363,7 @@ class Client implements LoggerAwareInterface
         try {
             $response = $this->doCall($method, $headers, $body);
         } catch (TimeoutError $e) {
-            // When a timeout happens, we don't retry the request, so we don't mark the host as failed. 
+            // When a timeout happens, we don't retry the request, so we don't mark the host as failed.
             // However, if all hosts are timing out, we need to trip the circuit breaker.
             $this->recordCircuitFailure(true);
             throw $e;

@@ -960,7 +960,7 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        // The blacklist already steers us away from the hosts that failed, so while any host is left we don't count it here.
+        // Only count this failure toward the circuit-breaker threshold once every host is in the blacklist. Until then, the blacklist will route future requests to a healthy host, so the cluster as a whole isn't down yet.
         if (!$skipHostCheck && count($this->failedHosts) < count($this->failoverHostConfigs ?: $this->mainHostConfigs)) {
             return;
         }

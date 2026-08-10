@@ -17,7 +17,7 @@ class Cache extends Plugin
      * version of that value, if available.
      *
      * @param string $name    Name pattern (using LIKE syntax) to read.
-     * @param string $version (optional) Specific version identifier (ie, a timestamp, counter, name, etc), defaults to the latest
+     * @param ?string $version (optional) Specific version identifier (ie, a timestamp, counter, name, etc), defaults to the latest
      *
      * @return mixed Whatever was saved in the cache
      *
@@ -72,9 +72,9 @@ class Cache extends Plugin
      *
      * @param string $name    Arbitrary string used to uniquely name this value.
      * @param mixed  $value   Raw binary data to associate with this name
-     * @param string $version (optional) Version identifier (eg, a timestamp, counter, name, etc)
+     * @param ?string $version (optional) Version identifier (eg, a timestamp, counter, name, etc)
      */
-    public function write($name, $value, $version = null, array $headers = [])
+    public function write(string $name, mixed $value, ?string $version = null, array $headers = [])
     {
         // By default, unless specified otherwise, we want writes to be async
         $headers = array_merge([
@@ -97,11 +97,9 @@ class Cache extends Plugin
     /**
      * Call the bedrock cache methods, and handle connection error.
      *
-     * @param string $body
-     *
      * @return mixed|null
      */
-    private function call(string $method, array $headers, $body = '')
+    private function call(string $method, array $headers, string $body = '')
     {
         // Both writing to and reading from the cache are always idempotent operations
         $headers['idempotent'] = true;

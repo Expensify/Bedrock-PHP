@@ -26,11 +26,11 @@ class Cache extends Plugin
     public function read($name, $version = null)
     {
         $fullName = ($version ? "$name/$version" : "$name/*");
-        $this->client->getLogger()->info("BedrockCache read", [
+        $this->client->getLogger()->info('BedrockCache read', [
             'key' => $name,
             'version' => $version,
         ]);
-        $response = $this->call("ReadCache", ["name" => $fullName]);
+        $response = $this->call('ReadCache', ['name' => $fullName]);
         if (!is_array($response) || $response['code'] === 404) {
             throw new NotFound('The cache entry could not be found', 666);
         }
@@ -39,14 +39,8 @@ class Cache extends Plugin
 
     /**
      * Reads from the cache, but if it does not find the entry, it returns the passed default.
-     *
-     * @param string $name
-     * @param mixed  $default
-     * @param string $version
-     *
-     * @return mixed
      */
-    public function readWithDefault($name, $default, $version = null)
+    public function readWithDefault(string $name, mixed $default, string $version = null): mixed
     {
         try {
             return $this->read($name, $version);
@@ -57,14 +51,8 @@ class Cache extends Plugin
 
     /**
      * Gets data from a cache, if it is not present, it computes it by calling $computeFunction and saves the result in the cache.
-     *
-     * @param string      $name
-     * @param null|string $version
-     * @param callable    $computeFunction
-     *
-     * @return array
      */
-    public function get(string $name, ?string $version, callable $computeFunction)
+    public function get(string $name, ?string $version, callable $computeFunction): array
     {
         try {
             return $this->read($name, $version);
@@ -96,14 +84,14 @@ class Cache extends Plugin
         // If we have a version, invalidate previous versions
         if ($version) {
             // Invalidate all other versions of this name before setting
-            $headers["invalidateName"] = "$name/*";
-            $headers["name"] = "$name/$version";
+            $headers['invalidateName'] = "$name/*";
+            $headers['name'] = "$name/$version";
         } else {
             // Just set this name
-            $headers["name"] = "$name/";
+            $headers['name'] = "$name/";
         }
 
-        $this->call("WriteCache", $headers, json_encode($value));
+        $this->call('WriteCache', $headers, json_encode($value));
     }
 
     /**

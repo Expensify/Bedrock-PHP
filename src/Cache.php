@@ -23,7 +23,7 @@ class Cache extends Plugin
      *
      * @throws NotFound
      */
-    public function read($name, $version = null)
+    public function read(string $name, ?string $version = null)
     {
         $fullName = ($version ? "$name/$version" : "$name/*");
         $this->client->getLogger()->info('BedrockCache read', [

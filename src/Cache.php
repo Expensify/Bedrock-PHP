@@ -16,7 +16,7 @@ class Cache extends Plugin
      * Reads a named value from the cache.  Can optionally request a specific
      * version of that value, if available.
      *
-     * @param string $name    Name pattern (using LIKE syntax) to read.
+     * @param string  $name    Name pattern (using LIKE syntax) to read.
      * @param ?string $version (optional) Specific version identifier (ie, a timestamp, counter, name, etc), defaults to the latest
      *
      * @return mixed Whatever was saved in the cache
@@ -70,8 +70,8 @@ class Cache extends Plugin
      * successfully queued with the server, but before the write itself has
      * completed).
      *
-     * @param string $name    Arbitrary string used to uniquely name this value.
-     * @param mixed  $value   Raw binary data to associate with this name
+     * @param string  $name    Arbitrary string used to uniquely name this value.
+     * @param mixed   $value   Raw binary data to associate with this name
      * @param ?string $version (optional) Version identifier (eg, a timestamp, counter, name, etc)
      */
     public function write(string $name, mixed $value, ?string $version = null, array $headers = [])

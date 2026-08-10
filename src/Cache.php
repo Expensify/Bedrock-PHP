@@ -40,7 +40,7 @@ class Cache extends Plugin
     /**
      * Reads from the cache, but if it does not find the entry, it returns the passed default.
      */
-    public function readWithDefault(string $name, mixed $default, string $version = null): mixed
+    public function readWithDefault(string $name, mixed $default, ?string $version = null): mixed
     {
         try {
             return $this->read($name, $version);

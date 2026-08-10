@@ -16,22 +16,22 @@ class Cache extends Plugin
      * Reads a named value from the cache.  Can optionally request a specific
      * version of that value, if available.
      *
-     * @param string $name    Name pattern (using LIKE syntax) to read.
-     * @param string $version (optional) Specific version identifier (ie, a timestamp, counter, name, etc), defaults to the latest
+     * @param string  $name    Name pattern (using LIKE syntax) to read.
+     * @param ?string $version (optional) Specific version identifier (ie, a timestamp, counter, name, etc), defaults to the latest
      *
      * @return mixed Whatever was saved in the cache
      *
      * @throws NotFound
      */
-    public function read($name, $version = null)
+    public function read(string $name, ?string $version = null)
     {
         $fullName = ($version ? "$name/$version" : "$name/*");
-        $this->client->getLogger()->info("BedrockCache read", [
+        $this->client->getLogger()->info('BedrockCache read', [
             'key' => $name,
             'version' => $version,
         ]);
-        $response = $this->call("ReadCache", ["name" => $fullName]);
-        if ($response['code'] === 404) {
+        $response = $this->call('ReadCache', ['name' => $fullName]);
+        if (!is_array($response) || $response['code'] === 404) {
             throw new NotFound('The cache entry could not be found', 666);
         }
         return $response['body'];
@@ -39,14 +39,8 @@ class Cache extends Plugin
 
     /**
      * Reads from the cache, but if it does not find the entry, it returns the passed default.
-     *
-     * @param string $name
-     * @param mixed  $default
-     * @param string $version
-     *
-     * @return mixed
      */
-    public function readWithDefault($name, $default, $version = null)
+    public function readWithDefault(string $name, mixed $default, ?string $version = null): mixed
     {
         try {
             return $this->read($name, $version);
@@ -57,14 +51,8 @@ class Cache extends Plugin
 
     /**
      * Gets data from a cache, if it is not present, it computes it by calling $computeFunction and saves the result in the cache.
-     *
-     * @param string      $name
-     * @param null|string $version
-     * @param callable    $computeFunction
-     *
-     * @return array
      */
-    public function get(string $name, ?string $version, callable $computeFunction)
+    public function get(string $name, ?string $version, callable $computeFunction): array
     {
         try {
             return $this->read($name, $version);
@@ -82,11 +70,11 @@ class Cache extends Plugin
      * successfully queued with the server, but before the write itself has
      * completed).
      *
-     * @param string $name    Arbitrary string used to uniquely name this value.
-     * @param mixed  $value   Raw binary data to associate with this name
-     * @param string $version (optional) Version identifier (eg, a timestamp, counter, name, etc)
+     * @param string  $name    Arbitrary string used to uniquely name this value.
+     * @param mixed   $value   Raw binary data to associate with this name
+     * @param ?string $version (optional) Version identifier (eg, a timestamp, counter, name, etc)
      */
-    public function write($name, $value, $version = null, array $headers = [])
+    public function write(string $name, mixed $value, ?string $version = null, array $headers = [])
     {
         // By default, unless specified otherwise, we want writes to be async
         $headers = array_merge([
@@ -96,24 +84,22 @@ class Cache extends Plugin
         // If we have a version, invalidate previous versions
         if ($version) {
             // Invalidate all other versions of this name before setting
-            $headers["invalidateName"] = "$name/*";
-            $headers["name"] = "$name/$version";
+            $headers['invalidateName'] = "$name/*";
+            $headers['name'] = "$name/$version";
         } else {
             // Just set this name
-            $headers["name"] = "$name/";
+            $headers['name'] = "$name/";
         }
 
-        $this->call("WriteCache", $headers, json_encode($value));
+        $this->call('WriteCache', $headers, json_encode($value));
     }
 
     /**
      * Call the bedrock cache methods, and handle connection error.
      *
-     * @param string $body
-     *
      * @return mixed|null
      */
-    private function call(string $method, array $headers, $body = '')
+    private function call(string $method, array $headers, string $body = '')
     {
         // Both writing to and reading from the cache are always idempotent operations
         $headers['idempotent'] = true;

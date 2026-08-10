@@ -31,7 +31,7 @@ class Cache extends Plugin
             'version' => $version,
         ]);
         $response = $this->call("ReadCache", ["name" => $fullName]);
-        if ($response['code'] === 404) {
+        if (!is_array($response) || $response['code'] === 404) {
             throw new NotFound('The cache entry could not be found', 666);
         }
         return $response['body'];

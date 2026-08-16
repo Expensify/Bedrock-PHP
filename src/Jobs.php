@@ -443,7 +443,8 @@ class Jobs extends Plugin
      *         . lastRun - timestamp it was last run
      *         . repeat - recurring description
      *         . data - JSON data associated with this job.
-     *         . enqueueVersion - version to echo when finishing, retrying, or failing an opted-in unique job
+     *         . enqueueVersion - latest enqueue version for an opted-in unique job. This value is for status only.
+     *           Worker completion requires the version from the GetJob or GetJobs dequeue response.
      *
      * @param int $jobID
      *

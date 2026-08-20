@@ -127,11 +127,6 @@ class Client implements LoggerAwareInterface
     private $stats;
 
     /**
-     * @var string The bedrock write consistency we want to use.
-     */
-    private $writeConsistency;
-
-    /**
      * @var int When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      */
     private $maxBlackListTimeout;
@@ -181,7 +176,6 @@ class Client implements LoggerAwareInterface
      *                      int|null             bedrockTimeout      Timeout to use for bedrock commands
      *                      LoggerInterface|null logger              Class to use for logging
      *                      StatsInterface|null  stats               Class to use for statistics tracking
-     *                      string|null          writeConsistency    The bedrock write consistency we want to use
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      *                      int|null             commandPriority     The priority to send the commands with
      *                      string|null          logParam            Extra data to add to the bedrock logs
@@ -203,7 +197,6 @@ class Client implements LoggerAwareInterface
         $this->bedrockTimeout = $config['bedrockTimeout'];
         $this->logger = $config['logger'];
         $this->stats = $config['stats'];
-        $this->writeConsistency = $config['writeConsistency'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
         $this->circuitBreakerThreshold = $config['circuitBreakerThreshold'];
         $this->circuitBreakerCooldown = $config['circuitBreakerCooldown'];
@@ -281,7 +274,6 @@ class Client implements LoggerAwareInterface
             'bedrockTimeout' => 110,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
-            'writeConsistency' => 'ASYNC',
             'maxBlackListTimeout' => 1,
             'circuitBreakerThreshold' => 10,
             'circuitBreakerCooldown' => 10,
@@ -393,11 +385,6 @@ class Client implements LoggerAwareInterface
             $headers['requestID'] = $GLOBALS['REQUEST_ID'];
         }
         $headers['lastIP'] = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? null;
-
-        // Set the write consistency
-        if ($this->writeConsistency) {
-            $headers['writeConsistency'] = $this->writeConsistency;
-        }
 
         // Add mock request header if set.
         if ($this->mockRequests) {

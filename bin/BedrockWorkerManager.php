@@ -322,7 +322,8 @@ try {
                 $job['name'] = $jobParts[0];
                 $workerName = explode('/', $job['name'])[1];
                 $workerFilename = $workerPath."/$workerName.php";
-                $enqueueVersion = isset($job['enqueueVersion']) ? (int) $job['enqueueVersion'] : null;
+                // Preserve the dequeued data so Bedrock can detect changes made while the worker is running.
+                $expectedData = (array) $job['data'];
                 $stats->timer('bedrockJob.lateBy.'.$job['name'], (time() - strtotime($job['nextRun'])) * 1000);
                 if (file_exists($workerFilename)) {
                     // The file seems to exist -- fork it so we can run it.
@@ -397,7 +398,7 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $enqueueVersion, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats, $jobStartTime) {
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $expectedData, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats, $jobStartTime) {
                             $worker = new $workerName($bedrock, $job);
 
                             // Open the DB connection after the fork in the child process.
@@ -421,7 +422,7 @@ try {
                                 }
 
                                 try {
-                                    $jobs->finishJob((int) $job['jobID'], $worker->getData(), $enqueueVersion);
+                                    $jobs->finishJob((int) $job['jobID'], $worker->getData(), $expectedData);
                                 } catch (DoesNotExist $e) {
                                     // Job does not exist, but we know it had to exist because we were running it, so
                                     // we assume this is happening because we retried the command in a different server
@@ -448,7 +449,7 @@ try {
                                     'exception' => $e,
                                 ]);
                                 try {
-                                    $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun(), null, $e->getIgnoreRepeat(), $enqueueVersion);
+                                    $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun(), null, $e->getIgnoreRepeat(), $expectedData);
                                 } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
@@ -464,7 +465,7 @@ try {
                                 ]);
                                 // Worker had a fatal error -- mark as failed.
                                 try {
-                                    $jobs->failJob((int) $job['jobID'], $enqueueVersion);
+                                    $jobs->failJob((int) $job['jobID'], $expectedData);
                                 } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
@@ -499,7 +500,7 @@ try {
                 } else {
                     // No worker for this job
                     $logger->warning('No worker found, ignoring', ['jobName' => $job['name']]);
-                    $jobs->failJob((int) $job['jobID'], $enqueueVersion);
+                    $jobs->failJob((int) $job['jobID'], $expectedData);
                 }
             }
         } elseif ($response['code'] == 303) {

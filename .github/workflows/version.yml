@@ -30,7 +30,7 @@ jobs:
     - name: Get next version
       run: |
         set -euo pipefail
-        LATEST_VERSION="$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+        LATEST_VERSION="$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
         if [ -z "$LATEST_VERSION" ]; then
           echo "Found no version tag to increment."
           exit 1
@@ -40,7 +40,7 @@ jobs:
         MINOR="${MINOR%%.*}"
         PATCH="${LATEST_VERSION##*.}"
         echo "Latest version: $LATEST_VERSION"
-        echo "NEW_VERSION=$MAJOR.$MINOR.$((PATCH + 1))" >> "$GITHUB_ENV"
+        echo "NEW_VERSION=$MAJOR.$MINOR.$((10#$PATCH + 1))" >> "$GITHUB_ENV"
 
     - name: Tag new version
       run: |

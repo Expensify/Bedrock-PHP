@@ -326,12 +326,13 @@ class Jobs extends Plugin
      * Marks a job as finished, which causes it to repeat if requested.
      *
      * @param int        $jobID
-     * @param array      $data         (optional)
-     * @param array|null $expectedData (optional) Data returned when the job was dequeued
+     * @param array      $data           (optional)
+     * @param array|null $expectedData   (optional) Data returned when the job was dequeued
+     * @param int|null   $dequeueVersion (optional) Attempt version returned when the job was dequeued
      *
      * @return array
      */
-    public function finishJob($jobID, $data = null, ?array $expectedData = null)
+    public function finishJob($jobID, $data = null, ?array $expectedData = null, ?int $dequeueVersion = null)
     {
         return $this->call(
             'FinishJob',
@@ -340,6 +341,7 @@ class Jobs extends Plugin
                 'data' => $data,
                 'idempotent' => true,
                 'expectedData' => $expectedData,
+                'dequeueVersion' => $dequeueVersion,
             ]
         );
     }
@@ -379,11 +381,12 @@ class Jobs extends Plugin
      * Mark a job as failed.
      *
      * @param int        $jobID
-     * @param array|null $expectedData (optional) Data returned when the job was dequeued
+     * @param array|null $expectedData   (optional) Data returned when the job was dequeued
+     * @param int|null   $dequeueVersion (optional) Attempt version returned when the job was dequeued
      *
      * @return array
      */
-    public function failJob($jobID, ?array $expectedData = null)
+    public function failJob($jobID, ?array $expectedData = null, ?int $dequeueVersion = null)
     {
         return $this->call(
             'FailJob',
@@ -391,6 +394,7 @@ class Jobs extends Plugin
                 'jobID' => $jobID,
                 'idempotent' => true,
                 'expectedData' => $expectedData,
+                'dequeueVersion' => $dequeueVersion,
             ]
         );
     }
@@ -398,9 +402,10 @@ class Jobs extends Plugin
     /**
      * Retry a job. Job must be in a RUNNING state to be able to be retried.
      *
-     * @param array|null $expectedData (optional) Data returned when the job was dequeued
+     * @param array|null $expectedData   (optional) Data returned when the job was dequeued
+     * @param int|null   $dequeueVersion (optional) Attempt version returned when the job was dequeued
      */
-    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, ?array $expectedData = null): array
+    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, ?array $expectedData = null, ?int $dequeueVersion = null): array
     {
         return $this->call(
             'RetryJob',
@@ -414,6 +419,7 @@ class Jobs extends Plugin
                 'jobPriority' => $priority,
                 'ignoreRepeat' => $ignoreRepeat,
                 'expectedData' => $expectedData,
+                'dequeueVersion' => $dequeueVersion,
             ]
         );
     }

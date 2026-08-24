@@ -137,9 +137,24 @@ class Client implements LoggerAwareInterface
     private $maxBlackListTimeout;
 
     /**
-     * @var int Consecutive cluster-unreachable failures before the circuit breaker opens. 0 disables it.
+     * @var int Minimum calls in the window before the failure rate is evaluated. 0 disables the breaker.
      */
     private $circuitBreakerThreshold;
+
+    /**
+     * @var float Share of the calls in the window that must fail before the breaker opens.
+     */
+    private $circuitBreakerFailureRate;
+
+    /**
+     * @var int Seconds covered by a single counter slice.
+     */
+    private $circuitBreakerSliceSeconds;
+
+    /**
+     * @var int Number of slices summed to form the window.
+     */
+    private $circuitBreakerWindowSlices;
 
     /**
      * @var int Seconds the circuit breaker stays open (failing fast) once tripped.
@@ -184,7 +199,10 @@ class Client implements LoggerAwareInterface
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      *                      int|null             commandPriority     The priority to send the commands with
      *                      string|null          logParam            Extra data to add to the bedrock logs
-     *                      int                  circuitBreakerThreshold Cluster-unreachable failures before the breaker opens (0 disables)
+     *                      int                  circuitBreakerThreshold Minimum calls in the window before the rate is evaluated (0 disables)
+     *                      float                circuitBreakerFailureRate Share of the window that must fail before the breaker opens
+     *                      int                  circuitBreakerSliceSeconds Seconds covered by a single counter slice
+     *                      int                  circuitBreakerWindowSlices Number of slices summed to form the window
      *                      int                  circuitBreakerCooldown  Seconds the breaker stays open once tripped
      *
      * @throws BedrockError
@@ -204,6 +222,9 @@ class Client implements LoggerAwareInterface
         $this->stats = $config['stats'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
         $this->circuitBreakerThreshold = $config['circuitBreakerThreshold'];
+        $this->circuitBreakerFailureRate = $config['circuitBreakerFailureRate'];
+        $this->circuitBreakerSliceSeconds = $config['circuitBreakerSliceSeconds'];
+        $this->circuitBreakerWindowSlices = $config['circuitBreakerWindowSlices'];
         $this->circuitBreakerCooldown = $config['circuitBreakerCooldown'];
         $this->commandPriority = $config['commandPriority'];
         $this->logParam = $config['logParam'];
@@ -280,7 +301,10 @@ class Client implements LoggerAwareInterface
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
             'maxBlackListTimeout' => 1,
-            'circuitBreakerThreshold' => 10,
+            'circuitBreakerThreshold' => 20,
+            'circuitBreakerFailureRate' => 0.5,
+            'circuitBreakerSliceSeconds' => 5,
+            'circuitBreakerWindowSlices' => 6,
             'circuitBreakerCooldown' => 10,
             'commandPriority' => null,
             'logParam' => null,
@@ -922,6 +946,51 @@ class Client implements LoggerAwareInterface
     }
 
     /**
+     * The slice the current second falls into. Counters are kept per slice so that old outcomes leave
+     * the window by expiring, rather than by being reset.
+     */
+    private function breakerSlice(): int
+    {
+        return intdiv(time(), $this->circuitBreakerSliceSeconds);
+    }
+
+    /**
+     * Two extra slices of headroom so a counter is never read after it expires but before it leaves the
+     * window.
+     */
+    private function breakerWindowTtl(): int
+    {
+        return $this->circuitBreakerSliceSeconds * ($this->circuitBreakerWindowSlices + 2);
+    }
+
+    /**
+     * Totals the failures and the overall call count across every slice still inside the window.
+     *
+     * @return array{0: int, 1: int} failures, then total calls
+     */
+    private function breakerWindowCounts(string $bucket): array
+    {
+        $slice = $this->breakerSlice();
+        $failKeys = [];
+        $okKeys = [];
+        for ($i = 0; $i < $this->circuitBreakerWindowSlices; $i++) {
+            $failKeys[] = $this->breakerKey($bucket, 'fail-'.($slice - $i));
+            $okKeys[] = $this->breakerKey($bucket, 'ok-'.($slice - $i));
+        }
+        $values = apcu_fetch(array_merge($failKeys, $okKeys)) ?: [];
+        $failures = 0;
+        $successes = 0;
+        foreach ($failKeys as $key) {
+            $failures += (int) ($values[$key] ?? 0);
+        }
+        foreach ($okKeys as $key) {
+            $successes += (int) ($values[$key] ?? 0);
+        }
+
+        return [$failures, $failures + $successes];
+    }
+
+    /**
      * Returns false when the breaker for this bucket is open, so the caller fails fast instead of
      * attempting a request that is likely to block until it exhausts every host.
      */
@@ -936,23 +1005,24 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Records a cluster-unreachable failure.
+     * Records a failed call and opens the breaker when the window is failing hard enough.
      *
-     * If the breaker is already tripped (the '-open' key exists — i.e. we're in the post-cooldown probe
-     * window), a single failure re-opens it immediately and refreshes that key, so a still-down cluster
-     * stays tripped for the whole outage without having to re-accumulate the threshold. Otherwise the
-     * breaker is closed and we count failures toward the threshold with an atomic apcu_inc (so concurrent
-     * workers can't lose increments).
+     * The counter is an atomic apcu_inc on the current slice, so concurrent workers can't lose
+     * increments. The breaker opens on the failure *rate* across the window rather than on a run of
+     * consecutive failures, so a cluster that still serves some traffic is not enough to hide an
+     * outage in the rest of it.
      *
-     * TTLs are cooldown + 60s: long enough that the '-open' key always outlives its cooldown window (so
-     * the breaker never closes early) and the '-fails' count survives a burst, but short enough to
-     * self-clean once traffic goes quiet.
+     * If the '-open' key is still present the breaker has already tripped, and one more failure re-arms
+     * it for another cooldown so a still-broken cluster stays shut without re-earning the threshold.
      */
     private function recordCircuitFailure(string $bucket): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
+        $incremented = false;
+        apcu_inc($this->breakerKey($bucket, 'fail-'.$this->breakerSlice()), 1, $incremented, $this->breakerWindowTtl());
+
         $ttl = $this->circuitBreakerCooldown + 60;
         $openKey = $this->breakerKey($bucket, 'open');
         if (apcu_fetch($openKey) !== false) {
@@ -960,31 +1030,41 @@ class Client implements LoggerAwareInterface
 
             return;
         }
-        $incremented = false;
-        $failures = apcu_inc($this->breakerKey($bucket, 'fails'), 1, $incremented, $ttl);
-        if ($failures >= $this->circuitBreakerThreshold) {
-            // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
-            if (apcu_add($openKey, time() + $this->circuitBreakerCooldown, $ttl)) {
-                $this->logger->warning('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'bucket' => $bucket, 'cooldown' => $this->circuitBreakerCooldown]);
-            }
+        [$failures, $total] = $this->breakerWindowCounts($bucket);
+        if ($total < $this->circuitBreakerThreshold || $failures / $total < $this->circuitBreakerFailureRate) {
+            return;
+        }
+        // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
+        if (apcu_add($openKey, time() + $this->circuitBreakerCooldown, $ttl)) {
+            $this->logger->warning('Bedrock\Client - Circuit breaker opened', [
+                'clusterName' => $this->clusterName,
+                'bucket' => $bucket,
+                'failures' => $failures,
+                'total' => $total,
+                'cooldown' => $this->circuitBreakerCooldown,
+            ]);
         }
     }
 
     /**
-     * Clears the circuit breaker after a successful call so a recovered cluster resumes immediately.
+     * Records a successful call, which counts toward the window total but never erases the failures in
+     * it. Failures leave the window only by expiring.
      */
     private function recordCircuitSuccess(string $bucket): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        $failsKey = $this->breakerKey($bucket, 'fails');
+        $incremented = false;
+        apcu_inc($this->breakerKey($bucket, 'ok-'.$this->breakerSlice()), 1, $incremented, $this->breakerWindowTtl());
+
+        // Once the cooldown has elapsed the breaker is admitting traffic again, so a success here means
+        // the cluster recovered. Drop the marker rather than let the next failure re-arm it.
         $openKey = $this->breakerKey($bucket, 'open');
-        // Only take the write lock when there is actually state to clear, so a successful call on a
-        // healthy cluster (the vast majority) does cheap reads and no writes.
-        if (apcu_fetch($failsKey) !== false || apcu_fetch($openKey) !== false) {
-            apcu_delete($failsKey);
+        $openUntil = apcu_fetch($openKey);
+        if ($openUntil !== false && $openUntil <= time()) {
             apcu_delete($openKey);
+            $this->logger->warning('Bedrock\Client - Circuit breaker closed', ['clusterName' => $this->clusterName, 'bucket' => $bucket]);
         }
     }
 

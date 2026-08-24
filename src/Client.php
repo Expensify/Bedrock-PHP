@@ -31,9 +31,14 @@ class Client implements LoggerAwareInterface
     public const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
-     * APCu key prefix for the (per-cluster, box-wide) circuit breaker state.
+     * APCu key prefix for the (per-cluster, per-bucket, box-wide) circuit breaker state.
      */
     public const CIRCUIT_BREAKER_CACHE_PREFIX = 'bedrockCircuitBreaker-';
+
+    /**
+     * Bucket used when the caller does not classify the call.
+     */
+    public const CIRCUIT_BREAKER_DEFAULT_BUCKET = 'all';
 
     /**
      * Priorities a command can have.
@@ -329,31 +334,36 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Makes a call to Bedrock, guarded by a per-cluster circuit breaker: once the cluster has been
-     * repeatedly unreachable/unresponsive, calls fail fast instead of each tying up a worker until it
-     * exhausts every host. Any thrown BedrockError (connection failure, read timeout, empty/garbled
-     * response) counts toward tripping the breaker; command-level errors are returned, not thrown, so
-     * they never trip it.
+     * Makes a call to Bedrock, guarded by a circuit breaker: once the cluster has been repeatedly
+     * unreachable/unresponsive, calls fail fast instead of each tying up a worker until it exhausts
+     * every host. Any thrown BedrockError (connection failure, read timeout, empty/garbled response)
+     * counts toward tripping the breaker; command-level errors are returned, not thrown, so they never
+     * trip it.
      *
-     * @param string $method  Request method
-     * @param array  $headers Request headers (optional)
-     * @param string $body    Request body (optional)
+     * Breaker state is tracked per bucket, so a caller that classifies its calls (for example into
+     * writes and reads) gets one breaker per class instead of one shared across all of them.
+     *
+     * @param string      $method        Request method
+     * @param array       $headers       Request headers (optional)
+     * @param string      $body          Request body (optional)
+     * @param string|null $breakerBucket Bucket to account this call against (optional)
      *
      * @return array JSON response
      */
-    public function call($method, $headers = [], $body = '')
+    public function call($method, $headers = [], $body = '', ?string $breakerBucket = null)
     {
-        if (!$this->circuitBreakerAllowsRequest()) {
-            $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName]);
-            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName");
+        $bucket = $breakerBucket ?? self::CIRCUIT_BREAKER_DEFAULT_BUCKET;
+        if (!$this->circuitBreakerAllowsRequest($bucket)) {
+            $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName, 'bucket' => $bucket]);
+            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName ($bucket)");
         }
         try {
             $response = $this->doCall($method, $headers, $body);
         } catch (BedrockError $e) {
-            $this->recordCircuitFailure();
+            $this->recordCircuitFailure($bucket);
             throw $e;
         }
-        $this->recordCircuitSuccess();
+        $this->recordCircuitSuccess($bucket);
 
         return $response;
     }
@@ -904,15 +914,23 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Returns false when the per-cluster circuit breaker is open, so the caller fails fast instead of
+     * Builds the APCu key for one breaker bucket, so buckets never share state.
+     */
+    private function breakerKey(string $bucket, string $suffix): string
+    {
+        return self::CIRCUIT_BREAKER_CACHE_PREFIX."$this->clusterName-$bucket-$suffix";
+    }
+
+    /**
+     * Returns false when the breaker for this bucket is open, so the caller fails fast instead of
      * attempting a request that is likely to block until it exhausts every host.
      */
-    private function circuitBreakerAllowsRequest(): bool
+    private function circuitBreakerAllowsRequest(string $bucket): bool
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return true;
         }
-        $openUntil = apcu_fetch(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open');
+        $openUntil = apcu_fetch($this->breakerKey($bucket, 'open'));
 
         return $openUntil === false || $openUntil <= time();
     }
@@ -930,24 +948,24 @@ class Client implements LoggerAwareInterface
      * the breaker never closes early) and the '-fails' count survives a burst, but short enough to
      * self-clean once traffic goes quiet.
      */
-    private function recordCircuitFailure(): void
+    private function recordCircuitFailure(string $bucket): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
         $ttl = $this->circuitBreakerCooldown + 60;
-        $openKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open';
+        $openKey = $this->breakerKey($bucket, 'open');
         if (apcu_fetch($openKey) !== false) {
             apcu_store($openKey, time() + $this->circuitBreakerCooldown, $ttl);
 
             return;
         }
         $incremented = false;
-        $failures = apcu_inc(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails', 1, $incremented, $ttl);
+        $failures = apcu_inc($this->breakerKey($bucket, 'fails'), 1, $incremented, $ttl);
         if ($failures >= $this->circuitBreakerThreshold) {
             // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
             if (apcu_add($openKey, time() + $this->circuitBreakerCooldown, $ttl)) {
-                $this->logger->warning('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
+                $this->logger->warning('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'bucket' => $bucket, 'cooldown' => $this->circuitBreakerCooldown]);
             }
         }
     }
@@ -955,13 +973,13 @@ class Client implements LoggerAwareInterface
     /**
      * Clears the circuit breaker after a successful call so a recovered cluster resumes immediately.
      */
-    private function recordCircuitSuccess(): void
+    private function recordCircuitSuccess(string $bucket): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        $failsKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails';
-        $openKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open';
+        $failsKey = $this->breakerKey($bucket, 'fails');
+        $openKey = $this->breakerKey($bucket, 'open');
         // Only take the write lock when there is actually state to clear, so a successful call on a
         // healthy cluster (the vast majority) does cheap reads and no writes.
         if (apcu_fetch($failsKey) !== false || apcu_fetch($openKey) !== false) {

@@ -1,10 +1,11 @@
 name: Create new version
 
-# Runs when a pull request is merged into main. It tags the merge commit with
-# the next patch version and comments the released version on the pull request.
+# Runs when a pull request is merged into main, or manually to release a merge
+# that missed its tag. Tags the commit and comments the version on the pull request.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -39,8 +40,8 @@ jobs:
       # v4.1.0
       uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
       with:
-        # The next version is derived from the tags, and nothing reads the tree.
-        fetch-tags: true
+        # 0 fetches all history and tags, which is where the next version comes from.
+        fetch-depth: 0
 
     - name: Get next version
       run: |

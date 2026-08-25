@@ -142,7 +142,8 @@ class Client implements LoggerAwareInterface
     private $circuitBreakerThreshold;
 
     /**
-     * @var int Seconds the circuit breaker stays open (failing fast) once tripped.
+     * @var int Seconds the circuit breaker stays open (failing fast) once tripped. Must be at least 1:
+     *          it is the open marker's TTL, and APCu treats a TTL of 0 as never expiring.
      */
     private $circuitBreakerCooldown;
 
@@ -214,11 +215,6 @@ class Client implements LoggerAwareInterface
         } elseif (isset($_SERVER['HTTP_X_MOCK_REQUEST'])) {
             // otherwise check the http headers and set it
             $this->mockRequests = isset($_SERVER['HTTP_X_MOCK_REQUEST']);
-        }
-
-        // A zero cooldown would store an open marker that never expires, shutting the scope for good.
-        if ($this->circuitBreakerThreshold > 0 && $this->circuitBreakerCooldown < 1) {
-            throw new BedrockError('Circuit breaker cooldown must be at least 1 second');
         }
 
         // Make sure we have at least one host configured
@@ -339,7 +335,7 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Makes a call to Bedrock, guarded by a circuit breaker: once the cluster has been
+     * Makes a call to Bedrock, guarded by a per-scope circuit breaker: once the cluster has been
      * repeatedly unreachable/unresponsive, calls fail fast instead of each tying up a worker until it
      * exhausts every host. Any thrown BedrockError (connection failure, read timeout, empty/garbled
      * response) counts toward tripping the breaker; command-level errors are returned, not thrown, so
@@ -921,8 +917,9 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Builds the APCu key for one breaker scope. '|' cannot appear in a cluster or scope name, so no
-     * two scope/suffix pairs can produce the same key.
+     * Builds the APCu key for one piece of a scope's breaker state: 'consecutive' holds the current run
+     * of failures, 'open' is the trip marker whose presence means the breaker is open. '|' cannot appear
+     * in a cluster or scope name, so no two scope/suffix pairs can produce the same key.
      */
     private function breakerKey(string $scope, string $suffix): string
     {
@@ -968,12 +965,7 @@ class Client implements LoggerAwareInterface
         }
         // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
         if (apcu_add($this->breakerKey($scope, 'open'), time(), $this->circuitBreakerCooldown)) {
-            $this->logger->warning('Bedrock\Client - Circuit breaker opened', [
-                'clusterName' => $this->clusterName,
-                'scope' => $scope,
-                'failures' => $failures,
-                'cooldown' => $this->circuitBreakerCooldown,
-            ]);
+            $this->logger->warning('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'scope' => $scope, 'cooldown' => $this->circuitBreakerCooldown]);
         }
     }
 

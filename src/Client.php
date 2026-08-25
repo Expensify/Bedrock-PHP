@@ -36,11 +36,6 @@ class Client implements LoggerAwareInterface
     public const CIRCUIT_BREAKER_CACHE_PREFIX = 'bedrockCircuitBreaker-';
 
     /**
-     * Bucket used when the caller does not classify the call.
-     */
-    public const CIRCUIT_BREAKER_DEFAULT_BUCKET = 'all';
-
-    /**
      * Priorities a command can have.
      */
     public const PRIORITY_MIN = 0;
@@ -358,13 +353,13 @@ class Client implements LoggerAwareInterface
      * @param string      $method        Request method
      * @param array       $headers       Request headers (optional)
      * @param string      $body          Request body (optional)
-     * @param string|null $breakerBucket Bucket to account this call against (optional)
+     * @param string|null $breakerBucket Bucket to account this call against, 'all' when not given
      *
      * @return array JSON response
      */
     public function call($method, $headers = [], $body = '', ?string $breakerBucket = null)
     {
-        $bucket = $breakerBucket ?? self::CIRCUIT_BREAKER_DEFAULT_BUCKET;
+        $bucket = $breakerBucket ?? 'all';
         if (!$this->circuitBreakerAllowsRequest($bucket)) {
             $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName, 'bucket' => $bucket]);
             throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName ($bucket)");

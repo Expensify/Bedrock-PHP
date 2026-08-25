@@ -29,6 +29,14 @@ jobs:
       with:
         poll-interval-seconds: 10
 
+    - name: Get merged pull request
+      run: |
+        set -uo pipefail
+        PULL="$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+          --jq '([.[] | select(.merge_commit_sha == "${{ github.sha }}")] + .) | .[0] | select(. != null) | "\(.html_url) \(.user.login)"' || true)"
+        echo "PR_URL=${PULL%% *}" >> "$GITHUB_ENV"
+        echo "PR_AUTHOR=${PULL##* }" >> "$GITHUB_ENV"
+
     - name: checkout
       # v4.1.0
       uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
@@ -67,10 +75,8 @@ jobs:
 
     - name: Comment in PR with new version
       run: |
-        set -euo pipefail
-        PR_URL="$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
-          --jq '[.[] | select(.merge_commit_sha == "${{ github.sha }}")] + . | .[0].html_url')"
-        if [ -z "$PR_URL" ]; then
+        set -uo pipefail
+        if [ -z "${PR_URL:-}" ]; then
           echo "Found no pull request for ${{ github.sha }}, so there is nobody to notify."
           exit 0
         fi
@@ -78,7 +84,22 @@ jobs:
 
     - name: Report a failed release
       if: ${{ failure() }}
+      env:
+        CROSS_REPO_TOKEN: ${{ secrets.MELVIN_GH_TOKEN }}
       run: |
-        gh issue create \
-          --title "Release automation failed for ${{ github.sha }}" \
-          --body "The version workflow failed, so main may carry unreleased changes. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        set -uo pipefail
+        # Expensify/Expensify needs a token beyond this repository's GITHUB_TOKEN,
+        # so fall back to a local issue rather than losing the alert.
+        if [ -n "${CROSS_REPO_TOKEN:-}" ]; then
+          ISSUE_REPO=Expensify/Expensify
+          export GH_TOKEN="$CROSS_REPO_TOKEN"
+        else
+          ISSUE_REPO="${{ github.repository }}"
+          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          echo "No cross-repo token available, so filing in $ISSUE_REPO instead."
+        fi
+        TITLE="Bedrock-PHP release automation failed for ${{ github.sha }}"
+        BODY="$(printf 'The version workflow failed, so `main` may carry unreleased changes.\n\nRun: %s/%s/actions/runs/%s\nMerged pull request: %s\n' \
+          "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}" "${PR_URL:-unknown}")"
+        gh issue create --repo "$ISSUE_REPO" --title "$TITLE" --body "$BODY" ${PR_AUTHOR:+--assignee "$PR_AUTHOR"} \
+          || gh issue create --repo "$ISSUE_REPO" --title "$TITLE" --body "$BODY"

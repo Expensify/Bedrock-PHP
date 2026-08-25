@@ -982,9 +982,9 @@ class Client implements LoggerAwareInterface
         }
         // Only take the write lock when there is actually state to clear, so a successful call on a
         // healthy cluster (the vast majority) does cheap reads and no writes.
-        $runKey = $this->breakerKey($scope, 'fails');
-        if (apcu_exists($runKey)) {
-            apcu_delete($runKey);
+        $failsKey = $this->breakerKey($scope, 'fails');
+        if (apcu_exists($failsKey)) {
+            apcu_delete($failsKey);
         }
     }
 

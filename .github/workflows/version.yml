@@ -99,7 +99,7 @@ jobs:
           echo "No cross-repo token available, so filing in $ISSUE_REPO instead."
         fi
         TITLE="Bedrock-PHP release automation failed for ${{ github.sha }}"
-        BODY="$(printf 'The version workflow failed, so `main` may carry unreleased changes.\n\nRun: %s/%s/actions/runs/%s\nMerged pull request: %s\n' \
+        BODY="$(printf 'The version workflow failed, so main may carry unreleased changes.\n\nRun: %s/%s/actions/runs/%s\nMerged pull request: %s\n' \
           "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}" "${PR_URL:-unknown}")"
         gh issue create --repo "$ISSUE_REPO" --title "$TITLE" --body "$BODY" ${PR_AUTHOR:+--assignee "$PR_AUTHOR"} \
           || gh issue create --repo "$ISSUE_REPO" --title "$TITLE" --body "$BODY"

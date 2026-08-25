@@ -63,11 +63,6 @@ class Client implements LoggerAwareInterface
     private static $preloadedCommitCounts = [];
 
     /**
-     * @var bool Whether this process already logged that APCu refused a breaker write.
-     */
-    private static $breakerDegradedLogged = false;
-
-    /**
      * @var ?int The last commit count of the node we talked to. This is used to ensure if we make a subsequent
      *           request to a different node in the same session, that the node waits until it is at least
      *           up to date with the commits as the node we originally queried.
@@ -951,24 +946,13 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        $counted = false;
-        $failures = apcu_inc($this->breakerKey($scope, 'fails'), 1, $counted, $this->circuitBreakerCooldown + 60);
-        if (!$counted) {
-            // A dropped write means the count never advances, so the breaker goes blind while looking
-            // exactly like a healthy one: no trips, no logs.
-            if (!self::$breakerDegradedLogged) {
-                self::$breakerDegradedLogged = true;
-                $this->logger->warning('Bedrock\Client - Circuit breaker cannot count failures, APCu refused a write', ['clusterName' => $this->clusterName, 'scope' => $scope]);
+        $incremented = false;
+        $failures = apcu_inc($this->breakerKey($scope, 'fails'), 1, $incremented, $this->circuitBreakerCooldown + 60);
+        if ($failures >= $this->circuitBreakerThreshold) {
+            // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
+            if (apcu_add($this->breakerKey($scope, 'open'), time(), $this->circuitBreakerCooldown)) {
+                $this->logger->warning('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'scope' => $scope, 'cooldown' => $this->circuitBreakerCooldown]);
             }
-
-            return;
-        }
-        if ($failures < $this->circuitBreakerThreshold) {
-            return;
-        }
-        // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
-        if (apcu_add($this->breakerKey($scope, 'open'), time(), $this->circuitBreakerCooldown)) {
-            $this->logger->warning('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'scope' => $scope, 'cooldown' => $this->circuitBreakerCooldown]);
         }
     }
 

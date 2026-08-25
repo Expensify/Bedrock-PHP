@@ -36,11 +36,17 @@ jobs:
           --jq '([.[] | select(.merge_commit_sha == "${{ github.sha }}")] + .) | .[0].html_url' || true)"
         echo "PR_URL=$PR_URL" >> "$GITHUB_ENV"
 
+    - name: checkout
+      # v4.1.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      with:
+        # 0 fetches all history and tags, which is where the next version comes from.
+        fetch-depth: 0
+
     - name: Get next version
       run: |
         set -euo pipefail
-        LATEST_VERSION="$(gh api --paginate "repos/${{ github.repository }}/tags?per_page=100" --jq '.[].name' \
-          | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -rV | head -1 || true)"
+        LATEST_VERSION="$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
         if [ -z "$LATEST_VERSION" ]; then
           echo "Found no version tag to increment."
           exit 1

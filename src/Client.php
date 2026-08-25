@@ -63,6 +63,11 @@ class Client implements LoggerAwareInterface
     private static $preloadedCommitCounts = [];
 
     /**
+     * @var bool Whether this process already logged that APCu refused a breaker write.
+     */
+    private static $breakerDegradedLogged = false;
+
+    /**
      * @var ?int The last commit count of the node we talked to. This is used to ensure if we make a subsequent
      *           request to a different node in the same session, that the node waits until it is at least
      *           up to date with the commits as the node we originally queried.
@@ -135,11 +140,6 @@ class Client implements LoggerAwareInterface
      * @var int Consecutive failures before the circuit breaker opens. 0 disables it.
      */
     private $circuitBreakerThreshold;
-
-    /**
-     * @var bool Whether this process already logged that APCu refused a breaker write.
-     */
-    private static $breakerDegradedLogged = false;
 
     /**
      * @var int Seconds the circuit breaker stays open (failing fast) once tripped.
@@ -930,26 +930,6 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Adds one to a breaker counter and returns the new total, or null if APCu refused the write. A full
-     * or disabled cache cannot be allowed to look like a quiet one, so a refusal is logged once per
-     * process.
-     */
-    private function breakerCount(string $key, int $ttl): ?int
-    {
-        $success = false;
-        $failures = apcu_inc($key, 1, $success, $ttl);
-        if ($success) {
-            return (int) $failures;
-        }
-        if (!self::$breakerDegradedLogged) {
-            self::$breakerDegradedLogged = true;
-            $this->logger->warning('Bedrock\Client - Circuit breaker cannot record outcomes, APCu refused a write', ['clusterName' => $this->clusterName, 'key' => $key]);
-        }
-
-        return null;
-    }
-
-    /**
      * Returns false when the breaker for this bucket is open, so the caller fails fast instead of
      * attempting a request that is likely to block until it exhausts every host.
      */
@@ -972,8 +952,18 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        $failures = $this->breakerCount($this->breakerKey($bucket, 'consecutive'), $this->circuitBreakerCooldown + 60);
-        if ($failures === null || $failures < $this->circuitBreakerThreshold) {
+        $counted = false;
+        $failures = apcu_inc($this->breakerKey($bucket, 'consecutive'), 1, $counted, $this->circuitBreakerCooldown + 60);
+        if (!$counted) {
+            // A cache that refuses writes must not look like a quiet one, so say so once per process.
+            if (!self::$breakerDegradedLogged) {
+                self::$breakerDegradedLogged = true;
+                $this->logger->warning('Bedrock\Client - Circuit breaker cannot count failures, APCu refused a write', ['clusterName' => $this->clusterName, 'bucket' => $bucket]);
+            }
+
+            return;
+        }
+        if ($failures < $this->circuitBreakerThreshold) {
             return;
         }
         // apcu_add only succeeds for the first worker to trip, so this logs once per open period.

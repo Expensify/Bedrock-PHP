@@ -42,7 +42,7 @@ $check = function (string $name, bool $ok) use (&$results): void {
 $reflect = new ReflectionClass(Client::class);
 $check(
     '0. harness is exercising the working copy of Client',
-    $reflect->getMethod('call')->getNumberOfParameters() === 4 && $reflect->hasMethod('breakerCount')
+    $reflect->getMethod('call')->getNumberOfParameters() === 4 && $reflect->hasMethod('breakerKey')
 );
 
 $invoke = function (Client $client, string $method, ...$args) use ($reflect) {

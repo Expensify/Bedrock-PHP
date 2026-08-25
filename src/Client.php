@@ -31,7 +31,7 @@ class Client implements LoggerAwareInterface
     public const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
-     * APCu key prefix for the (per-cluster, per-bucket, box-wide) circuit breaker state.
+     * APCu key prefix for the (per-cluster, per-scope, box-wide) circuit breaker state.
      */
     public const CIRCUIT_BREAKER_CACHE_PREFIX = 'bedrockCircuitBreaker-';
 
@@ -216,7 +216,7 @@ class Client implements LoggerAwareInterface
             $this->mockRequests = isset($_SERVER['HTTP_X_MOCK_REQUEST']);
         }
 
-        // A zero cooldown would store an open marker that never expires, shutting the bucket for good.
+        // A zero cooldown would store an open marker that never expires, shutting the scope for good.
         if ($this->circuitBreakerThreshold > 0 && $this->circuitBreakerCooldown < 1) {
             throw new BedrockError('Circuit breaker cooldown must be at least 1 second');
         }
@@ -345,32 +345,32 @@ class Client implements LoggerAwareInterface
      * response) counts toward tripping the breaker; command-level errors are returned, not thrown, so
      * they never trip it.
      *
-     * Breaker state is tracked per bucket, so a caller that classifies its calls (for example into
-     * writes and reads) gets one breaker per class instead of one shared across all of them. Keep the
-     * set of bucket names small and fixed: each one counts on its own, so a bucket carrying almost no
-     * traffic will rarely reach the threshold.
+     * Breaker state is tracked per scope, so a caller that classifies its calls (for example into
+     * writes and reads) gets one breaker per class instead of one shared across all of them. A scope is
+     * a namespace shared by every caller that passes the same string, so unrelated applications talking
+     * to the same cluster should not share one.
      *
-     * @param string      $method        Request method
-     * @param array       $headers       Request headers (optional)
-     * @param string      $body          Request body (optional)
-     * @param string|null $breakerBucket Bucket to account this call against, 'all' when not given
+     * @param string      $method       Request method
+     * @param array       $headers      Request headers (optional)
+     * @param string      $body         Request body (optional)
+     * @param string|null $breakerScope Scope to account this call against, 'default' when not given
      *
      * @return array JSON response
      */
-    public function call($method, $headers = [], $body = '', ?string $breakerBucket = null)
+    public function call($method, $headers = [], $body = '', ?string $breakerScope = null)
     {
-        $bucket = $breakerBucket ?? 'all';
-        if (!$this->circuitBreakerAllowsRequest($bucket)) {
-            $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName, 'bucket' => $bucket]);
-            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName ($bucket)");
+        $scope = $breakerScope ?? 'default';
+        if (!$this->circuitBreakerAllowsRequest($scope)) {
+            $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName, 'scope' => $scope]);
+            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName ($scope)");
         }
         try {
             $response = $this->doCall($method, $headers, $body);
         } catch (BedrockError $e) {
-            $this->recordCircuitFailure($bucket);
+            $this->recordCircuitFailure($scope);
             throw $e;
         }
-        $this->recordCircuitSuccess($bucket);
+        $this->recordCircuitSuccess($scope);
 
         return $response;
     }
@@ -921,44 +921,44 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Builds the APCu key for one breaker bucket. '|' cannot appear in a cluster or bucket name, so no
-     * two bucket/suffix pairs can produce the same key.
+     * Builds the APCu key for one breaker scope. '|' cannot appear in a cluster or scope name, so no
+     * two scope/suffix pairs can produce the same key.
      */
-    private function breakerKey(string $bucket, string $suffix): string
+    private function breakerKey(string $scope, string $suffix): string
     {
-        return self::CIRCUIT_BREAKER_CACHE_PREFIX."$this->clusterName|$bucket|$suffix";
+        return self::CIRCUIT_BREAKER_CACHE_PREFIX."$this->clusterName|$scope|$suffix";
     }
 
     /**
-     * Returns false when the breaker for this bucket is open, so the caller fails fast instead of
+     * Returns false when the breaker for this scope is open, so the caller fails fast instead of
      * attempting a request that is likely to block until it exhausts every host.
      */
-    private function circuitBreakerAllowsRequest(string $bucket): bool
+    private function circuitBreakerAllowsRequest(string $scope): bool
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return true;
         }
 
         // The marker's TTL is the cooldown, so its presence alone means the breaker is still open.
-        return !apcu_exists($this->breakerKey($bucket, 'open'));
+        return !apcu_exists($this->breakerKey($scope, 'open'));
     }
 
     /**
-     * Records a failed call and opens this bucket's breaker once enough failures land in a row. The
+     * Records a failed call and opens this scope's breaker once enough failures land in a row. The
      * counter is an atomic apcu_inc, so concurrent workers cannot lose increments.
      */
-    private function recordCircuitFailure(string $bucket): void
+    private function recordCircuitFailure(string $scope): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
         $counted = false;
-        $failures = apcu_inc($this->breakerKey($bucket, 'consecutive'), 1, $counted, $this->circuitBreakerCooldown + 60);
+        $failures = apcu_inc($this->breakerKey($scope, 'consecutive'), 1, $counted, $this->circuitBreakerCooldown + 60);
         if (!$counted) {
             // A cache that refuses writes must not look like a quiet one, so say so once per process.
             if (!self::$breakerDegradedLogged) {
                 self::$breakerDegradedLogged = true;
-                $this->logger->warning('Bedrock\Client - Circuit breaker cannot count failures, APCu refused a write', ['clusterName' => $this->clusterName, 'bucket' => $bucket]);
+                $this->logger->warning('Bedrock\Client - Circuit breaker cannot count failures, APCu refused a write', ['clusterName' => $this->clusterName, 'scope' => $scope]);
             }
 
             return;
@@ -967,10 +967,10 @@ class Client implements LoggerAwareInterface
             return;
         }
         // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
-        if (apcu_add($this->breakerKey($bucket, 'open'), time(), $this->circuitBreakerCooldown)) {
+        if (apcu_add($this->breakerKey($scope, 'open'), time(), $this->circuitBreakerCooldown)) {
             $this->logger->warning('Bedrock\Client - Circuit breaker opened', [
                 'clusterName' => $this->clusterName,
-                'bucket' => $bucket,
+                'scope' => $scope,
                 'failures' => $failures,
                 'cooldown' => $this->circuitBreakerCooldown,
             ]);
@@ -978,16 +978,16 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Records a successful call, which ends this bucket's current run of failures.
+     * Records a successful call, which ends this scope's current run of failures.
      */
-    private function recordCircuitSuccess(string $bucket): void
+    private function recordCircuitSuccess(string $scope): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
         // Only take the write lock when there is actually state to clear, so a successful call on a
         // healthy cluster (the vast majority) does cheap reads and no writes.
-        $runKey = $this->breakerKey($bucket, 'consecutive');
+        $runKey = $this->breakerKey($scope, 'consecutive');
         if (apcu_exists($runKey)) {
             apcu_delete($runKey);
         }

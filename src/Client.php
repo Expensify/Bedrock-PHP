@@ -142,9 +142,19 @@ class Client implements LoggerAwareInterface
     private $circuitBreakerThreshold;
 
     /**
+     * @var bool Whether this process already logged that APCu refused a breaker write.
+     */
+    private static $breakerDegradedLogged = false;
+
+    /**
      * @var float Share of the calls in the window that must fail before the breaker opens.
      */
     private $circuitBreakerFailureRate;
+
+    /**
+     * @var int Consecutive failures that open the breaker regardless of the window. 0 disables it.
+     */
+    private $circuitBreakerConsecutiveFailures;
 
     /**
      * @var int Seconds covered by a single counter slice.
@@ -201,6 +211,7 @@ class Client implements LoggerAwareInterface
      *                      string|null          logParam            Extra data to add to the bedrock logs
      *                      int                  circuitBreakerThreshold Minimum calls in the window before the rate is evaluated (0 disables)
      *                      float                circuitBreakerFailureRate Share of the window that must fail before the breaker opens
+     *                      int                  circuitBreakerConsecutiveFailures Failures in a row that open the breaker regardless of the window (0 disables)
      *                      int                  circuitBreakerSliceSeconds Seconds covered by a single counter slice
      *                      int                  circuitBreakerWindowSlices Number of slices summed to form the window
      *                      int                  circuitBreakerCooldown  Seconds the breaker stays open once tripped
@@ -223,6 +234,7 @@ class Client implements LoggerAwareInterface
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
         $this->circuitBreakerThreshold = $config['circuitBreakerThreshold'];
         $this->circuitBreakerFailureRate = $config['circuitBreakerFailureRate'];
+        $this->circuitBreakerConsecutiveFailures = $config['circuitBreakerConsecutiveFailures'];
         $this->circuitBreakerSliceSeconds = $config['circuitBreakerSliceSeconds'];
         $this->circuitBreakerWindowSlices = $config['circuitBreakerWindowSlices'];
         $this->circuitBreakerCooldown = $config['circuitBreakerCooldown'];
@@ -235,6 +247,20 @@ class Client implements LoggerAwareInterface
         } elseif (isset($_SERVER['HTTP_X_MOCK_REQUEST'])) {
             // otherwise check the http headers and set it
             $this->mockRequests = isset($_SERVER['HTTP_X_MOCK_REQUEST']);
+        }
+
+        // Reject breaker settings here rather than let them divide by zero or build a never-expiring
+        // counter on the request path, where every call would fail.
+        if ($this->circuitBreakerThreshold > 0) {
+            if ($this->circuitBreakerSliceSeconds < 1 || $this->circuitBreakerWindowSlices < 1) {
+                throw new BedrockError('Circuit breaker slice seconds and window slices must each be at least 1');
+            }
+            if ($this->circuitBreakerFailureRate <= 0 || $this->circuitBreakerFailureRate > 1) {
+                throw new BedrockError('Circuit breaker failure rate must be above 0 and at most 1');
+            }
+            if ($this->circuitBreakerCooldown < 1) {
+                throw new BedrockError('Circuit breaker cooldown must be at least 1 second');
+            }
         }
 
         // Make sure we have at least one host configured
@@ -303,6 +329,7 @@ class Client implements LoggerAwareInterface
             'maxBlackListTimeout' => 1,
             'circuitBreakerThreshold' => 20,
             'circuitBreakerFailureRate' => 0.5,
+            'circuitBreakerConsecutiveFailures' => 10,
             'circuitBreakerSliceSeconds' => 5,
             'circuitBreakerWindowSlices' => 6,
             'circuitBreakerCooldown' => 10,
@@ -365,7 +392,9 @@ class Client implements LoggerAwareInterface
      * trip it.
      *
      * Breaker state is tracked per bucket, so a caller that classifies its calls (for example into
-     * writes and reads) gets one breaker per class instead of one shared across all of them.
+     * writes and reads) gets one breaker per class instead of one shared across all of them. Keep the
+     * set of bucket names small and fixed: each one needs enough traffic of its own to reach
+     * circuitBreakerThreshold inside the window, or it can never trip.
      *
      * @param string      $method        Request method
      * @param array       $headers       Request headers (optional)
@@ -938,16 +967,17 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Builds the APCu key for one breaker bucket, so buckets never share state.
+     * Builds the APCu key for one breaker bucket. '|' cannot appear in a cluster or bucket name, so no
+     * two bucket/suffix pairs can produce the same key.
      */
     private function breakerKey(string $bucket, string $suffix): string
     {
-        return self::CIRCUIT_BREAKER_CACHE_PREFIX."$this->clusterName-$bucket-$suffix";
+        return self::CIRCUIT_BREAKER_CACHE_PREFIX."$this->clusterName|$bucket|$suffix";
     }
 
     /**
      * The slice the current second falls into. Counters are kept per slice so that old outcomes leave
-     * the window by expiring, rather than by being reset.
+     * the window by expiring.
      */
     private function breakerSlice(): int
     {
@@ -961,6 +991,25 @@ class Client implements LoggerAwareInterface
     private function breakerWindowTtl(): int
     {
         return $this->circuitBreakerSliceSeconds * ($this->circuitBreakerWindowSlices + 2);
+    }
+
+    /**
+     * Adds one to a breaker counter and reports whether APCu accepted it. A full or disabled cache
+     * cannot be allowed to look like a quiet one, so a refused write is logged once per process.
+     */
+    private function breakerCount(string $key, int $ttl): bool
+    {
+        $success = false;
+        apcu_inc($key, 1, $success, $ttl);
+        if ($success) {
+            return true;
+        }
+        if (!self::$breakerDegradedLogged) {
+            self::$breakerDegradedLogged = true;
+            $this->logger->warning('Bedrock\Client - Circuit breaker cannot record outcomes, APCu refused a write', ['clusterName' => $this->clusterName, 'key' => $key]);
+        }
+
+        return false;
     }
 
     /**
@@ -980,11 +1029,9 @@ class Client implements LoggerAwareInterface
         $values = apcu_fetch(array_merge($failKeys, $okKeys)) ?: [];
         $failures = 0;
         $successes = 0;
-        foreach ($failKeys as $key) {
-            $failures += (int) ($values[$key] ?? 0);
-        }
-        foreach ($okKeys as $key) {
-            $successes += (int) ($values[$key] ?? 0);
+        foreach ($failKeys as $i => $failKey) {
+            $failures += (int) ($values[$failKey] ?? 0);
+            $successes += (int) ($values[$okKeys[$i]] ?? 0);
         }
 
         return [$failures, $failures + $successes];
@@ -999,72 +1046,73 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return true;
         }
-        $openUntil = apcu_fetch($this->breakerKey($bucket, 'open'));
 
-        return $openUntil === false || $openUntil <= time();
+        // The marker's TTL is the cooldown, so its presence alone means the breaker is still open.
+        return !apcu_exists($this->breakerKey($bucket, 'open'));
     }
 
     /**
-     * Records a failed call and opens the breaker when the window is failing hard enough.
+     * Records a failed call and opens the breaker when either trigger fires.
      *
-     * The counter is an atomic apcu_inc on the current slice, so concurrent workers can't lose
-     * increments. The breaker opens on the failure *rate* across the window rather than on a run of
-     * consecutive failures, so a cluster that still serves some traffic is not enough to hide an
-     * outage in the rest of it.
-     *
-     * If the '-open' key is still present the breaker has already tripped, and one more failure re-arms
-     * it for another cooldown so a still-broken cluster stays shut without re-earning the threshold.
+     * Counters are atomic apcu_inc calls, so concurrent workers cannot lose increments. There are two
+     * independent triggers: the failure rate across the window, which catches a bucket that is mostly
+     * broken while still serving some traffic, and a run of consecutive failures, which catches a
+     * bucket that is entirely unreachable before it has accumulated enough calls to measure a rate.
+     * Only the run is reset by a success; the window is not.
      */
     private function recordCircuitFailure(string $bucket): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        $incremented = false;
-        apcu_inc($this->breakerKey($bucket, 'fail-'.$this->breakerSlice()), 1, $incremented, $this->breakerWindowTtl());
+        $this->breakerCount($this->breakerKey($bucket, 'fail-'.$this->breakerSlice()), $this->breakerWindowTtl());
+        $consecutive = 0;
+        if ($this->circuitBreakerConsecutiveFailures > 0) {
+            $success = false;
+            $consecutive = (int) apcu_inc($this->breakerKey($bucket, 'consecutive'), 1, $success, $this->breakerWindowTtl());
+        }
 
-        $ttl = $this->circuitBreakerCooldown + 60;
         $openKey = $this->breakerKey($bucket, 'open');
-        if (apcu_fetch($openKey) !== false) {
-            apcu_store($openKey, time() + $this->circuitBreakerCooldown, $ttl);
-
+        if (apcu_exists($openKey)) {
             return;
         }
         [$failures, $total] = $this->breakerWindowCounts($bucket);
-        if ($total < $this->circuitBreakerThreshold || $failures / $total < $this->circuitBreakerFailureRate) {
+        $rateTripped = $total >= $this->circuitBreakerThreshold && $failures / $total >= $this->circuitBreakerFailureRate;
+        $runTripped = $this->circuitBreakerConsecutiveFailures > 0 && $consecutive >= $this->circuitBreakerConsecutiveFailures;
+        if (!$rateTripped && !$runTripped) {
             return;
         }
-        // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
-        if (apcu_add($openKey, time() + $this->circuitBreakerCooldown, $ttl)) {
+        // apcu_add only succeeds for the first worker to trip, so this logs once per open period.
+        if (apcu_add($openKey, time(), $this->circuitBreakerCooldown)) {
             $this->logger->warning('Bedrock\Client - Circuit breaker opened', [
                 'clusterName' => $this->clusterName,
                 'bucket' => $bucket,
+                'trigger' => $rateTripped ? 'rate' : 'consecutive',
                 'failures' => $failures,
                 'total' => $total,
+                'consecutive' => $consecutive,
                 'cooldown' => $this->circuitBreakerCooldown,
             ]);
         }
     }
 
     /**
-     * Records a successful call, which counts toward the window total but never erases the failures in
-     * it. Failures leave the window only by expiring.
+     * Records a successful call. It counts toward the window total but never erases the failures in it,
+     * and it ends the current run of consecutive failures.
      */
     private function recordCircuitSuccess(string $bucket): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        $incremented = false;
-        apcu_inc($this->breakerKey($bucket, 'ok-'.$this->breakerSlice()), 1, $incremented, $this->breakerWindowTtl());
+        $this->breakerCount($this->breakerKey($bucket, 'ok-'.$this->breakerSlice()), $this->breakerWindowTtl());
 
-        // Once the cooldown has elapsed the breaker is admitting traffic again, so a success here means
-        // the cluster recovered. Drop the marker rather than let the next failure re-arm it.
-        $openKey = $this->breakerKey($bucket, 'open');
-        $openUntil = apcu_fetch($openKey);
-        if ($openUntil !== false && $openUntil <= time()) {
-            apcu_delete($openKey);
-            $this->logger->warning('Bedrock\Client - Circuit breaker closed', ['clusterName' => $this->clusterName, 'bucket' => $bucket]);
+        // Only write when there is a run to clear, so the common case stays a single read.
+        if ($this->circuitBreakerConsecutiveFailures > 0) {
+            $runKey = $this->breakerKey($bucket, 'consecutive');
+            if (apcu_exists($runKey)) {
+                apcu_delete($runKey);
+            }
         }
     }
 

@@ -355,6 +355,8 @@ class Client implements LoggerAwareInterface
      */
     public function call($method, $headers = [], $body = '', ?string $breakerScope = null)
     {
+        // The argument is optional so existing callers keep working, and the key needs a scope segment
+        // either way, so everything that does not classify its calls shares this one breaker.
         $scope = $breakerScope ?? 'default';
         if (!$this->circuitBreakerAllowsRequest($scope)) {
             $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName, 'scope' => $scope]);
@@ -917,9 +919,9 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Builds the APCu key for one piece of a scope's breaker state: 'consecutive' holds the current run
-     * of failures, 'open' is the trip marker whose presence means the breaker is open. '|' cannot appear
-     * in a cluster or scope name, so no two scope/suffix pairs can produce the same key.
+     * Builds the APCu key for one piece of a scope's breaker state: 'fails' holds the current run of
+     * failures, 'open' is the trip marker whose presence means the breaker is open. '|' cannot appear in
+     * a cluster or scope name, so no two scope/suffix pairs can produce the same key.
      */
     private function breakerKey(string $scope, string $suffix): string
     {
@@ -950,9 +952,10 @@ class Client implements LoggerAwareInterface
             return;
         }
         $counted = false;
-        $failures = apcu_inc($this->breakerKey($scope, 'consecutive'), 1, $counted, $this->circuitBreakerCooldown + 60);
+        $failures = apcu_inc($this->breakerKey($scope, 'fails'), 1, $counted, $this->circuitBreakerCooldown + 60);
         if (!$counted) {
-            // A cache that refuses writes must not look like a quiet one, so say so once per process.
+            // A dropped write means the count never advances, so the breaker goes blind while looking
+            // exactly like a healthy one: no trips, no logs.
             if (!self::$breakerDegradedLogged) {
                 self::$breakerDegradedLogged = true;
                 $this->logger->warning('Bedrock\Client - Circuit breaker cannot count failures, APCu refused a write', ['clusterName' => $this->clusterName, 'scope' => $scope]);
@@ -979,7 +982,7 @@ class Client implements LoggerAwareInterface
         }
         // Only take the write lock when there is actually state to clear, so a successful call on a
         // healthy cluster (the vast majority) does cheap reads and no writes.
-        $runKey = $this->breakerKey($scope, 'consecutive');
+        $runKey = $this->breakerKey($scope, 'fails');
         if (apcu_exists($runKey)) {
             apcu_delete($runKey);
         }

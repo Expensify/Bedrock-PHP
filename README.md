@@ -2,11 +2,14 @@
 This is a library to interact with [Bedrock](https://github.com/Expensify/Bedrock)
 
 # Publishing Your Changes
-When you want to publish a new version:
+Merging a pull request into `main` publishes a new version. A workflow tags the
+merge commit with the next patch version and comments that version on the pull
+request. There is nothing to tag by hand.
 
-1. Create a new branch
-1. Commit your changes
-1. Update `/composer.json` to have the new version number and commit those changes as well
-1. Tag your branch with the new version number, for example `git tag 1.0.4`
-1. Push you branch to the remote `git push origin HEAD --tags`
-1. Create a PR and assign it to someone for review
+`composer.json` has no `version` field on purpose. Composer resolves this
+library to the version declared there in preference to the tag name, so the tag
+is the only place a version is recorded.
+
+To pick up a new version, update the `expensify/bedrock-php` constraint in the
+consuming repository, such as Web-Expensify or Web-Secure, and run
+`composer update expensify/bedrock-php`.

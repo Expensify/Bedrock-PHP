@@ -1,0 +1,91 @@
+name: Create new version
+
+# Runs when a pull request is merged into main. It tags the merge commit with
+# the next patch version and comments the released version on the pull request.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+jobs:
+  version:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+    # Waits for earlier runs instead of queueing behind them, because GitHub
+    # keeps only one pending run per concurrency group and cancels the rest.
+    - name: Wait for earlier runs
+      # v2.0.0
+      uses: softprops/turnstyle@8db075d65b19bf94e6e8687b504db69938dc3c65
+      with:
+        poll-interval-seconds: 10
+
+    - name: Get merged pull request
+      run: |
+        set -uo pipefail
+        PR_URL="$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+          --jq '([.[] | select(.merge_commit_sha == "${{ github.sha }}")] + .) | .[0].html_url' || true)"
+        echo "PR_URL=$PR_URL" >> "$GITHUB_ENV"
+
+    - name: checkout
+      # v4.1.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      with:
+        # The next version is derived from the tags, and nothing reads the tree.
+        fetch-tags: true
+
+    - name: Get next version
+      run: |
+        set -euo pipefail
+        LATEST_VERSION="$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
+        if [ -z "$LATEST_VERSION" ]; then
+          echo "Found no version tag to increment."
+          exit 1
+        fi
+        MAJOR="${LATEST_VERSION%%.*}"
+        MINOR="${LATEST_VERSION#*.}"
+        MINOR="${MINOR%%.*}"
+        PATCH="${LATEST_VERSION##*.}"
+        echo "Latest version: $LATEST_VERSION"
+        echo "NEW_VERSION=$MAJOR.$MINOR.$((10#$PATCH + 1))" >> "$GITHUB_ENV"
+
+    - name: Tag new version
+      run: |
+        set -euo pipefail
+        echo "Tagging ${{ github.sha }} as $NEW_VERSION"
+        TAG_SHA="$(gh api --method POST "repos/${{ github.repository }}/git/tags" \
+          --field tag="$NEW_VERSION" \
+          --field message="$NEW_VERSION" \
+          --field object="${{ github.sha }}" \
+          --field type=commit \
+          --jq '.sha')"
+        gh api --method POST "repos/${{ github.repository }}/git/refs" \
+          --field ref="refs/tags/$NEW_VERSION" \
+          --field sha="$TAG_SHA"
+
+    - name: Comment in PR with new version
+      run: |
+        set -uo pipefail
+        if [ -z "${PR_URL:-}" ]; then
+          echo "Found no pull request for ${{ github.sha }}, so there is nobody to notify."
+          exit 0
+        fi
+        gh pr comment "$PR_URL" --body "🚀 Released in version $NEW_VERSION 🚀"
+
+    - name: Report a failed release
+      if: ${{ failure() }}
+      run: |
+        set -uo pipefail
+        if [ -z "${PR_URL:-}" ]; then
+          echo "Found no pull request for ${{ github.sha }}, so there is nobody to notify."
+          exit 0
+        fi
+        gh pr comment "$PR_URL" --body "$(printf '💥 Release automation failed, so main may carry unreleased changes.\n\nRun: %s/%s/actions/runs/%s\n' "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"

@@ -42,9 +42,7 @@ $check = function (string $name, bool $ok) use (&$results): void {
 $reflect = new ReflectionClass(Client::class);
 $check(
     '0. harness is exercising the working copy of Client',
-    $reflect->getMethod('call')->getNumberOfParameters() === 4
-        && $reflect->hasMethod('breakerWindowCounts')
-        && $reflect->hasMethod('breakerCount')
+    $reflect->getMethod('call')->getNumberOfParameters() === 4 && $reflect->hasMethod('breakerCount')
 );
 
 $invoke = function (Client $client, string $method, ...$args) use ($reflect) {
@@ -64,11 +62,7 @@ $makeClient = function (array $overrides = []): Client {
         'connectionTimeoutMicroseconds' => 100000,
         'readTimeout' => 1,
         'maxBlackListTimeout' => 0,
-        'circuitBreakerThreshold' => 20,
-        'circuitBreakerFailureRate' => 0.5,
-        'circuitBreakerConsecutiveFailures' => 10,
-        'circuitBreakerSliceSeconds' => 5,
-        'circuitBreakerWindowSlices' => 6,
+        'circuitBreakerThreshold' => 10,
         'circuitBreakerCooldown' => 10,
     ], $overrides));
 };
@@ -79,130 +73,66 @@ $repeat = function (Client $client, string $method, string $bucket, int $times) 
     }
 };
 
-// Alternating outcomes keep the consecutive-failure run at 1, so only the rate trigger can fire.
-$interleave = function (Client $client, string $bucket, int $successesPerFailure, int $failures) use ($invoke): void {
-    for ($i = 0; $i < $failures; $i++) {
-        for ($j = 0; $j < $successesPerFailure; $j++) {
-            $invoke($client, 'recordCircuitSuccess', $bucket);
-        }
-        $invoke($client, 'recordCircuitFailure', $bucket);
-    }
-};
-
 $allows = function (Client $client, string $bucket) use ($invoke): bool {
     return $invoke($client, 'circuitBreakerAllowsRequest', $bucket) === true;
 };
 
-$rateOnly = ['circuitBreakerConsecutiveFailures' => 0];
-
-// 1: the rate trigger opens a bucket that is half failing, without any run of failures.
+// 1: the threshold, and that a bucket only ever trips itself.
 apcu_clear_cache();
 $client = $makeClient();
-$interleave($client, 'write', 1, 10);
-$check('1. 50% failure rate over 20 calls opens the write bucket', !$allows($client, 'write'));
+$repeat($client, 'recordCircuitFailure', 'write', 9);
+$check('1. 9 consecutive write failures stays closed', $allows($client, 'write'));
+$repeat($client, 'recordCircuitFailure', 'write', 1);
+$check('1. the 10th failure opens the write bucket', !$allows($client, 'write'));
 $check('1. the read bucket is unaffected', $allows($client, 'read'));
 
-// 2: the exact regression behind the 2026-08-19 miss.
+// 2: the exact regression behind the 2026-08-19 miss. Under one shared counter these successes
+// would have wiped the write count before it ever reached the threshold.
 $repeat($client, 'recordCircuitSuccess', 'read', 200);
 $check('2. 200 read successes do not clear the write trip', !$allows($client, 'write'));
 
-// 3: high volume at a low rate must not trip, which is the 2026-08-19 read path.
+// 3: a success within a bucket does end that bucket's run.
 apcu_clear_cache();
 $client = $makeClient();
-$interleave($client, 'read', 20, 10);
-$check('3. 10 failures against 200 successes (4.8%) stays closed', $allows($client, 'read'));
-
-// 4: the sample floor, with the run trigger out of the way.
-apcu_clear_cache();
-$client = $makeClient($rateOnly);
-$repeat($client, 'recordCircuitFailure', 'write', 19);
-$check('4. 19 failures at 100% is under the 20-sample floor, stays closed', $allows($client, 'write'));
-$repeat($client, 'recordCircuitFailure', 'write', 1);
-$check('4. the 20th failure crosses the floor and opens it', !$allows($client, 'write'));
-
-// 5: the rate boundary itself.
-apcu_clear_cache();
-$client = $makeClient($rateOnly);
-$repeat($client, 'recordCircuitSuccess', 'write', 11);
 $repeat($client, 'recordCircuitFailure', 'write', 9);
-$check('5. 9 failures in 20 calls (45%) stays closed', $allows($client, 'write'));
+$repeat($client, 'recordCircuitSuccess', 'write', 1);
+$repeat($client, 'recordCircuitFailure', 'write', 9);
+$check('3. a write success resets the run, so 9 + 1 + 9 stays closed', $allows($client, 'write'));
 
-apcu_clear_cache();
-$client = $makeClient($rateOnly);
-$repeat($client, 'recordCircuitSuccess', 'write', 10);
-$repeat($client, 'recordCircuitFailure', 'write', 10);
-$check('5. 10 failures in 20 calls (50%) opens it', !$allows($client, 'write'));
-
-// 6: the run trigger. This is the pre-existing behaviour that protected the job fleet on 2026-08-19,
-// where the window failure rate only reached 7.93% and the rate trigger would never fire.
+// 4: the known limit of counting a run. A bucket failing steadily but never ten times in a row is
+// invisible to this breaker; catching that needs a windowed failure rate.
 apcu_clear_cache();
 $client = $makeClient();
-$repeat($client, 'recordCircuitFailure', 'all', 9);
-$check('6. 9 consecutive failures stays closed', $allows($client, 'all'));
-$repeat($client, 'recordCircuitFailure', 'all', 1);
-$check('6. 10 consecutive failures open it despite being under the sample floor', !$allows($client, 'all'));
+for ($i = 0; $i < 20; $i++) {
+    $repeat($client, 'recordCircuitSuccess', 'write', 1);
+    $repeat($client, 'recordCircuitFailure', 'write', 9);
+}
+$check('4. a sustained 90% failure rate with no run of 10 stays closed, as designed', $allows($client, 'write'));
 
-// 7: a success ends the run, so a trickle of failures never accumulates into a trip.
-apcu_clear_cache();
-$client = $makeClient();
-$repeat($client, 'recordCircuitFailure', 'all', 9);
-$repeat($client, 'recordCircuitSuccess', 'all', 1);
-$repeat($client, 'recordCircuitFailure', 'all', 9);
-$check('7. a success resets the run, so 9 + 1 + 9 stays closed', $allows($client, 'all'));
-
-// 8: the run trigger is per bucket too.
-apcu_clear_cache();
-$client = $makeClient();
-$repeat($client, 'recordCircuitFailure', 'write', 10);
-$check('8. 10 consecutive write failures open write', !$allows($client, 'write'));
-$check('8. and leave read closed to nobody', $allows($client, 'read'));
-
-// 9: the run trigger can be switched off on its own.
-apcu_clear_cache();
-$client = $makeClient($rateOnly);
-$repeat($client, 'recordCircuitFailure', 'write', 10);
-$check('9. consecutive failures 0 disables the run trigger', $allows($client, 'write'));
-
-// 10: the disable switch Auth::timeQuery() relies on.
+// 5: the disable switch Auth::timeQuery() relies on.
 apcu_clear_cache();
 $client = $makeClient(['circuitBreakerThreshold' => 0]);
 $repeat($client, 'recordCircuitFailure', 'write', 100);
-$check('10. threshold 0 disables the breaker entirely', $allows($client, 'write'));
+$check('5. threshold 0 disables the breaker entirely', $allows($client, 'write'));
 
-// 11: outcomes leave the window by expiring, not by being reset.
-apcu_clear_cache();
-$client = $makeClient(['circuitBreakerSliceSeconds' => 1, 'circuitBreakerWindowSlices' => 2, 'circuitBreakerThreshold' => 5, 'circuitBreakerConsecutiveFailures' => 0]);
-$repeat($client, 'recordCircuitFailure', 'expiry', 4);
-sleep(4);
-$repeat($client, 'recordCircuitFailure', 'expiry', 1);
-$check('11. failures older than the window age out instead of accumulating', $allows($client, 'expiry'));
-
-// 12: the open marker expires on its own once the cooldown passes.
+// 6: the open marker expires on its own once the cooldown passes.
 apcu_clear_cache();
 $client = $makeClient(['circuitBreakerCooldown' => 1]);
 $repeat($client, 'recordCircuitFailure', 'cooldown', 10);
-$check('12. the bucket is open immediately after tripping', !$allows($client, 'cooldown'));
+$check('6. the bucket is open immediately after tripping', !$allows($client, 'cooldown'));
 sleep(2);
-$check('12. the bucket closes itself once the cooldown expires', $allows($client, 'cooldown'));
+$check('6. the bucket closes itself once the cooldown expires', $allows($client, 'cooldown'));
 
-// 13: bad settings are rejected at construction, not on the request path.
-$rejected = 0;
-foreach ([
-    ['circuitBreakerSliceSeconds' => 0],
-    ['circuitBreakerWindowSlices' => 0],
-    ['circuitBreakerFailureRate' => 0],
-    ['circuitBreakerFailureRate' => 1.5],
-    ['circuitBreakerCooldown' => 0],
-] as $bad) {
-    try {
-        $makeClient($bad);
-    } catch (BedrockError $e) {
-        $rejected++;
-    }
+// 7: a zero cooldown would store a marker that never expires, so it is rejected up front.
+$rejected = false;
+try {
+    $makeClient(['circuitBreakerCooldown' => 0]);
+} catch (BedrockError $e) {
+    $rejected = true;
 }
-$check("13. invalid breaker settings throw at construction ($rejected/5)", $rejected === 5);
+$check('7. a zero cooldown throws at construction', $rejected);
 
-// 14: the same behaviour end to end through call(), with real connect failures.
+// 8: the same behaviour end to end through call(), with real connect failures.
 apcu_clear_cache();
 $client = $makeClient();
 $rejectedCalls = 0;
@@ -220,8 +150,8 @@ for ($i = 0; $i < 15; $i++) {
         }
     }
 }
-$check("14. real failures through call() trip the write bucket then fail fast ($attempted attempted, $rejectedCalls rejected)", $rejectedCalls > 0);
-$check('14. the fail-fast message names the bucket', $bucketNamed);
+$check("8. real failures through call() trip the write bucket then fail fast ($attempted attempted, $rejectedCalls rejected)", $rejectedCalls > 0);
+$check('8. the fail-fast message names the bucket', $bucketNamed);
 
 $readRejected = false;
 try {
@@ -229,7 +159,7 @@ try {
 } catch (BedrockError $e) {
     $readRejected = str_contains($e->getMessage(), 'circuit breaker open');
 }
-$check('14. read calls are still admitted while the write bucket is open', !$readRejected);
+$check('8. read calls are still admitted while the write bucket is open', !$readRejected);
 
 $passed = count(array_filter($results));
 $total = count($results);

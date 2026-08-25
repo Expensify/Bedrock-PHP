@@ -137,7 +137,7 @@ class Client implements LoggerAwareInterface
     private $maxBlackListTimeout;
 
     /**
-     * @var int Consecutive failures before the circuit breaker opens. 0 disables it.
+     * @var int Consecutive cluster-unreachable failures before the circuit breaker opens. 0 disables it.
      */
     private $circuitBreakerThreshold;
 
@@ -184,7 +184,7 @@ class Client implements LoggerAwareInterface
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      *                      int|null             commandPriority     The priority to send the commands with
      *                      string|null          logParam            Extra data to add to the bedrock logs
-     *                      int                  circuitBreakerThreshold Consecutive failures before the breaker opens (0 disables)
+     *                      int                  circuitBreakerThreshold Cluster-unreachable failures before the breaker opens (0 disables)
      *                      int                  circuitBreakerCooldown  Seconds the breaker stays open once tripped
      *
      * @throws BedrockError
@@ -339,11 +339,11 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Makes a call to Bedrock, guarded by a circuit breaker: once the cluster has been repeatedly
-     * unreachable/unresponsive, calls fail fast instead of each tying up a worker until it exhausts
-     * every host. Any thrown BedrockError (connection failure, read timeout, empty/garbled response)
-     * counts toward tripping the breaker; command-level errors are returned, not thrown, so they never
-     * trip it.
+     * Makes a call to Bedrock, guarded by a circuit breaker: once the cluster has been
+     * repeatedly unreachable/unresponsive, calls fail fast instead of each tying up a worker until it
+     * exhausts every host. Any thrown BedrockError (connection failure, read timeout, empty/garbled
+     * response) counts toward tripping the breaker; command-level errors are returned, not thrown, so
+     * they never trip it.
      *
      * Breaker state is tracked per bucket, so a caller that classifies its calls (for example into
      * writes and reads) gets one breaker per class instead of one shared across all of them. Keep the
@@ -966,7 +966,7 @@ class Client implements LoggerAwareInterface
         if ($failures < $this->circuitBreakerThreshold) {
             return;
         }
-        // apcu_add only succeeds for the first worker to trip, so this logs once per open period.
+        // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
         if (apcu_add($this->breakerKey($bucket, 'open'), time(), $this->circuitBreakerCooldown)) {
             $this->logger->warning('Bedrock\Client - Circuit breaker opened', [
                 'clusterName' => $this->clusterName,
@@ -985,7 +985,8 @@ class Client implements LoggerAwareInterface
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        // Only write when there is a run to clear, so the common case stays a single read.
+        // Only take the write lock when there is actually state to clear, so a successful call on a
+        // healthy cluster (the vast majority) does cheap reads and no writes.
         $runKey = $this->breakerKey($bucket, 'consecutive');
         if (apcu_exists($runKey)) {
             apcu_delete($runKey);

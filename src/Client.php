@@ -938,8 +938,11 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Records a failed call and opens this scope's breaker once enough failures land in a row. The
-     * counter is an atomic apcu_inc, so concurrent workers cannot lose increments.
+     * Records a cluster-unreachable failure.
+     *
+     * Failures count toward the threshold with an atomic apcu_inc, so concurrent workers can't lose
+     * increments. The '-fails' TTL is cooldown + 60s: long enough to survive a burst, short enough to
+     * self-clean once traffic goes quiet.
      */
     private function recordCircuitFailure(string $scope): void
     {

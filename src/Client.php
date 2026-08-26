@@ -336,23 +336,22 @@ class Client implements LoggerAwareInterface
      * response) counts toward tripping the breaker; command-level errors are returned, not thrown, so
      * they never trip it.
      *
-     * Breaker state is tracked per scope, so a caller that classifies its calls (for example into
-     * writes and reads) gets one breaker per class instead of one shared across all of them. A scope is
-     * a namespace shared by every caller that passes the same string, so unrelated applications talking
-     * to the same cluster should not share one.
+     * Breaker state is tracked per scope, named by a 'breakerScope' header and 'default' without one. A
+     * caller that classifies its calls (for example into writes and reads) gets one breaker per class
+     * instead of one shared across all of them. A scope is a namespace shared by every caller passing
+     * the same name, so unrelated applications talking to the same cluster should not share one.
      *
-     * @param string      $method       Request method
-     * @param array       $headers      Request headers (optional)
-     * @param string      $body         Request body (optional)
-     * @param string|null $breakerScope Scope to account this call against, 'default' when not given
+     * @param string $method  Request method
+     * @param array  $headers Request headers (optional)
+     * @param string $body    Request body (optional)
      *
      * @return array JSON response
      */
-    public function call($method, $headers = [], $body = '', ?string $breakerScope = null)
+    public function call($method, $headers = [], $body = '')
     {
-        // The argument is optional so existing callers keep working, and the key needs a scope segment
-        // either way, so everything that does not classify its calls shares this one breaker.
-        $scope = $breakerScope ?? 'default';
+        // Consumed here the way doCall consumes 'host': the breaker needs it, the server never sees it.
+        $scope = $headers['breakerScope'] ?? 'default';
+        unset($headers['breakerScope']);
         if (!$this->circuitBreakerAllowsRequest($scope)) {
             $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName, 'scope' => $scope]);
             throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName ($scope)");
@@ -915,12 +914,11 @@ class Client implements LoggerAwareInterface
 
     /**
      * Builds the APCu key for one piece of a scope's breaker state: 'fails' holds the current run of
-     * failures, 'open' is the trip marker whose presence means the breaker is open. '|' cannot appear in
-     * a cluster or scope name, so no two scope/suffix pairs can produce the same key.
+     * failures, 'open' is the trip marker whose presence means the breaker is open.
      */
     private function breakerKey(string $scope, string $suffix): string
     {
-        return self::CIRCUIT_BREAKER_CACHE_PREFIX."$this->clusterName|$scope|$suffix";
+        return self::CIRCUIT_BREAKER_CACHE_PREFIX."$this->clusterName-$scope-$suffix";
     }
 
     /**

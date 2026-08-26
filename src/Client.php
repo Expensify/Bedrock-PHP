@@ -336,10 +336,12 @@ class Client implements LoggerAwareInterface
      * response) counts toward tripping the breaker; command-level errors are returned, not thrown, so
      * they never trip it.
      *
-     * Breaker state is tracked per scope, named by a 'breakerScope' header and 'default' without one. A
-     * caller that classifies its calls (for example into writes and reads) gets one breaker per class
-     * instead of one shared across all of them. A scope is a namespace shared by every caller passing
-     * the same name, so unrelated applications talking to the same cluster should not share one.
+     * Breaker state is tracked per scope, so a caller that classifies its calls (for example into
+     * writes and reads) gets one breaker per class instead of one shared across all of them. A scope is
+     * a namespace shared by every caller that passes the same string, so unrelated applications talking
+     * to the same cluster should not share one.
+     *
+     * The scope comes from a 'breakerScope' header, and is 'default' without one.
      *
      * @param string $method  Request method
      * @param array  $headers Request headers (optional)

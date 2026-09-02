@@ -132,9 +132,9 @@ class Jobs extends Plugin
      */
     public function call($method, $headers = [], $body = '')
     {
-        // If we ever pass an empty array as job data, PHP will json encode it as an array, but Bedrock expects an
-        // object and will generate a warning if it receives an array, so we pass an stdClass instead.
-        foreach (['data', 'expectedData'] as $dataHeader) {
+        // PHP encodes an empty array as an array, but Bedrock expects the outgoing worker data and its
+        // expectedWorkerData baseline to be objects. Use an stdClass for either empty value.
+        foreach (['data', 'expectedWorkerData'] as $dataHeader) {
             if (isset($headers[$dataHeader]) && is_array($headers[$dataHeader]) && empty($headers[$dataHeader])) {
                 $headers[$dataHeader] = new stdClass();
             }
@@ -325,13 +325,14 @@ class Jobs extends Plugin
     /**
      * Marks a job as finished, which causes it to repeat if requested.
      *
-     * @param int        $jobID
-     * @param array      $data         (optional)
-     * @param array|null $expectedData (optional) Data returned when the job was dequeued
+     * @param int         $jobID
+     * @param array       $data         (optional)
+     * @param string|null $expectedData (optional) Opaque JSON text obtained by strict-decoding expectedDataBase64.
+     *                                  Pass it unchanged without parsing or re-encoding.
      *
      * @return array
      */
-    public function finishJob($jobID, $data = null, ?array $expectedData = null)
+    public function finishJob($jobID, $data = null, ?string $expectedData = null)
     {
         return $this->call(
             'FinishJob',
@@ -378,12 +379,13 @@ class Jobs extends Plugin
     /**
      * Mark a job as failed.
      *
-     * @param int        $jobID
-     * @param array|null $expectedData (optional) Data returned when the job was dequeued
+     * @param int         $jobID
+     * @param string|null $expectedData (optional) Opaque JSON text obtained by strict-decoding expectedDataBase64.
+     *                                  Pass it unchanged without parsing or re-encoding.
      *
      * @return array
      */
-    public function failJob($jobID, ?array $expectedData = null)
+    public function failJob($jobID, ?string $expectedData = null)
     {
         return $this->call(
             'FailJob',
@@ -398,9 +400,11 @@ class Jobs extends Plugin
     /**
      * Retry a job. Job must be in a RUNNING state to be able to be retried.
      *
-     * @param array|null $expectedData (optional) Data returned when the job was dequeued
+     * @param string|null $expectedData       (optional) Opaque JSON text obtained by strict-decoding
+     *                                        expectedDataBase64. Pass it unchanged without parsing or re-encoding.
+     * @param array|null  $expectedWorkerData (optional) PHP-decoded dequeue data captured before worker mutation
      */
-    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, ?array $expectedData = null): array
+    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, ?string $expectedData = null, ?array $expectedWorkerData = null): array
     {
         return $this->call(
             'RetryJob',
@@ -414,6 +418,7 @@ class Jobs extends Plugin
                 'jobPriority' => $priority,
                 'ignoreRepeat' => $ignoreRepeat,
                 'expectedData' => $expectedData,
+                'expectedWorkerData' => $expectedWorkerData,
             ]
         );
     }

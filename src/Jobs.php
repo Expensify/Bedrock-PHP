@@ -18,6 +18,11 @@ use stdClass;
 class Jobs extends Plugin
 {
     /**
+     * Maximum length accepted by Bedrock for a job name, in bytes.
+     */
+    public const MAX_NAME_LENGTH = 255;
+
+    /**
      * Date format for $firstRun.
      *
      * @var string
@@ -132,6 +137,16 @@ class Jobs extends Plugin
      */
     public function call($method, $headers = [], $body = '')
     {
+        if (($method === 'CreateJob' || $method === 'GetJob') && isset($headers['name']) && is_string($headers['name'])) {
+            $headers['name'] = $this->truncateNameAndLog($headers['name']);
+        } elseif ($method === 'CreateJobs' && isset($headers['jobs']) && is_array($headers['jobs'])) {
+            foreach ($headers['jobs'] as $i => $job) {
+                if (isset($job['name']) && is_string($job['name'])) {
+                    $headers['jobs'][$i]['name'] = $this->truncateNameAndLog($job['name']);
+                }
+            }
+        }
+
         // If we ever pass an empty array as data, PHP will json encode it as an array, but data expects an object and
         // will generate a warning if it receives an array, so we pass an stdClass, which will get encoded as object
         if (isset($headers['data']) && is_array($headers['data']) && empty($headers['data'])) {
@@ -171,6 +186,32 @@ class Jobs extends Plugin
         }
 
         return $response;
+    }
+
+    /**
+     * Bedrock rejects job names over 255 bytes, so collapse the overflow into a deterministic hash. This preserves
+     * the worker prefix and ensures unique jobs continue to dedupe across producers.
+     */
+    public static function truncateName(string $name): string
+    {
+        if (strlen($name) <= self::MAX_NAME_LENGTH) {
+            return $name;
+        }
+
+        return substr($name, 0, self::MAX_NAME_LENGTH - 33).'~'.md5($name);
+    }
+
+    private function truncateNameAndLog(string $name): string
+    {
+        $truncatedName = self::truncateName($name);
+        if ($truncatedName !== $name) {
+            $this->client->getLogger()->notice('Replacing Bedrock job name because it exceeds the maximum length', [
+                'originalJobName' => $name,
+                'replacementJobName' => $truncatedName,
+            ]);
+        }
+
+        return $truncatedName;
     }
 
     /**

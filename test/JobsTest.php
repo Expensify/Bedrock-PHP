@@ -6,7 +6,6 @@ require dirname(__DIR__).'/vendor/autoload.php';
 
 use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Jobs;
-use Expensify\Bedrock\Jobs\ExpectedDataSnapshot;
 use Expensify\Bedrock\Stats\NullStats;
 
 final class RecordingClient extends Client
@@ -16,6 +15,11 @@ final class RecordingClient extends Client
 
     public function __construct()
     {
+    }
+
+    public function getLogger()
+    {
+        return new \Psr\Log\NullLogger();
     }
 
     public function getStats()
@@ -52,67 +56,42 @@ function expectNoVersionHeaders(array $headers, string $method): void
     expectSame(false, array_key_exists('dequeueVersion', $headers), "$method must not send dequeueVersion");
 }
 
-function expectInvalidSnapshot(array $job): void
-{
-    try {
-        ExpectedDataSnapshot::fromJob($job);
-    } catch (UnexpectedValueException $e) {
-        return;
-    }
-
-    throw new RuntimeException('Invalid expectedDataBase64 did not fail closed');
-}
-
-$legacyJob = ['data' => ['value' => 1]];
-expectSame(null, ExpectedDataSnapshot::fromJob($legacyJob), 'A legacy job must not have an expected snapshot');
-
-$exactSnapshots = [
-    '{}',
-    '{"hugeInteger":9007199254740993,"hugeFloat":9007199254740993.0,"nested":{"values":[true,null,{"empty":{}}]}}',
-];
-foreach ($exactSnapshots as $exactSnapshot) {
-    $job = ['expectedDataBase64' => base64_encode($exactSnapshot)];
-    expectSame($exactSnapshot, ExpectedDataSnapshot::fromJob($job), 'The snapshot must remain byte-for-byte exact');
-}
-
-expectInvalidSnapshot(['expectedDataBase64' => '***']);
-expectInvalidSnapshot(['expectedDataBase64' => []]);
-expectInvalidSnapshot(['expectedDataBase64' => '']);
-
-$expectedData = '{"hugeFloat":9007199254740993.0,"empty":{},"nested":{"value":1.2300}}';
+$expectedData = ['activity' => 1, 'timeoutRetries' => 0];
 $client = new RecordingClient();
 $jobs = new Jobs($client);
+$jobs->createJob('ProcessAgentZeroRequest', ['activity' => 1], null, null, true, rerunIfDataChanged: true);
+expectSame(true, $client->headers['rerunIfDataChanged'], 'createJob must send rerunIfDataChanged');
+expectSame(false, array_key_exists('uniqueAsRetry', $client->headers), 'createJob must not send the old parameter');
+
+$jobs->createJobs([['name' => 'ProcessAgentZeroRequest', 'unique' => true, 'rerunIfDataChanged' => true]]);
+expectSame(true, $client->headers['jobs'][0]['rerunIfDataChanged'], 'createJobs must preserve the renamed field');
+
 $otherEmptyHeader = [];
 $jobs->call('TestExpectedData', [
     'data' => [],
     'expectedData' => $expectedData,
-    'expectedWorkerData' => [],
     'otherEmptyHeader' => $otherEmptyHeader,
 ]);
 
-expectSame($expectedData, $client->headers['expectedData'], 'Jobs::call must not parse or re-encode expectedData');
+expectSame($expectedData, $client->headers['expectedData'], 'Jobs::call must retain the original data snapshot');
 expectInstanceOf(stdClass::class, $client->headers['data'], 'Jobs::call must encode empty worker data as an object');
-expectInstanceOf(stdClass::class, $client->headers['expectedWorkerData'], 'Jobs::call must encode an empty worker baseline as an object');
 expectSame($otherEmptyHeader, $client->headers['otherEmptyHeader'], 'Jobs::call must not normalize unrelated empty headers');
 
 $jobs->call('TestEmptyHeaders', [
     'data' => [],
     'expectedData' => [],
-    'expectedWorkerData' => [],
 ]);
-expectSame([], $client->headers['expectedData'], 'Jobs::call must not normalize expectedData');
+expectInstanceOf(stdClass::class, $client->headers['expectedData'], 'Jobs::call must encode an empty snapshot as an object');
 expectInstanceOf(stdClass::class, $client->headers['data'], 'Jobs::call must normalize empty data');
-expectInstanceOf(stdClass::class, $client->headers['expectedWorkerData'], 'Jobs::call must normalize an empty worker baseline');
 
 $jobs->finishJob(7, [], $expectedData);
 expectSame('FinishJob', $client->method, 'finishJob must call FinishJob');
 expectSame($expectedData, $client->headers['expectedData'], 'finishJob must pass expectedData unchanged');
 expectNoVersionHeaders($client->headers, 'finishJob');
 
-$jobs->retryJob(7, 0, [], '', '', null, false, $expectedData, []);
+$jobs->retryJob(7, 0, [], '', '', null, false, $expectedData);
 expectSame('RetryJob', $client->method, 'retryJob must call RetryJob');
 expectSame($expectedData, $client->headers['expectedData'], 'retryJob must pass expectedData unchanged');
-expectInstanceOf(stdClass::class, $client->headers['expectedWorkerData'], 'retryJob must pass the decoded worker baseline');
 expectNoVersionHeaders($client->headers, 'retryJob');
 
 $jobs->failJob(7, $expectedData);

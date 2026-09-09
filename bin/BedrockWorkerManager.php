@@ -8,7 +8,6 @@ use Expensify\Bedrock\Exceptions\Jobs\DoesNotExist;
 use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
 use Expensify\Bedrock\Jobs;
-use Expensify\Bedrock\Jobs\ExpectedDataSnapshot;
 use Expensify\Bedrock\LocalDB;
 
 /*
@@ -323,31 +322,8 @@ try {
                 $job['name'] = $jobParts[0];
                 $workerName = explode('/', $job['name'])[1];
                 $workerFilename = $workerPath."/$workerName.php";
-                try {
-                    // Keep this string opaque so PHP cannot change JSON types or numeric precision.
-                    $expectedData = ExpectedDataSnapshot::fromJob($job);
-                } catch (UnexpectedValueException $e) {
-                    // Do not run the worker or send a terminal request without the concurrency guard.
-                    $logger->error('Cannot run job because Bedrock returned an invalid data snapshot', [
-                        'jobID' => $job['jobID'] ?? null,
-                        'exception' => $e,
-                    ]);
-                    throw $e;
-                }
-                unset($job['expectedDataBase64']);
-                $expectedWorkerData = null;
-                if ($expectedData !== null) {
-                    if (!isset($job['data']) || !is_array($job['data'])) {
-                        $exception = new UnexpectedValueException('Bedrock returned invalid job data with an expectedDataBase64 value');
-                        $logger->error('Cannot run job because Bedrock returned invalid data', [
-                            'jobID' => $job['jobID'] ?? null,
-                            'exception' => $exception,
-                        ]);
-                        throw $exception;
-                    }
-                    // This baseline lets Bedrock distinguish worker edits from PHP's JSON conversion.
-                    $expectedWorkerData = $job['data'];
-                }
+                // Preserve the dequeued data so Bedrock can detect changes made while the worker is running.
+                $expectedData = (array) $job['data'];
                 $stats->timer('bedrockJob.lateBy.'.$job['name'], (time() - strtotime($job['nextRun'])) * 1000);
                 if (file_exists($workerFilename)) {
                     // The file seems to exist -- fork it so we can run it.
@@ -422,7 +398,7 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $expectedData, $expectedWorkerData, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats, $jobStartTime) {
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $expectedData, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats, $jobStartTime) {
                             $worker = new $workerName($bedrock, $job);
 
                             // Open the DB connection after the fork in the child process.
@@ -473,7 +449,7 @@ try {
                                     'exception' => $e,
                                 ]);
                                 try {
-                                    $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun(), null, $e->getIgnoreRepeat(), $expectedData, $expectedWorkerData);
+                                    $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun(), null, $e->getIgnoreRepeat(), $expectedData);
                                 } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server

@@ -71,5 +71,8 @@ jobs:
     - name: Setup Composer Cache
       uses: ./.github/actions/composite/setup-composer-cache
 
+    - name: Run PHP tests
+      run: "php ./test/JobsTest.php"
+
     - name: Test for Style
       run: "php ./ci/style.php"

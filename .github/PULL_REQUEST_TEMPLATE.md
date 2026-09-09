@@ -8,4 +8,4 @@
 
 ## Deployment
 
-- [ ] I followed the steps in the [README](../blob/main/README.md#publishing-your-changes) to ensure this PR is deployed properly
+- [ ] Once this merges and a version is tagged, I will bump the `expensify/bedrock-php` constraint in Web-Expensify and Web-Secure if they need this change.

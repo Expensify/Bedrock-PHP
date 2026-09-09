@@ -31,7 +31,7 @@ class Client implements LoggerAwareInterface
     public const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
 
     /**
-     * APCu key prefix for the (per-cluster, box-wide) circuit breaker state.
+     * APCu key prefix for the (per-cluster, per-scope, box-wide) circuit breaker state.
      */
     public const CIRCUIT_BREAKER_CACHE_PREFIX = 'bedrockCircuitBreaker-';
 
@@ -137,7 +137,8 @@ class Client implements LoggerAwareInterface
     private $circuitBreakerThreshold;
 
     /**
-     * @var int Seconds the circuit breaker stays open (failing fast) once tripped.
+     * @var int Seconds the circuit breaker stays open (failing fast) once tripped. Must be at least 1:
+     *          it is the open marker's TTL, and APCu treats a TTL of 0 as never expiring.
      */
     private $circuitBreakerCooldown;
 
@@ -329,11 +330,18 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Makes a call to Bedrock, guarded by a per-cluster circuit breaker: once the cluster has been
+     * Makes a call to Bedrock, guarded by a per-scope circuit breaker: once the cluster has been
      * repeatedly unreachable/unresponsive, calls fail fast instead of each tying up a worker until it
      * exhausts every host. Any thrown BedrockError (connection failure, read timeout, empty/garbled
      * response) counts toward tripping the breaker; command-level errors are returned, not thrown, so
      * they never trip it.
+     *
+     * Breaker state is tracked per scope, so a caller that classifies its calls (for example into
+     * writes and reads) gets one breaker per class instead of one shared across all of them. A scope is
+     * a namespace shared by every caller that passes the same string, so unrelated applications talking
+     * to the same cluster should not share one.
+     *
+     * The scope comes from a 'breakerScope' header, and is 'default' without one.
      *
      * @param string $method  Request method
      * @param array  $headers Request headers (optional)
@@ -343,17 +351,20 @@ class Client implements LoggerAwareInterface
      */
     public function call($method, $headers = [], $body = '')
     {
-        if (!$this->circuitBreakerAllowsRequest()) {
-            $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName]);
-            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName");
+        // Consumed here the way doCall consumes 'host': the breaker needs it, the server never sees it.
+        $scope = $headers['breakerScope'] ?? 'default';
+        unset($headers['breakerScope']);
+        if (!$this->circuitBreakerAllowsRequest($scope)) {
+            $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName, 'scope' => $scope]);
+            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName ($scope)");
         }
         try {
             $response = $this->doCall($method, $headers, $body);
         } catch (BedrockError $e) {
-            $this->recordCircuitFailure();
+            $this->recordCircuitFailure($scope);
             throw $e;
         }
-        $this->recordCircuitSuccess();
+        $this->recordCircuitSuccess($scope);
 
         return $response;
     }
@@ -904,69 +915,63 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Returns false when the per-cluster circuit breaker is open, so the caller fails fast instead of
+     * Builds the APCu key for one piece of a scope's breaker state: 'fails' holds the current run of
+     * failures, 'open' is the trip marker whose presence means the breaker is open.
+     */
+    private function breakerKey(string $scope, string $suffix): string
+    {
+        return self::CIRCUIT_BREAKER_CACHE_PREFIX."$this->clusterName-$scope-$suffix";
+    }
+
+    /**
+     * Returns false when the breaker for this scope is open, so the caller fails fast instead of
      * attempting a request that is likely to block until it exhausts every host.
      */
-    private function circuitBreakerAllowsRequest(): bool
+    private function circuitBreakerAllowsRequest(string $scope): bool
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return true;
         }
-        $openUntil = apcu_fetch(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open');
 
-        return $openUntil === false || $openUntil <= time();
+        // The marker's TTL is the cooldown, so its presence alone means the breaker is still open.
+        return !apcu_exists($this->breakerKey($scope, 'open'));
     }
 
     /**
      * Records a cluster-unreachable failure.
      *
-     * If the breaker is already tripped (the '-open' key exists — i.e. we're in the post-cooldown probe
-     * window), a single failure re-opens it immediately and refreshes that key, so a still-down cluster
-     * stays tripped for the whole outage without having to re-accumulate the threshold. Otherwise the
-     * breaker is closed and we count failures toward the threshold with an atomic apcu_inc (so concurrent
-     * workers can't lose increments).
-     *
-     * TTLs are cooldown + 60s: long enough that the '-open' key always outlives its cooldown window (so
-     * the breaker never closes early) and the '-fails' count survives a burst, but short enough to
+     * Failures count toward the threshold with an atomic apcu_inc, so concurrent workers can't lose
+     * increments. The '-fails' TTL is cooldown + 60s: long enough to survive a burst, short enough to
      * self-clean once traffic goes quiet.
      */
-    private function recordCircuitFailure(): void
+    private function recordCircuitFailure(string $scope): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        $ttl = $this->circuitBreakerCooldown + 60;
-        $openKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open';
-        if (apcu_fetch($openKey) !== false) {
-            apcu_store($openKey, time() + $this->circuitBreakerCooldown, $ttl);
-
-            return;
-        }
         $incremented = false;
-        $failures = apcu_inc(self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails', 1, $incremented, $ttl);
+        $failures = apcu_inc($this->breakerKey($scope, 'fails'), 1, $incremented, $this->circuitBreakerCooldown + 60);
         if ($failures >= $this->circuitBreakerThreshold) {
             // apcu_add only succeeds for the first worker to cross the threshold, so the trip logs once.
-            if (apcu_add($openKey, time() + $this->circuitBreakerCooldown, $ttl)) {
-                $this->logger->warning('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'cooldown' => $this->circuitBreakerCooldown]);
+            if (apcu_add($this->breakerKey($scope, 'open'), time(), $this->circuitBreakerCooldown)) {
+                $this->logger->warning('Bedrock\Client - Circuit breaker opened', ['clusterName' => $this->clusterName, 'scope' => $scope, 'cooldown' => $this->circuitBreakerCooldown]);
             }
         }
     }
 
     /**
-     * Clears the circuit breaker after a successful call so a recovered cluster resumes immediately.
+     * Records a successful call, which ends this scope's current run of failures.
      */
-    private function recordCircuitSuccess(): void
+    private function recordCircuitSuccess(string $scope): void
     {
         if ($this->circuitBreakerThreshold <= 0 || !$this->isApcuAvailable()) {
             return;
         }
-        $failsKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-fails';
-        $openKey = self::CIRCUIT_BREAKER_CACHE_PREFIX.$this->clusterName.'-open';
         // Only take the write lock when there is actually state to clear, so a successful call on a
         // healthy cluster (the vast majority) does cheap reads and no writes.
-        if (apcu_fetch($failsKey) !== false || apcu_fetch($openKey) !== false) {
+        $failsKey = $this->breakerKey($scope, 'fails');
+        if (apcu_exists($failsKey)) {
             apcu_delete($failsKey);
-            apcu_delete($openKey);
         }
     }
 

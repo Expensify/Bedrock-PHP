@@ -51,6 +51,13 @@ jobs:
         # Set fetch-depth to 100 so that we can compare HEAD with a good chunk of git log history
         fetch-depth: 100
 
+    - name: Check composer.json declares no version
+      run: |
+        if grep -qE '^\s*"version"\s*:' composer.json; then
+          echo "composer.json must not declare a version. The git tag is the only source of truth."
+          exit 1
+        fi
+
     - name: Install PHP and Libraries
       uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2.32.0
       with:
@@ -63,6 +70,9 @@ jobs:
 
     - name: Setup Composer Cache
       uses: ./.github/actions/composite/setup-composer-cache
+
+    - name: Run PHP tests
+      run: "php ./test/JobsTest.php"
 
     - name: Test for Style
       run: "php ./ci/style.php"

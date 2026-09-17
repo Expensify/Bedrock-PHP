@@ -172,6 +172,27 @@ class Jobs extends Plugin
             throw new GenericError("Generic error for job $job");
         }
 
+        if ($method === 'GetJob' || $method === 'GetJobs') {
+            // Decode separately from the worker's associative arrays so snapshots preserve JSON objects and arrays.
+            $rawBody = $response['rawBody'];
+            if (($response['headers']['Content-Encoding'] ?? '') === 'gzip') {
+                $rawBody = gzdecode($rawBody);
+            }
+            $snapshotBody = json_decode($rawBody, false, 512, JSON_THROW_ON_ERROR);
+            $snapshotJobs = $method === 'GetJob' ? [$snapshotBody] : $snapshotBody->jobs;
+            foreach ($snapshotJobs as $index => $snapshotJob) {
+                if (!isset($snapshotJob->data) || !$snapshotJob->data instanceof stdClass) {
+                    throw new GenericError('Cannot preserve the original job data snapshot');
+                }
+                $expectedData = json_encode($snapshotJob->data, JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+                if ($method === 'GetJob') {
+                    $response['body']['expectedData'] = $expectedData;
+                } else {
+                    $response['body']['jobs'][$index]['expectedData'] = $expectedData;
+                }
+            }
+        }
+
         return $response;
     }
 
@@ -188,7 +209,7 @@ class Jobs extends Plugin
      * @param string|null $connection         (optional) Specify 'Connection' header using constants defined in this class.
      * @param string|null $retryAfter         (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
      * @param bool        $overwrite          (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
-     * @param bool        $rerunIfDataChanged (optional) Requeue a running unique job when a newer enqueue updates it
+     * @param bool        $rerunIfDataChanged (optional) Requeue when an enqueue changes a running job's data. Requires unique and overwrite; cannot own child jobs.
      *
      * @return array Containing "jobID"
      */
@@ -270,7 +291,7 @@ class Jobs extends Plugin
      *
      * @param string $name
      *
-     * @return array Containing all job details
+     * @return array Containing all job details, including an immutable expectedData JSON string for finishJob, retryJob, or failJob
      */
     public function getJob($name)
     {
@@ -282,7 +303,7 @@ class Jobs extends Plugin
     /**
      * Waits for a match (if requested) and atomically dequeues $numResults jobs.
      *
-     * @return array Containing all job details
+     * @return array Containing all job details, including an immutable expectedData JSON string per job for finishJob, retryJob, or failJob
      */
     public function getJobs(string $name, int $numResults, array $params = []): array
     {
@@ -325,13 +346,13 @@ class Jobs extends Plugin
     /**
      * Marks a job as finished, which causes it to repeat if requested.
      *
-     * @param int        $jobID
-     * @param array      $data         (optional)
-     * @param array|null $expectedData (optional) Data returned when the job was dequeued
+     * @param int               $jobID
+     * @param array             $data         (optional)
+     * @param array|string|null $expectedData (optional) Immutable expectedData from getJob/getJobs, or the original dequeued data
      *
      * @return array
      */
-    public function finishJob($jobID, $data = null, ?array $expectedData = null)
+    public function finishJob($jobID, $data = null, array|string|null $expectedData = null)
     {
         return $this->call(
             'FinishJob',
@@ -378,12 +399,12 @@ class Jobs extends Plugin
     /**
      * Mark a job as failed.
      *
-     * @param int        $jobID
-     * @param array|null $expectedData (optional) Data returned when the job was dequeued
+     * @param int               $jobID
+     * @param array|string|null $expectedData (optional) Immutable expectedData from getJob/getJobs, or the original dequeued data
      *
      * @return array
      */
-    public function failJob($jobID, ?array $expectedData = null)
+    public function failJob($jobID, array|string|null $expectedData = null)
     {
         return $this->call(
             'FailJob',
@@ -398,9 +419,9 @@ class Jobs extends Plugin
     /**
      * Retry a job. Job must be in a RUNNING state to be able to be retried.
      *
-     * @param array|null $expectedData (optional) Data returned when the job was dequeued
+     * @param array|string|null $expectedData (optional) Immutable expectedData from getJob/getJobs, or the original dequeued data
      */
-    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, ?array $expectedData = null): array
+    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, array|string|null $expectedData = null): array
     {
         return $this->call(
             'RetryJob',
@@ -477,7 +498,7 @@ class Jobs extends Plugin
      * @param string      $connection         (optional) Specify 'Connection' header using constants defined in this class.
      * @param string      $retryAfter         (optional) Specify after what time in RUNNING this job should be retried
      * @param bool        $overwrite          (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
-     * @param bool        $rerunIfDataChanged (optional) Requeue a running unique job when a newer enqueue updates it
+     * @param bool        $rerunIfDataChanged (optional) Requeue when an enqueue changes a running job's data. Requires unique and overwrite; cannot own child jobs.
      *
      * @return array Containing "jobID"
      */

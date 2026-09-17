@@ -172,7 +172,7 @@ class Jobs extends Plugin
             throw new GenericError("Generic error for job $job");
         }
 
-        if ($method === 'GetJob' || $method === 'GetJobs') {
+        if (($method === 'GetJob' && $response['body'] !== []) || $method === 'GetJobs') {
             // Decode separately from the worker's associative arrays so snapshots preserve JSON objects and arrays.
             $rawBody = $response['rawBody'];
             if (($response['headers']['Content-Encoding'] ?? '') === 'gzip') {

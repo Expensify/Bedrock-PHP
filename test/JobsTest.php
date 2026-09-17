@@ -127,6 +127,11 @@ foreach ([false, true] as $gzip) {
     expectSame('{}', $batch[1]['expectedData'], 'getJobs must preserve empty job data as an object');
 }
 
+$client->response = dequeueResponse('{}');
+expectSame([], $jobs->getJob('ExcludedJob')['body'], 'getJob must preserve an empty response when every selected job is excluded');
+$client->response = dequeueResponse('{"jobs":[]}');
+expectSame(['jobs' => []], $jobs->getJobs('ExcludedJobs', 2)['body'], 'getJobs must preserve an empty batch');
+
 $snapshot = $job['expectedData'];
 $job['data']['nested']['objects'][0]['workerChange'] = true;
 $job['data']['numericKeys'][0] = 'worker';

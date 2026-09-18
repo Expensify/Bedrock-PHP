@@ -184,7 +184,7 @@ class Jobs extends Plugin
                 if (!isset($snapshotJob->data) || !$snapshotJob->data instanceof stdClass) {
                     throw new GenericError('Cannot preserve the original job data snapshot');
                 }
-                $expectedData = json_encode($snapshotJob->data, JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+                $expectedData = json_encode($snapshotJob->data, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
                 if ($method === 'GetJob') {
                     $response['body']['expectedData'] = $expectedData;
                 } else {

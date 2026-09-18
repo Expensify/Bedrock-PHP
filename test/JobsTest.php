@@ -127,6 +127,19 @@ foreach ([false, true] as $gzip) {
     expectSame('{}', $batch[1]['expectedData'], 'getJobs must preserve empty job data as an object');
 }
 
+// Escaping Unicode and slashes would push this valid payload over Bedrock's 1 MiB expectedData limit.
+$unicodeDataJSON = '{"text":"'.str_repeat('界/', 180000).'"}';
+foreach ([false, true] as $gzip) {
+    $client->response = dequeueResponse('{"jobID":"7","data":'.$unicodeDataJSON.'}', $gzip);
+    $unicodeJob = $jobs->getJob('JobWithLargeUnicodeData')['body'];
+    expectSame($unicodeDataJSON, $unicodeJob['expectedData'], 'getJob must not expand Unicode or slashes in snapshots');
+    expectSame(true, strlen($unicodeJob['expectedData']) <= 1024 * 1024, 'getJob snapshot must remain within the Bedrock size limit');
+
+    $client->response = dequeueResponse('{"jobs":[{"jobID":"7","data":'.$unicodeDataJSON.'}]}', $gzip);
+    $unicodeBatch = $jobs->getJobs('JobWithLargeUnicodeData', 1)['body']['jobs'];
+    expectSame($unicodeDataJSON, $unicodeBatch[0]['expectedData'], 'getJobs must not expand Unicode or slashes in snapshots');
+}
+
 $client->response = dequeueResponse('{}');
 expectSame([], $jobs->getJob('ExcludedJob')['body'], 'getJob must preserve an empty response when every selected job is excluded');
 $client->response = dequeueResponse('{"jobs":[]}');

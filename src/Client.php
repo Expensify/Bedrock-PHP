@@ -493,7 +493,7 @@ class Client implements LoggerAwareInterface
                 // sendRawRequest returned without throwing, so the whole request reached this host. If an earlier
                 // unresolved attempt had already reached a host, we have now delivered the same request more than once.
                 if ($requestAlreadySent) {
-                    $this->logger->warning('Bedrock\Client - Resending a fully-sent request; it may already have been processed and this can duplicate a write', [
+                    $this->logger->info('Bedrock\Client - Resending a fully-sent request; it may already have been processed and this can duplicate a write', [
                         'command' => $method,
                         'requestID' => $requestID,
                         'hostsTried' => $attemptedHosts,

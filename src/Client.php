@@ -672,7 +672,9 @@ class Client implements LoggerAwareInterface
             // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
             $cachedHostsAndPorts = [];
             foreach ($cachedHostConfigs as $hostName => $config) {
-                $cachedHostsAndPorts[$hostName] = $config['port'];
+                // A cached entry may be missing its 'port' (e.g. a partial config written by an older worker). Treat
+                // it as null so the comparison below detects the mismatch and resets the cache, rather than warning.
+                $cachedHostsAndPorts[$hostName] = $config['port'] ?? null;
             }
             asort($cachedHostsAndPorts);
             $uncachedHostsAndPort = [];
@@ -891,8 +893,13 @@ class Client implements LoggerAwareInterface
         if ($this->isApcuAvailable()) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $hostConfigs = apcu_fetch($apcuKey);
-            $hostConfigs[$host]['blacklistedUntil'] = $blacklistedUntil;
-            apcu_store($apcuKey, $hostConfigs);
+            // Only update an entry that already exists so we don't auto-vivify a partial host config (one without a
+            // 'port') when the cache is cold or was just reset by a concurrent worker. getPossibleHosts will
+            // repopulate the cache with full configs on its next call.
+            if (is_array($hostConfigs) && isset($hostConfigs[$host])) {
+                $hostConfigs[$host]['blacklistedUntil'] = $blacklistedUntil;
+                apcu_store($apcuKey, $hostConfigs);
+            }
         }
         $this->logger->info('Bedrock\Client - Marking server as failed', ['host' => $host, 'time' => date('Y-m-d H:i:s', $blacklistedUntil)]);
 

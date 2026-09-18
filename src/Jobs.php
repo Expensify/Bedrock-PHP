@@ -132,10 +132,12 @@ class Jobs extends Plugin
      */
     public function call($method, $headers = [], $body = '')
     {
-        // If we ever pass an empty array as data, PHP will json encode it as an array, but data expects an object and
-        // will generate a warning if it receives an array, so we pass an stdClass, which will get encoded as object
-        if (isset($headers['data']) && is_array($headers['data']) && empty($headers['data'])) {
-            $headers['data'] = new stdClass();
+        // If we ever pass an empty array as job data, PHP will json encode it as an array, but Bedrock expects an
+        // object and will generate a warning if it receives an array, so we pass an stdClass instead.
+        foreach (['data', 'expectedData'] as $dataHeader) {
+            if (isset($headers[$dataHeader]) && is_array($headers[$dataHeader]) && empty($headers[$dataHeader])) {
+                $headers[$dataHeader] = new stdClass();
+            }
         }
 
         $this->client->getStats()->counter('bedrockJob.call.'.$method);
@@ -170,6 +172,27 @@ class Jobs extends Plugin
             throw new GenericError("Generic error for job $job");
         }
 
+        if (($method === 'GetJob' && $response['body'] !== []) || $method === 'GetJobs') {
+            // Decode separately from the worker's associative arrays so snapshots preserve JSON objects and arrays.
+            $rawBody = $response['rawBody'];
+            if (($response['headers']['Content-Encoding'] ?? '') === 'gzip') {
+                $rawBody = gzdecode($rawBody);
+            }
+            $snapshotBody = json_decode($rawBody, false, 512, JSON_THROW_ON_ERROR);
+            $snapshotJobs = $method === 'GetJob' ? [$snapshotBody] : $snapshotBody->jobs;
+            foreach ($snapshotJobs as $index => $snapshotJob) {
+                if (!isset($snapshotJob->data) || !$snapshotJob->data instanceof stdClass) {
+                    throw new GenericError('Cannot preserve the original job data snapshot');
+                }
+                $expectedData = json_encode($snapshotJob->data, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+                if ($method === 'GetJob') {
+                    $response['body']['expectedData'] = $expectedData;
+                } else {
+                    $response['body']['jobs'][$index]['expectedData'] = $expectedData;
+                }
+            }
+        }
+
         return $response;
     }
 
@@ -177,20 +200,20 @@ class Jobs extends Plugin
      * Schedules a new job, optionally in the future, optionally to repeat.
      *
      * @param string      $name
-     * @param array|null  $data          (optional)
-     * @param string|null $firstRun      (optional)
-     * @param string|null $repeat        (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
-     * @param bool|null   $unique        (optional) Do we want only one job with this name to exist?
-     * @param int|null    $priority      (optional) Specify a job priority. Jobs with higher priorities will be run first.
-     * @param int|null    $parentJobID   (optional) Specify this job's parent job.
-     * @param string|null $connection    (optional) Specify 'Connection' header using constants defined in this class.
-     * @param string|null $retryAfter    (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
-     * @param bool        $overwrite     (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
-     * @param bool        $uniqueAsRetry (optional) Requeue a running unique job when a newer enqueue updates it
+     * @param array|null  $data               (optional)
+     * @param string|null $firstRun           (optional)
+     * @param string|null $repeat             (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param bool|null   $unique             (optional) Do we want only one job with this name to exist?
+     * @param int|null    $priority           (optional) Specify a job priority. Jobs with higher priorities will be run first.
+     * @param int|null    $parentJobID        (optional) Specify this job's parent job.
+     * @param string|null $connection         (optional) Specify 'Connection' header using constants defined in this class.
+     * @param string|null $retryAfter         (optional) Specify after what time in RUNNING this job should be retried (same syntax as repeat)
+     * @param bool        $overwrite          (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
+     * @param bool        $rerunIfDataChanged (optional) Requeue when an enqueue changes a running job's data. Requires unique and overwrite; cannot own child jobs.
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null, $overwrite = true, $uniqueAsRetry = false)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null, $overwrite = true, $rerunIfDataChanged = false)
     {
         $this->client->getLogger()->info('Create job', ['name' => $name]);
         $commitCounts = Client::getCommitCounts();
@@ -211,7 +234,7 @@ class Jobs extends Plugin
                 'idempotent' => $unique,
                 'retryAfter' => $retryAfter,
                 'overwrite' => $overwrite,
-                'uniqueAsRetry' => $uniqueAsRetry,
+                'rerunIfDataChanged' => $rerunIfDataChanged,
             ]
         );
 
@@ -223,7 +246,7 @@ class Jobs extends Plugin
     /**
      * Schedules a list of jobs.
      *
-     * @param array  $jobs       JSON array containing each job. Each job should include the same parameters as jobs defined in CreateJob, including optional uniqueAsRetry
+     * @param array  $jobs       JSON array containing each job. Each job should include the same parameters as jobs defined in CreateJob, including optional rerunIfDataChanged
      * @param string $connection (optional) Specify 'Connection' header using constants defined in this class.
      *
      * @return array - contain the jobIDs with the unique identifier of the created jobs
@@ -268,7 +291,7 @@ class Jobs extends Plugin
      *
      * @param string $name
      *
-     * @return array Containing all job details
+     * @return array Containing all job details, including an immutable expectedData JSON string for finishJob, retryJob, or failJob
      */
     public function getJob($name)
     {
@@ -280,7 +303,7 @@ class Jobs extends Plugin
     /**
      * Waits for a match (if requested) and atomically dequeues $numResults jobs.
      *
-     * @return array Containing all job details
+     * @return array Containing all job details, including an immutable expectedData JSON string per job for finishJob, retryJob, or failJob
      */
     public function getJobs(string $name, int $numResults, array $params = []): array
     {
@@ -323,13 +346,13 @@ class Jobs extends Plugin
     /**
      * Marks a job as finished, which causes it to repeat if requested.
      *
-     * @param int      $jobID
-     * @param array    $data           (optional)
-     * @param int|null $enqueueVersion (optional) Version returned when the job was dequeued
+     * @param int               $jobID
+     * @param array             $data         (optional)
+     * @param array|string|null $expectedData (optional) Immutable expectedData from getJob/getJobs, or the original dequeued data
      *
      * @return array
      */
-    public function finishJob($jobID, $data = null, ?int $enqueueVersion = null)
+    public function finishJob($jobID, $data = null, array|string|null $expectedData = null)
     {
         return $this->call(
             'FinishJob',
@@ -337,7 +360,7 @@ class Jobs extends Plugin
                 'jobID' => $jobID,
                 'data' => $data,
                 'idempotent' => true,
-                'enqueueVersion' => $enqueueVersion,
+                'expectedData' => $expectedData,
             ]
         );
     }
@@ -376,19 +399,19 @@ class Jobs extends Plugin
     /**
      * Mark a job as failed.
      *
-     * @param int      $jobID
-     * @param int|null $enqueueVersion (optional) Version returned when the job was dequeued
+     * @param int               $jobID
+     * @param array|string|null $expectedData (optional) Immutable expectedData from getJob/getJobs, or the original dequeued data
      *
      * @return array
      */
-    public function failJob($jobID, ?int $enqueueVersion = null)
+    public function failJob($jobID, array|string|null $expectedData = null)
     {
         return $this->call(
             'FailJob',
             [
                 'jobID' => $jobID,
                 'idempotent' => true,
-                'enqueueVersion' => $enqueueVersion,
+                'expectedData' => $expectedData,
             ]
         );
     }
@@ -396,9 +419,9 @@ class Jobs extends Plugin
     /**
      * Retry a job. Job must be in a RUNNING state to be able to be retried.
      *
-     * @param int|null $enqueueVersion (optional) Version returned when the job was dequeued
+     * @param array|string|null $expectedData (optional) Immutable expectedData from getJob/getJobs, or the original dequeued data
      */
-    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, ?int $enqueueVersion = null): array
+    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, array|string|null $expectedData = null): array
     {
         return $this->call(
             'RetryJob',
@@ -411,7 +434,7 @@ class Jobs extends Plugin
                 'idempotent' => true,
                 'jobPriority' => $priority,
                 'ignoreRepeat' => $ignoreRepeat,
-                'enqueueVersion' => $enqueueVersion,
+                'expectedData' => $expectedData,
             ]
         );
     }
@@ -443,8 +466,6 @@ class Jobs extends Plugin
      *         . lastRun - timestamp it was last run
      *         . repeat - recurring description
      *         . data - JSON data associated with this job.
-     *         . enqueueVersion - latest enqueue version for an opted-in unique job. This value is for status only.
-     *           Worker completion requires the version from the GetJob or GetJobs dequeue response.
      *
      * @param int $jobID
      *
@@ -468,26 +489,26 @@ class Jobs extends Plugin
      * Silently fails in case of an exception and logs the error.
      *
      * @param string      $name
-     * @param array|null  $data          (optional)
-     * @param string|null $firstRun      (optional)
-     * @param string|null $repeat        (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
-     * @param bool        $unique        Do we want only one job with this name to exist?
-     * @param int         $priority      (optional) Specify a job priority. Jobs with higher priorities will be run first.
-     * @param int|null    $parentJobID   (optional) Specify this job's parent job.
-     * @param string      $connection    (optional) Specify 'Connection' header using constants defined in this class.
-     * @param string      $retryAfter    (optional) Specify after what time in RUNNING this job should be retried
-     * @param bool        $overwrite     (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
-     * @param bool        $uniqueAsRetry (optional) Requeue a running unique job when a newer enqueue updates it
+     * @param array|null  $data               (optional)
+     * @param string|null $firstRun           (optional)
+     * @param string|null $repeat             (optional) see https://github.com/Expensify/Bedrock/blob/master/plugins/Jobs.md#repeat-syntax
+     * @param bool        $unique             Do we want only one job with this name to exist?
+     * @param int         $priority           (optional) Specify a job priority. Jobs with higher priorities will be run first.
+     * @param int|null    $parentJobID        (optional) Specify this job's parent job.
+     * @param string      $connection         (optional) Specify 'Connection' header using constants defined in this class.
+     * @param string      $retryAfter         (optional) Specify after what time in RUNNING this job should be retried
+     * @param bool        $overwrite          (optional) Only applicable when unique is is true. When set to true it will overwrite the existing job with the new jobs data
+     * @param bool        $rerunIfDataChanged (optional) Requeue when an enqueue changes a running job's data. Requires unique and overwrite; cannot own child jobs.
      *
      * @return array Containing "jobID"
      */
-    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, string $retryAfter = '', bool $overwrite = true, bool $uniqueAsRetry = false)
+    public static function queueJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, string $retryAfter = '', bool $overwrite = true, bool $rerunIfDataChanged = false)
     {
         $bedrock = Client::getInstance();
         try {
             $jobs = new self($bedrock);
 
-            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection, $retryAfter, $overwrite, $uniqueAsRetry);
+            return $jobs->createJob($name, $data, $firstRun, $repeat, $unique, $priority, $parentJobID, $connection, $retryAfter, $overwrite, $rerunIfDataChanged);
         } catch (Exception $e) {
             $bedrock->getLogger()->alert('Could not create Bedrock job', ['exception' => $e]);
 

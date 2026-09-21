@@ -132,12 +132,10 @@ class Jobs extends Plugin
      */
     public function call($method, $headers = [], $body = '')
     {
-        // If we ever pass an empty array as job data, PHP will json encode it as an array, but Bedrock expects an
-        // object and will generate a warning if it receives an array, so we pass an stdClass instead.
-        foreach (['data', 'expectedData'] as $dataHeader) {
-            if (isset($headers[$dataHeader]) && is_array($headers[$dataHeader]) && empty($headers[$dataHeader])) {
-                $headers[$dataHeader] = new stdClass();
-            }
+        // If we ever pass an empty array as data, PHP will json encode it as an array, but data expects an object and
+        // will generate a warning if it receives an array, so we pass an stdClass, which will get encoded as object
+        if (isset($headers['data']) && is_array($headers['data']) && empty($headers['data'])) {
+            $headers['data'] = new stdClass();
         }
 
         $this->client->getStats()->counter('bedrockJob.call.'.$method);
@@ -170,27 +168,6 @@ class Jobs extends Plugin
         // 202 code is a successful job creation using the "Connection: forget" header
         if (!in_array($responseCode, [200, 202])) {
             throw new GenericError("Generic error for job $job");
-        }
-
-        if (($method === 'GetJob' && $response['body'] !== []) || $method === 'GetJobs') {
-            // Decode separately from the worker's associative arrays so snapshots preserve JSON objects and arrays.
-            $rawBody = $response['rawBody'];
-            if (($response['headers']['Content-Encoding'] ?? '') === 'gzip') {
-                $rawBody = gzdecode($rawBody);
-            }
-            $snapshotBody = json_decode($rawBody, false, 512, JSON_THROW_ON_ERROR);
-            $snapshotJobs = $method === 'GetJob' ? [$snapshotBody] : $snapshotBody->jobs;
-            foreach ($snapshotJobs as $index => $snapshotJob) {
-                if (!isset($snapshotJob->data) || !$snapshotJob->data instanceof stdClass) {
-                    throw new GenericError('Cannot preserve the original job data snapshot');
-                }
-                $expectedData = json_encode($snapshotJob->data, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-                if ($method === 'GetJob') {
-                    $response['body']['expectedData'] = $expectedData;
-                } else {
-                    $response['body']['jobs'][$index]['expectedData'] = $expectedData;
-                }
-            }
         }
 
         return $response;
@@ -346,13 +323,13 @@ class Jobs extends Plugin
     /**
      * Marks a job as finished, which causes it to repeat if requested.
      *
-     * @param int               $jobID
-     * @param array             $data         (optional)
-     * @param array|string|null $expectedData (optional) Immutable expectedData from getJob/getJobs, or the original dequeued data
+     * @param int         $jobID
+     * @param array       $data         (optional)
+     * @param string|null $expectedData (optional) Pass the expectedData string from getJob/getJobs unchanged
      *
      * @return array
      */
-    public function finishJob($jobID, $data = null, array|string|null $expectedData = null)
+    public function finishJob($jobID, $data = null, ?string $expectedData = null)
     {
         return $this->call(
             'FinishJob',
@@ -399,12 +376,12 @@ class Jobs extends Plugin
     /**
      * Mark a job as failed.
      *
-     * @param int               $jobID
-     * @param array|string|null $expectedData (optional) Immutable expectedData from getJob/getJobs, or the original dequeued data
+     * @param int         $jobID
+     * @param string|null $expectedData (optional) Pass the expectedData string from getJob/getJobs unchanged
      *
      * @return array
      */
-    public function failJob($jobID, array|string|null $expectedData = null)
+    public function failJob($jobID, ?string $expectedData = null)
     {
         return $this->call(
             'FailJob',
@@ -419,9 +396,9 @@ class Jobs extends Plugin
     /**
      * Retry a job. Job must be in a RUNNING state to be able to be retried.
      *
-     * @param array|string|null $expectedData (optional) Immutable expectedData from getJob/getJobs, or the original dequeued data
+     * @param string|null $expectedData (optional) Pass the expectedData string from getJob/getJobs unchanged
      */
-    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, array|string|null $expectedData = null): array
+    public function retryJob(int $jobID, int $delay = 0, ?array $data = null, string $name = '', string $nextRun = '', ?int $priority = null, bool $ignoreRepeat = false, ?string $expectedData = null): array
     {
         return $this->call(
             'RetryJob',

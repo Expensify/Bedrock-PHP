@@ -323,7 +323,7 @@ try {
                 $workerName = explode('/', $job['name'])[1];
                 $workerFilename = $workerPath."/$workerName.php";
                 // Preserve the dequeued data so Bedrock can detect changes made while the worker is running.
-                $expectedData = $job['expectedData'];
+                $expectedData = $job['expectedData'] ?? null;
                 $stats->timer('bedrockJob.lateBy.'.$job['name'], (time() - strtotime($job['nextRun'])) * 1000);
                 if (file_exists($workerFilename)) {
                     // The file seems to exist -- fork it so we can run it.

@@ -322,6 +322,7 @@ try {
                 $job['name'] = $jobParts[0];
                 $workerName = explode('/', $job['name'])[1];
                 $workerFilename = $workerPath."/$workerName.php";
+
                 // Preserve the dequeued data so Bedrock can detect changes made while the worker is running.
                 $expectedData = $job['expectedData'] ?? null;
                 $stats->timer('bedrockJob.lateBy.'.$job['name'], (time() - strtotime($job['nextRun'])) * 1000);

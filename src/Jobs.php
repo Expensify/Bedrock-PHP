@@ -190,7 +190,7 @@ class Jobs extends Plugin
      *
      * @return array Containing "jobID"
      */
-    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null, $overwrite = true, $rerunIfDataChanged = false)
+    public function createJob($name, $data = null, $firstRun = null, $repeat = null, $unique = false, $priority = self::PRIORITY_MEDIUM, $parentJobID = null, $connection = self::CONNECTION_WAIT, $retryAfter = null, bool $overwrite = true, bool $rerunIfDataChanged = false)
     {
         $this->client->getLogger()->info('Create job', ['name' => $name]);
         $commitCounts = Client::getCommitCounts();
@@ -324,7 +324,7 @@ class Jobs extends Plugin
      * Marks a job as finished, which causes it to repeat if requested.
      *
      * @param int         $jobID
-     * @param array       $data         (optional)
+     * @param array|null  $data         (optional)
      * @param string|null $expectedData (optional) Pass the expectedData string from getJob/getJobs unchanged
      *
      * @return array

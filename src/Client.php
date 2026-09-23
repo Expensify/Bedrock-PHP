@@ -5,6 +5,8 @@ namespace Expensify\Bedrock;
 use Expensify\Bedrock\Exceptions\BedrockError;
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
 use Expensify\Bedrock\Exceptions\TimeoutError;
+use Expensify\Bedrock\Metrics\MetricsInterface;
+use Expensify\Bedrock\Metrics\NullMetrics;
 use Expensify\Bedrock\Stats\NullStats;
 use Expensify\Bedrock\Stats\StatsInterface;
 use Psr\Log\LoggerAwareInterface;
@@ -127,9 +129,14 @@ class Client implements LoggerAwareInterface
     private $stats;
 
     /**
-     * @var float Fraction of successful transport attempts to emit timing metrics for.
+     * @var MetricsInterface
      */
-    private $transportStatsSampleRate;
+    private $metrics;
+
+    /**
+     * @var float Fraction of successful transport attempts to emit metrics for.
+     */
+    private $transportMetricsSampleRate;
 
     /**
      * @var int When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
@@ -182,7 +189,8 @@ class Client implements LoggerAwareInterface
      *                      int|null             bedrockTimeout      Timeout to use for bedrock commands
      *                      LoggerInterface|null logger              Class to use for logging
      *                      StatsInterface|null  stats               Class to use for statistics tracking
-     *                      float|null           transportStatsSampleRate Fraction of successful transport attempts to track
+     *                      MetricsInterface|null metrics            Class to use for tagged metrics
+     *                      float|null           transportMetricsSampleRate Fraction of successful transport attempts to track
      *                      int|null             maxBlackListTimeout When a host fails, it will blacklist it and not try to reuse it for up to this amount of seconds.
      *                      int|null             commandPriority     The priority to send the commands with
      *                      string|null          logParam            Extra data to add to the bedrock logs
@@ -204,7 +212,8 @@ class Client implements LoggerAwareInterface
         $this->bedrockTimeout = $config['bedrockTimeout'];
         $this->logger = $config['logger'];
         $this->stats = $config['stats'];
-        $this->transportStatsSampleRate = $config['transportStatsSampleRate'];
+        $this->metrics = $config['metrics'];
+        $this->transportMetricsSampleRate = $config['transportMetricsSampleRate'];
         $this->maxBlackListTimeout = $config['maxBlackListTimeout'];
         $this->circuitBreakerThreshold = $config['circuitBreakerThreshold'];
         $this->circuitBreakerCooldown = $config['circuitBreakerCooldown'];
@@ -237,6 +246,7 @@ class Client implements LoggerAwareInterface
         $configForHash = $config;
         unset($configForHash['logger']);
         unset($configForHash['stats']);
+        unset($configForHash['metrics']);
         unset($configForHash['logParam']);
         $hash = sha1(print_r($configForHash, true));
         if (isset(self::$instances[$hash])) {
@@ -282,7 +292,8 @@ class Client implements LoggerAwareInterface
             'bedrockTimeout' => 110,
             'logger' => new NullLogger(),
             'stats' => new NullStats(),
-            'transportStatsSampleRate' => 0.01,
+            'metrics' => new NullMetrics(),
+            'transportMetricsSampleRate' => 0.01,
             'maxBlackListTimeout' => 1,
             'circuitBreakerThreshold' => 10,
             'circuitBreakerCooldown' => 10,
@@ -494,12 +505,12 @@ class Client implements LoggerAwareInterface
             }
             try {
                 $connectionType = $this->socket ? 'reused' : 'new';
-                $recordTransportStats = $this->shouldRecordTransportStats();
+                $recordTransportMetrics = $this->shouldRecordTransportMetrics();
                 // We get the port from either the main or failover host configs, due to socket reuse, the host we are
                 // trying to use might not be in the picked host configs, because getPossibleHosts randomizes them.
                 $port = $this->mainHostConfigs[$hostName]['port'] ?? $this->failoverHostConfigs[$hostName]['port'];
                 $attemptedHosts[] = $hostName;
-                $this->sendRawRequest($hostName, $port, $rawRequest, $connectionType, $recordTransportStats);
+                $this->sendRawRequest($hostName, $port, $rawRequest, $connectionType, $recordTransportMetrics);
                 // sendRawRequest returned without throwing, so the whole request reached this host. If an earlier
                 // unresolved attempt had already reached a host, we have now delivered the same request more than once.
                 if ($requestAlreadySent) {
@@ -509,7 +520,7 @@ class Client implements LoggerAwareInterface
                         'hostsTried' => $attemptedHosts,
                     ]);
                 }
-                $response = $this->receiveResponse($hostName, $connectionType, $recordTransportStats);
+                $response = $this->receiveResponse($hostName, $connectionType, $recordTransportMetrics);
             } catch (ConnectionFailure $e) {
                 // The error happened during connection (or before we sent any data, or in a case where we know the
                 // command was never processed) so we can retry it safely.
@@ -589,7 +600,7 @@ class Client implements LoggerAwareInterface
      * @throws ConnectionFailure When the failure is before sending any data to the server
      * @throws BedrockError      When we already sent some data
      */
-    private function sendRawRequest(string $host, int $port, string $rawRequest, string $connectionType, bool $recordTransportStats)
+    private function sendRawRequest(string $host, int $port, string $rawRequest, string $connectionType, bool $recordTransportMetrics)
     {
         // Try to connect to the requested host
         $pid = getmypid();
@@ -645,7 +656,7 @@ class Client implements LoggerAwareInterface
                 $this->recordTransportFailure($host, $connectionType, 'connect');
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
             }
-            $this->recordTransportTimer($host, $connectionType, 'connect', $connectStart, $recordTransportStats);
+            $this->recordTransportTiming($host, $connectionType, 'connect', $connectStart, $recordTransportMetrics);
         } else {
             $this->logger->debug('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
         }
@@ -674,7 +685,7 @@ class Client implements LoggerAwareInterface
             $this->recordTransportFailure($host, $connectionType, 'send');
             throw new BedrockError("Sent more content than expected to host $host:$port");
         }
-        $this->recordTransportTimer($host, $connectionType, 'send', $sendStart, $recordTransportStats);
+        $this->recordTransportTiming($host, $connectionType, 'send', $sendStart, $recordTransportMetrics);
     }
 
     /**
@@ -748,15 +759,15 @@ class Client implements LoggerAwareInterface
      *
      * @throws BedrockError
      */
-    private function receiveResponse(string $host, string $connectionType, bool $recordTransportStats)
+    private function receiveResponse(string $host, string $connectionType, bool $recordTransportMetrics)
     {
         // Make sure bedrock is returning something https://github.com/Expensify/Expensify/issues/11010
         $firstByteStart = microtime(true);
         if (@socket_recv($this->socket, $buf, self::PACKET_LENGTH, MSG_PEEK) === false) {
-            $this->recordTransportFailure($host, $connectionType, 'firstByte');
+            $this->recordTransportFailure($host, $connectionType, 'first_byte');
             throw new BedrockError('Socket failed to read data');
         }
-        $this->recordTransportTimer($host, $connectionType, 'firstByte', $firstByteStart, $recordTransportStats);
+        $this->recordTransportTiming($host, $connectionType, 'first_byte', $firstByteStart, $recordTransportMetrics);
 
         $receiveStart = microtime(true);
         $totalDataReceived = 0;
@@ -795,7 +806,7 @@ class Client implements LoggerAwareInterface
                 $response = substr($response, $dataOffset + strlen(self::HEADER_DELIMITER));
             }
         } while (is_null($responseLength) || strlen($response) < $responseLength);
-        $this->recordTransportTimer($host, $connectionType, 'receive', $receiveStart, $recordTransportStats);
+        $this->recordTransportTiming($host, $connectionType, 'receive', $receiveStart, $recordTransportMetrics);
 
         // Save the commit count if needed.
         // In some cases, Auth will return a header instructing the client to save the commit count. It is useful for determining if stale data was used for certain read commands.
@@ -829,29 +840,35 @@ class Client implements LoggerAwareInterface
         return $result;
     }
 
-    private function shouldRecordTransportStats(): bool
+    private function shouldRecordTransportMetrics(): bool
     {
-        return $this->transportStatsSampleRate > 0 && mt_rand() / mt_getrandmax() < $this->transportStatsSampleRate;
+        return $this->transportMetricsSampleRate > 0 && mt_rand() / mt_getrandmax() < $this->transportMetricsSampleRate;
     }
 
-    private function recordTransportTimer(string $host, string $connectionType, string $phase, float $startTime, bool $recordTransportStats): void
+    private function recordTransportTiming(string $host, string $connectionType, string $phase, float $startTime, bool $recordTransportMetrics): void
     {
-        if (!$recordTransportStats) {
+        if (!$recordTransportMetrics) {
             return;
         }
 
         $duration = (microtime(true) - $startTime) * 1000;
-        $this->stats->timer($this->getTransportMetricName($host, $connectionType, $phase), $duration);
+        $this->metrics->send('bedrock_transport_timing_ms', $duration, $this->getTransportMetricTags($host, $connectionType, $phase));
     }
 
     private function recordTransportFailure(string $host, string $connectionType, string $phase): void
     {
-        $this->stats->counter($this->getTransportMetricName($host, $connectionType, "$phase.failure"));
+        $this->metrics->send('bedrock_transport_failures', 1, $this->getTransportMetricTags($host, $connectionType, $phase));
     }
 
-    private function getTransportMetricName(string $host, string $connectionType, string $metric): string
+    /** @return array<string, string> */
+    private function getTransportMetricTags(string $host, string $connectionType, string $phase): array
     {
-        return 'bedrock.transport.'.$this->clusterName.'.'.str_replace('.', '-', $host).".$connectionType.$metric";
+        return [
+            'cluster' => $this->clusterName,
+            'connection_type' => $connectionType,
+            'destination' => $host,
+            'phase' => $phase,
+        ];
     }
 
     /**

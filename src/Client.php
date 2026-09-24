@@ -556,6 +556,9 @@ class Client implements LoggerAwareInterface
         // Log how long this particular call took
         $processingTime = (isset($response['headers']['processTime']) ? $response['headers']['processTime'] : 0) / 1000;
         $serverTime = (isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0) / 1000;
+        $commandThreadTime = ($response['headers']['commandThreadTime'] ?? 0) / 1000;
+        $dbHandleTime = ($response['headers']['dbHandleTime'] ?? 0) / 1000;
+        $unaccountedTime = ($response['headers']['unaccountedTime'] ?? 0) / 1000;
         $clientTime = round(microtime(true) - $timeStart, 3) * 1000;
         $networkTime = $clientTime - $serverTime;
         $waitTime = $serverTime - $processingTime;
@@ -564,10 +567,14 @@ class Client implements LoggerAwareInterface
             'command' => $method,
             'jsonCode' => isset($response['codeLine']) ? $response['codeLine'] : null,
             'duration' => $clientTime,
+            'socket' => $connectTime === null ? 'reused' : 'new',
             'connect' => $connectTime,
             'net' => $networkTime,
             'wait' => $waitTime,
             'proc' => $processingTime,
+            'commandThread' => $commandThreadTime,
+            'dbHandle' => $dbHandleTime,
+            'unaccounted' => $unaccountedTime,
             'commitCount' => $this->commitCount,
         ]);
 

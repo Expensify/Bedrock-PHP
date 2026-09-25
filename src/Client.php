@@ -460,6 +460,7 @@ class Client implements LoggerAwareInterface
         }
 
         $hostName = null;
+        $connectTime = null;
         $requestID = $headers['requestID'] ?? null;
         $attemptedHosts = [];
         // True after an attempt failed without knowing whether its fully-sent request committed.
@@ -489,7 +490,7 @@ class Client implements LoggerAwareInterface
                 // trying to use might not be in the picked host configs, because getPossibleHosts randomizes them.
                 $port = $this->mainHostConfigs[$hostName]['port'] ?? $this->failoverHostConfigs[$hostName]['port'];
                 $attemptedHosts[] = $hostName;
-                $this->sendRawRequest($hostName, $port, $rawRequest);
+                $connectTime = $this->sendRawRequest($hostName, $port, $rawRequest);
                 // sendRawRequest returned without throwing, so the whole request reached this host. If an earlier
                 // unresolved attempt had already reached a host, we have now delivered the same request more than once.
                 if ($requestAlreadySent) {
@@ -555,6 +556,9 @@ class Client implements LoggerAwareInterface
         // Log how long this particular call took
         $processingTime = (isset($response['headers']['processTime']) ? $response['headers']['processTime'] : 0) / 1000;
         $serverTime = (isset($response['headers']['totalTime']) ? $response['headers']['totalTime'] : 0) / 1000;
+        $commandThreadTime = ($response['headers']['commandThreadTime'] ?? 0) / 1000;
+        $dbHandleTime = ($response['headers']['dbHandleTime'] ?? 0) / 1000;
+        $unaccountedTime = ($response['headers']['unaccountedTime'] ?? 0) / 1000;
         $clientTime = round(microtime(true) - $timeStart, 3) * 1000;
         $networkTime = $clientTime - $serverTime;
         $waitTime = $serverTime - $processingTime;
@@ -563,9 +567,14 @@ class Client implements LoggerAwareInterface
             'command' => $method,
             'jsonCode' => isset($response['codeLine']) ? $response['codeLine'] : null,
             'duration' => $clientTime,
+            'socket' => $connectTime === null ? 'reused' : 'new',
+            'connect' => $connectTime,
             'net' => $networkTime,
             'wait' => $waitTime,
             'proc' => $processingTime,
+            'commandThread' => $commandThreadTime,
+            'dbHandle' => $dbHandleTime,
+            'unaccounted' => $unaccountedTime,
             'commitCount' => $this->commitCount,
         ]);
 
@@ -576,13 +585,16 @@ class Client implements LoggerAwareInterface
     /**
      * Sends the request on a new socket, if a previous one existed, it closes the connection first.
      *
+     * @return ?float New socket connection time in milliseconds, or null when reusing a socket
+     *
      * @throws ConnectionFailure When the failure is before sending any data to the server
      * @throws BedrockError      When we already sent some data
      */
-    private function sendRawRequest(string $host, int $port, string $rawRequest)
+    private function sendRawRequest(string $host, int $port, string $rawRequest): ?float
     {
         // Try to connect to the requested host
         $pid = getmypid();
+        $connectTime = null;
         if (!$this->socket) {
             $this->logger->info('Bedrock\Client - Opening new socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
             $this->socket = @socket_create(AF_INET, SOCK_STREAM, getprotobyname('tcp'));
@@ -600,6 +612,7 @@ class Client implements LoggerAwareInterface
             socket_set_nonblock($this->socket);
             socket_set_option($this->socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => $this->connectionTimeout, 'usec' => $this->connectionTimeoutMicroseconds]);
             socket_set_option($this->socket, SOL_SOCKET, SO_RCVTIMEO, ['sec' => $this->readTimeout, 'usec' => $this->readTimeoutMicroseconds]);
+            $connectStart = microtime(true);
             @socket_connect($this->socket, $host, $port);
             $socketErrorCode = socket_last_error($this->socket);
 
@@ -629,6 +642,7 @@ class Client implements LoggerAwareInterface
                 $socketError = socket_strerror($socketErrorCode);
                 throw new ConnectionFailure("Could not connect to Bedrock host $host:$port. Error: $socketErrorCode $socketError");
             }
+            $connectTime = round((microtime(true) - $connectStart) * 1000, 3);
         } else {
             $this->logger->debug('Bedrock\Client - Reusing socket', ['host' => $host, 'cluster' => $this->clusterName, 'pid' => $pid]);
         }
@@ -653,6 +667,8 @@ class Client implements LoggerAwareInterface
             $this->logger->info('Bedrock\Client - sent more data than needed', ['bytesSent' => $bytesSent, 'expected' => strlen($rawRequest)]);
             throw new BedrockError("Sent more content than expected to host $host:$port");
         }
+
+        return $connectTime;
     }
 
     /**

@@ -31,9 +31,16 @@ jobs:
 
     - name: Get merged pull request
       run: |
-        set -uo pipefail
-        PR_URL="$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
-          --jq '([.[] | select(.merge_commit_sha == "${{ github.sha }}")] + .) | .[0].html_url' || true)"
+        set -euo pipefail
+        for ATTEMPT in {1..12}; do
+          PR_URL="$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --jq '([.[] | select(.merge_commit_sha == "${{ github.sha }}")] + .) | .[0].html_url // empty')"
+          if [ -n "$PR_URL" ] || [ "$ATTEMPT" -eq 12 ]; then
+            break
+          fi
+          echo "Pull request not found yet; retrying in 5 seconds ($ATTEMPT/12)."
+          sleep 5
+        done
         echo "PR_URL=$PR_URL" >> "$GITHUB_ENV"
 
     - name: checkout

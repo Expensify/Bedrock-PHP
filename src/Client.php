@@ -570,6 +570,10 @@ class Client implements LoggerAwareInterface
             'socket' => $connectTime === null ? 'reused' : 'new',
             'connect' => $connectTime,
             'net' => $networkTime,
+            'decode' => round($response['jsonDecodeDetails']['time'], 3),
+            'size' => $response['size'],
+            'decodeSize' => $response['jsonDecodeDetails']['size'],
+            'decodeAttempts' => $response['jsonDecodeDetails']['attempts'],
             'wait' => $waitTime,
             'proc' => $processingTime,
             'commandThread' => $commandThreadTime,
@@ -738,7 +742,7 @@ class Client implements LoggerAwareInterface
     /**
      * Receives and parses the response.
      *
-     * @return array Response object including 'code', 'codeLine', 'headers', `size` and 'body'
+     * @return array Response object including 'code', 'codeLine', 'headers', 'size', 'body' and 'jsonDecodeDetails'
      *
      * @throws BedrockError
      */
@@ -802,10 +806,12 @@ class Client implements LoggerAwareInterface
 
         // We'll parse the body *only* if this is `application/json` or blank.
         $isJSON = !isset($responseHeaders['Content-Type']) || !strcasecmp($responseHeaders['Content-Type'], 'application/json');
+        $jsonDecodeDetails = ['time' => 0.0, 'size' => 0, 'attempts' => 0];
 
         $result = [
             'headers' => $responseHeaders,
-            'body' => $isJSON ? $this->parseRawBody($responseHeaders, $response) : $response,
+            'body' => $isJSON ? $this->parseRawBody($responseHeaders, $response, $jsonDecodeDetails) : $response,
+            'jsonDecodeDetails' => $jsonDecodeDetails,
             'size' => $totalDataReceived,
             'codeLine' => $codeLine,
             'code' => intval($codeLine),
@@ -819,11 +825,13 @@ class Client implements LoggerAwareInterface
     /**
      * Parse a raw response from bedrock.
      *
+     * @param array{time:float,size:int,attempts:int} $jsonDecodeDetails Decoding milliseconds, initial JSON input bytes and attempt count
+     *
      * @return array|null the decoded json, or null on error
      *
      * @throws BedrockError
      */
-    private function parseRawBody(array $headers, string $body)
+    private function parseRawBody(array $headers, string $body, array &$jsonDecodeDetails)
     {
         // Detect if we are using Gzip (TODO: can we remove this?)
         if (isset($headers['Content-Encoding']) && $headers['Content-Encoding'] === 'gzip') {
@@ -840,7 +848,11 @@ class Client implements LoggerAwareInterface
             return [];
         }
 
+        $jsonDecodeDetails['size'] = strlen($body);
+        $startJsonDecode = microtime(true);
         $json = json_decode($body, true);
+        $jsonDecodeDetails['time'] += (microtime(true) - $startJsonDecode) * 1000;
+        ++$jsonDecodeDetails['attempts'];
         if (json_last_error() !== JSON_ERROR_NONE) {
             // This will remove unwanted characters.
             // Check http://stackoverflow.com/a/20845642 and http://www.php.net/chr for details
@@ -851,7 +863,11 @@ class Client implements LoggerAwareInterface
 
             // We've seen occurrences of this happen when the string is not UTF-8. Forcing it fixes it.
             // See https://github.com/Expensify/Expensify/issues/21805 for example.
-            $json = json_decode(mb_convert_encoding($jsonStr, 'UTF-8', 'UTF-8'), true);
+            $jsonStr = mb_convert_encoding($jsonStr, 'UTF-8', 'UTF-8');
+            $startJsonDecode = microtime(true);
+            $json = json_decode($jsonStr, true);
+            $jsonDecodeDetails['time'] += (microtime(true) - $startJsonDecode) * 1000;
+            ++$jsonDecodeDetails['attempts'];
             if (json_last_error() !== JSON_ERROR_NONE) {
                 throw new BedrockError('Could not parse JSON from bedrock');
             }

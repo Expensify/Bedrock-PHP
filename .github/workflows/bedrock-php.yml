@@ -29,6 +29,7 @@ jobs:
       with:
         tools: composer:v2.7.1
         php-version: 8.3.32
+        extensions: apcu
         coverage: none
       env:
         GITHUB_TOKEN: ${{ secrets.CODE_EXPENSIFY_TOKEN }}
@@ -39,6 +40,9 @@ jobs:
 
     - name: Run Phan tests
       run: "php ./ci/phan.php"
+
+    - name: Test shared host health
+      run: "php -d apc.enable_cli=1 ./ci/testHostConfigs.php"
   PHP_Style:
     name: PHP Style
     runs-on: blacksmith-2vcpu-ubuntu-2404

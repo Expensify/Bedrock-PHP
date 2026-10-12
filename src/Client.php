@@ -391,9 +391,11 @@ class Client implements LoggerAwareInterface
             $headers['commitCount'] = $this->commitCount;
         }
 
-        // Include the requestID for logging purposes
+        // Include the requestID for logging purposes. Force it to be the first header so HAProxy can capture it from
+        // the start of the TCP payload; large headers such as `data` or `query` could otherwise push it past
+        // HAProxy's 16KB inspection buffer.
         if (isset($GLOBALS['REQUEST_ID'])) {
-            $headers['requestID'] = $GLOBALS['REQUEST_ID'];
+            $headers = ['requestID' => $GLOBALS['REQUEST_ID']] + $headers;
         }
         $headers['lastIP'] = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? null;
 

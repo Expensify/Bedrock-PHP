@@ -26,9 +26,9 @@ class Client implements LoggerAwareInterface
     public const PACKET_LENGTH = 16384;
 
     /**
-     * The prefix to use in apcu to store the state of the hosts.
+     * APCu key prefix for the (per-cluster, per-host, box-wide) marker of a host that failed and is blacklisted.
      */
-    public const APCU_CACHE_PREFIX = 'bedrockHostConfigs-';
+    public const BLACKLIST_CACHE_PREFIX = 'bedrockBlacklist-';
 
     /**
      * APCu key prefix for the (per-cluster, per-scope, box-wide) circuit breaker state.
@@ -679,33 +679,7 @@ class Client implements LoggerAwareInterface
      */
     private function getPossibleHosts(?string $preferredHost)
     {
-        // We get the host configs from the APC cache. Then, we check the configuration there with the passed
-        // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
-        // is so that we don't keep the old cache after changing the hosts or failover configuration.
-        if ($this->isApcuAvailable()) {
-            $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
-            $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
-            $this->logger->debug('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
-
-            // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
-            $cachedHostsAndPorts = [];
-            foreach ($cachedHostConfigs as $hostName => $config) {
-                $cachedHostsAndPorts[$hostName] = $config['port'];
-            }
-            asort($cachedHostsAndPorts);
-            $uncachedHostsAndPort = [];
-            foreach (array_merge($this->mainHostConfigs, $this->failoverHostConfigs) as $hostName => $config) {
-                $uncachedHostsAndPort[$hostName] = $config['port'];
-            }
-            asort($uncachedHostsAndPort);
-            if ($cachedHostsAndPorts !== $uncachedHostsAndPort) {
-                $cachedHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
-                $this->logger->info('Bedrock\Client - APC store host configs', array_keys($cachedHostConfigs));
-                apcu_store($apcuKey, $cachedHostConfigs);
-            }
-        } else {
-            $cachedHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
-        }
+        $allHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
 
         // Get one main host and all the failovers, then remove any of them that we know already failed.
         // Assemble the list of servers we'll try, in order.  First, pick one of the main hosts. We pick randomly
@@ -717,20 +691,20 @@ class Client implements LoggerAwareInterface
         $failoverHostNames = array_keys($this->failoverHostConfigs);
         shuffle($failoverHostNames);
         $mainHostName = array_rand($this->mainHostConfigs);
-        $preferredHost = array_key_exists((string) $preferredHost, $cachedHostConfigs) ? [$preferredHost] : [];
+        $preferredHost = array_key_exists((string) $preferredHost, $allHostConfigs) ? [$preferredHost] : [];
         $hostNames = array_filter(array_unique(array_merge($preferredHost, [$mainHostName], $failoverHostNames)));
 
+        $blacklistedHosts = $this->getBlacklistedHosts($hostNames);
         $nonBlackListedHosts = [];
         foreach ($hostNames as $hostName) {
-            $blackListedUntil = $cachedHostConfigs[$hostName]['blacklistedUntil'] ?? null;
-            if (!$blackListedUntil || $blackListedUntil < time()) {
-                $nonBlackListedHosts[$hostName] = $cachedHostConfigs[$hostName];
+            if (!isset($blacklistedHosts[$hostName])) {
+                $nonBlackListedHosts[$hostName] = $allHostConfigs[$hostName];
             }
         }
 
         if (empty($nonBlackListedHosts)) {
             $this->getLogger()->info('Bedrock\Client - All possible hosts have been blacklisted, using full list instead');
-            $nonBlackListedHosts = $cachedHostConfigs;
+            $nonBlackListedHosts = $allHostConfigs;
         }
         $this->getLogger()->debug('Bedrock\Client - Possible hosts', ['nonBlacklistedHosts' => array_keys($nonBlackListedHosts)]);
 
@@ -898,6 +872,8 @@ class Client implements LoggerAwareInterface
      * When a host fails, we blacklist that server for a certain amount of time, so we don't send requests to it when we
      * know it's down. The blacklist time is a random amount of time between 1 second and the maxBlackListTimeout
      * configuration.
+     * The blacklist is stored in its own APCu key per host, so every client for this cluster on the box sees it,
+     * regardless of which hosts that client was configured with.
      * We also close and clear the socket from the cache, so we don't reuse it.
      */
     private function markHostAsFailed(string $host)
@@ -905,12 +881,12 @@ class Client implements LoggerAwareInterface
         if (!$this->maxBlackListTimeout) {
             return;
         }
-        $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
+        $blacklistSeconds = rand(1, $this->maxBlackListTimeout);
+        $blacklistedUntil = time() + $blacklistSeconds;
         if ($this->isApcuAvailable()) {
-            $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
-            $hostConfigs = apcu_fetch($apcuKey);
-            $hostConfigs[$host]['blacklistedUntil'] = $blacklistedUntil;
-            apcu_store($apcuKey, $hostConfigs);
+            // The stored timestamp decides whether the host is blacklisted. The TTL only cleans the key up, and has 60s
+            // of slack because APCu can measure it from the start of the request rather than from now.
+            apcu_store($this->blacklistKey($host), $blacklistedUntil, $blacklistSeconds + 60);
         }
         $this->logger->info('Bedrock\Client - Marking server as failed', ['host' => $host, 'time' => date('Y-m-d H:i:s', $blacklistedUntil)]);
 
@@ -922,7 +898,7 @@ class Client implements LoggerAwareInterface
     }
 
     /**
-     * Whether APCu-backed shared state (the circuit breaker) is usable in this environment.
+     * Whether APCu-backed shared state (the host blacklist and circuit breaker) is usable in this environment.
      *
      * @suppress PhanUndeclaredConstant - suppresses ARE_GITHUB_ACTIONS_RUNNING
      */
@@ -930,6 +906,48 @@ class Client implements LoggerAwareInterface
     {
         return (!defined('ARE_GITHUB_ACTIONS_RUNNING') || !ARE_GITHUB_ACTIONS_RUNNING)
             && function_exists('apcu_enabled') && apcu_enabled();
+    }
+
+    /**
+     * Builds the APCu key that marks a host of this cluster as blacklisted.
+     */
+    private function blacklistKey(string $host): string
+    {
+        return self::BLACKLIST_CACHE_PREFIX."$this->clusterName-$host";
+    }
+
+    /**
+     * Returns which of the given hosts are currently blacklisted, keyed by host name, with the time each blacklist
+     * ends as the value.
+     *
+     * @param string[] $hostNames
+     *
+     * @return array<string, int>
+     */
+    private function getBlacklistedHosts(array $hostNames): array
+    {
+        if (!$this->isApcuAvailable() || empty($hostNames)) {
+            return [];
+        }
+        $hostNamesByKey = [];
+        foreach ($hostNames as $hostName) {
+            $hostNamesByKey[$this->blacklistKey($hostName)] = $hostName;
+        }
+        $blacklistedUntilByKey = apcu_fetch(array_keys($hostNamesByKey));
+        if (!is_array($blacklistedUntilByKey)) {
+            return [];
+        }
+
+        $blacklistedHosts = [];
+        $now = time();
+        foreach ($blacklistedUntilByKey as $key => $blacklistedUntil) {
+            // APCu can keep a key past its TTL within a long-running process, so check the stored time as well.
+            if (isset($hostNamesByKey[$key]) && is_int($blacklistedUntil) && $blacklistedUntil >= $now) {
+                $blacklistedHosts[$hostNamesByKey[$key]] = $blacklistedUntil;
+            }
+        }
+
+        return $blacklistedHosts;
     }
 
     /**

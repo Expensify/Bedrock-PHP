@@ -25,7 +25,7 @@ jobs:
       with:
         tools: composer:v2.7.1
         php-version: 8.3.32
-        extensions: apcu, dom, mbstring, xml, xmlwriter
+        extensions: apcu
         ini-values: apc.enable_cli=1
         coverage: none
       env:

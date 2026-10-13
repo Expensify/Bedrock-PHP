@@ -13,3 +13,14 @@ is the only place a version is recorded.
 To pick up a new version, update the `expensify/bedrock-php` constraint in the
 consuming repository, such as Web-Expensify or Web-Secure, and run
 `composer update expensify/bedrock-php`.
+
+# Tests
+
+With Composer dependencies installed and the APCu extension available, run:
+
+```bash
+php -d apc.enable_cli=1 vendor/bin/phpunit
+```
+
+PHPUnit discovers all tests in `tests/` through `phpunit.xml`. CI runs the same
+suite with APCu enabled.

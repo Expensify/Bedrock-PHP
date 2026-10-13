@@ -4,3 +4,4 @@ vendor
 composer.json-e
 .DS_Store
 .php-cs-fixer.cache
+.phpunit.cache/

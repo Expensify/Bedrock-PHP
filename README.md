@@ -14,13 +14,14 @@ To pick up a new version, update the `expensify/bedrock-php` constraint in the
 consuming repository, such as Web-Expensify or Web-Secure, and run
 `composer update expensify/bedrock-php`.
 
-# Host Routing Regression Tests
+# Tests
 
 With Composer dependencies installed and the APCu extension available, run:
 
 ```bash
-php -d apc.enable_cli=1 ci/testHostConfigs.php
+php -d apc.enable_cli=1 vendor/bin/phpunit
 ```
 
-These tests exercise shared host-blacklist state across different client routing
-lists without making network connections.
+PHPUnit discovers all tests in `tests/` through `phpunit.xml`. CI runs the same
+suite with APCu enabled. `ClientHostConfigsTest` exercises shared host-blacklist
+state across different client routing lists without making network connections.

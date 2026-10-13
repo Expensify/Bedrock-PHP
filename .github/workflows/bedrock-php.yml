@@ -11,6 +11,33 @@ env:
   TRAVIS_COMMIT: ${{ github.sha }}
   TRAVIS_BRANCH: ${{ github.ref }}
 jobs:
+  PHP_Unit:
+    name: PHPUnit
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+    - name: checkout
+      # v4.1.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+
+    - name: Install PHP and Libraries
+      uses: shivammathur/setup-php@9e72090525849c5e82e596468b86eb55e9cc5401 # v2.32.0
+      with:
+        tools: composer:v2.7.1
+        php-version: 8.3.32
+        extensions: apcu, dom, mbstring, xml, xmlwriter
+        ini-values: apc.enable_cli=1
+        coverage: none
+      env:
+        GITHUB_TOKEN: ${{ secrets.CODE_EXPENSIFY_TOKEN }}
+        fail-fast: true
+
+    - name: Setup Composer Cache
+      uses: ./.github/actions/composite/setup-composer-cache
+
+    - name: Run PHPUnit tests
+      run: vendor/bin/phpunit
+
   PHP_Phan:
     name: Phan
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -29,7 +56,6 @@ jobs:
       with:
         tools: composer:v2.7.1
         php-version: 8.3.32
-        extensions: apcu
         coverage: none
       env:
         GITHUB_TOKEN: ${{ secrets.CODE_EXPENSIFY_TOKEN }}
@@ -41,8 +67,6 @@ jobs:
     - name: Run Phan tests
       run: "php ./ci/phan.php"
 
-    - name: Test shared host health
-      run: "php -d apc.enable_cli=1 ./ci/testHostConfigs.php"
   PHP_Style:
     name: PHP Style
     runs-on: blacksmith-2vcpu-ubuntu-2404

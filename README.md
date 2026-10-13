@@ -23,5 +23,4 @@ php -d apc.enable_cli=1 vendor/bin/phpunit
 ```
 
 PHPUnit discovers all tests in `tests/` through `phpunit.xml`. CI runs the same
-suite with APCu enabled. `ClientHostConfigsTest` exercises shared host-blacklist
-state across different client routing lists without making network connections.
+suite with APCu enabled.

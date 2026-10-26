@@ -343,13 +343,14 @@ class Client implements LoggerAwareInterface
      *
      * The scope comes from a 'breakerScope' header, and is 'default' without one.
      *
-     * @param string $method  Request method
-     * @param array  $headers Request headers (optional)
-     * @param string $body    Request body (optional)
+     * @param string $method               Request method
+     * @param array  $headers              Request headers (optional)
+     * @param string $body                 Request body (optional)
+     * @param bool   $shouldDecodeResponse Decode JSON bodies. Set false to inspect status and headers before optionally calling decodeResponse().
      *
-     * @return array JSON response
+     * @return array Response metadata and a decoded body, or the untouched body string when decoding is disabled
      */
-    public function call($method, $headers = [], $body = '')
+    public function call($method, $headers = [], $body = '', bool $shouldDecodeResponse = true)
     {
         // Consumed here the way doCall consumes 'host': the breaker needs it, the server never sees it.
         $scope = $headers['breakerScope'] ?? 'default';
@@ -359,7 +360,7 @@ class Client implements LoggerAwareInterface
             throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName ($scope)");
         }
         try {
-            $response = $this->doCall($method, $headers, $body);
+            $response = $this->doCall($method, $headers, $body, $shouldDecodeResponse);
         } catch (BedrockError $e) {
             $this->recordCircuitFailure($scope);
             throw $e;
@@ -381,7 +382,7 @@ class Client implements LoggerAwareInterface
      * @throws BedrockError
      * @throws ConnectionFailure
      */
-    private function doCall($method, $headers = [], $body = '')
+    private function doCall($method, $headers = [], $body = '', bool $shouldDecodeResponse = true)
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
@@ -500,7 +501,7 @@ class Client implements LoggerAwareInterface
                         'hostsTried' => $attemptedHosts,
                     ]);
                 }
-                $response = $this->receiveResponse();
+                $response = $this->receiveResponse($shouldDecodeResponse);
             } catch (ConnectionFailure $e) {
                 // The error happened during connection (or before we sent any data, or in a case where we know the
                 // command was never processed) so we can retry it safely.
@@ -742,7 +743,7 @@ class Client implements LoggerAwareInterface
      *
      * @throws BedrockError
      */
-    private function receiveResponse()
+    private function receiveResponse(bool $shouldDecodeResponse = true)
     {
         // Make sure bedrock is returning something https://github.com/Expensify/Expensify/issues/11010
         if (@socket_recv($this->socket, $buf, self::PACKET_LENGTH, MSG_PEEK) === false) {
@@ -800,20 +801,31 @@ class Client implements LoggerAwareInterface
             throw new ConnectionFailure('Bedrock responded with 500 Internal Server Error');
         }
 
-        // We'll parse the body *only* if this is `application/json` or blank.
-        $isJSON = !isset($responseHeaders['Content-Type']) || !strcasecmp($responseHeaders['Content-Type'], 'application/json');
-
         $result = [
             'headers' => $responseHeaders,
-            'body' => $isJSON ? $this->parseRawBody($responseHeaders, $response) : $response,
+            'body' => $response,
             'size' => $totalDataReceived,
             'codeLine' => $codeLine,
             'code' => intval($codeLine),
         ];
-        if ($isJSON) {
-            $result['rawBody'] = $response;
+        return $shouldDecodeResponse ? $this->decodeResponse($result) : $result;
+    }
+
+    /**
+     * Decode a raw JSON response using the normal decompression and JSON-repair handling.
+     * Non-JSON responses and responses that are already decoded are returned unchanged.
+     */
+    public function decodeResponse(array $response): array
+    {
+        $headers = $response['headers'];
+        $isJSON = !isset($headers['Content-Type']) || !strcasecmp($headers['Content-Type'], 'application/json');
+        if (!$isJSON || array_key_exists('rawBody', $response) || !is_string($response['body'])) {
+            return $response;
         }
-        return $result;
+
+        $response['rawBody'] = $response['body'];
+        $response['body'] = $this->parseRawBody($headers, $response['body']);
+        return $response;
     }
 
     /**

@@ -12,12 +12,12 @@ $response = $client->call('OpenApp', $headers, shouldDecodeResponse: false);
 $decodedResponse = $client->decodeResponse($response);
 ```
 
-Raw mode preserves the normal response metadata (`code`, `codeLine`, `headers`, and `size`) and returns `body` as a string without JSON parsing or repair. Compressed bodies remain compressed until `decodeResponse()` performs the normal decompression and JSON parsing. Non-JSON responses and already-decoded responses pass through `decodeResponse()` unchanged. Raw bodies may contain credentials and must not be logged.
+Raw mode preserves the response metadata (`code`, `codeLine`, `headers`, and `size`) and leaves successful bodies as strings without JSON parsing or repair. Only non-200 responses and responses with `X-Session-Refresh-Required` are decoded automatically when `shouldDecodeResponse` is false. Processing-time headers do not affect decoding. Eligible gzip bodies are decompressed without JSON parsing; Content-Encoding is removed and Content-Length is updated to match the returned body, while size remains the wire size. Callers must distinguish a raw string body from a decoded body. `decodeResponse()` also supports explicit deferred decoding; non-JSON and already-decoded responses pass through unchanged. Raw bodies may contain credentials and must not be logged.
 
-Run the focused transport and decoder checks with PHP's sockets, pcntl, and posix extensions:
+Run the focused socket-pair and decoder checks with PHP's sockets extension:
 
 ```bash
-php -d auto_prepend_file= -d auto_append_file= tests/ClientRawResponseTest.php
+php -d auto_prepend_file= -d auto_append_file= vendor/bin/phpunit tests/ClientRawResponseTest.php
 ```
 
 # Publishing Your Changes

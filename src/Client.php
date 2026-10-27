@@ -346,7 +346,7 @@ class Client implements LoggerAwareInterface
      * @param string $method               Request method
      * @param array  $headers              Request headers (optional)
      * @param string $body                 Request body (optional)
-     * @param bool   $shouldDecodeResponse Decode JSON bodies. Set false to inspect status and headers before optionally calling decodeResponse().
+     * @param bool   $shouldDecodeResponse Decode JSON bodies. False keeps successful bodies raw unless a session refresh is required.
      *
      * @return array Response metadata and a decoded body, or the untouched body string when decoding is disabled
      */
@@ -809,7 +809,23 @@ class Client implements LoggerAwareInterface
             'codeLine' => $codeLine,
             'code' => intval($codeLine),
         ];
-        return $shouldDecodeResponse ? $this->decodeResponse($result) : $result;
+
+        // Refreshes and errors require the normal response decoder.
+        if ($shouldDecodeResponse || $result['code'] !== 200 || isset($responseHeaders['X-Session-Refresh-Required'])) {
+            return $this->decodeResponse($result);
+        }
+
+        // Transport decompression does not require parsing the JSON body.
+        if (($responseHeaders['Content-Encoding'] ?? '') === 'gzip') {
+            $body = gzdecode($response);
+            if ($body === false) {
+                throw new BedrockError('Could not gzip decode bedrock response');
+            }
+            $result['body'] = $body;
+            unset($result['headers']['Content-Encoding']);
+            $result['headers']['Content-Length'] = (string) strlen($body);
+        }
+        return $result;
     }
 
     /**

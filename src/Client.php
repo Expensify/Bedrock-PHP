@@ -392,9 +392,11 @@ class Client implements LoggerAwareInterface
             $headers['commitCount'] = $this->commitCount;
         }
 
-        // Include the requestID for logging purposes
+        // Include the requestID for logging purposes. Force it to be the first header so HAProxy can capture it from
+        // the start of the TCP payload; large headers such as `data` or `query` could otherwise push it past
+        // HAProxy's 16KB inspection buffer.
         if (isset($GLOBALS['REQUEST_ID'])) {
-            $headers['requestID'] = $GLOBALS['REQUEST_ID'];
+            $headers = ['requestID' => $GLOBALS['REQUEST_ID']] + $headers;
         }
         $headers['lastIP'] = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? null;
 
@@ -678,32 +680,31 @@ class Client implements LoggerAwareInterface
      */
     private function getPossibleHosts(?string $preferredHost)
     {
-        // We get the host configs from the APC cache. Then, we check the configuration there with the passed
-        // configuration and if it's outdated (ie: it has different hosts from the one in the config), we reset it. This
-        // is so that we don't keep the old cache after changing the hosts or failover configuration.
+        $hostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
+
+        // Clients can route to different subsets of the same cluster, but share each host's blacklist state.
         if ($this->isApcuAvailable()) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
             $cachedHostConfigs = apcu_fetch($apcuKey) ?: [];
             $this->logger->debug('Bedrock\Client - APC fetch host configs', array_keys($cachedHostConfigs));
 
-            // If the hosts and ports in the cache don't match the ones in the config, reset the cache.
-            $cachedHostsAndPorts = [];
-            foreach ($cachedHostConfigs as $hostName => $config) {
-                $cachedHostsAndPorts[$hostName] = $config['port'];
+            $hasConfigChanged = false;
+            foreach ($hostConfigs as $hostName => $config) {
+                if (($cachedHostConfigs[$hostName]['port'] ?? null) !== $config['port']) {
+                    $cachedHostConfigs[$hostName] = $config;
+                    $hasConfigChanged = true;
+                }
             }
-            asort($cachedHostsAndPorts);
-            $uncachedHostsAndPort = [];
-            foreach (array_merge($this->mainHostConfigs, $this->failoverHostConfigs) as $hostName => $config) {
-                $uncachedHostsAndPort[$hostName] = $config['port'];
-            }
-            asort($uncachedHostsAndPort);
-            if ($cachedHostsAndPorts !== $uncachedHostsAndPort) {
-                $cachedHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
+            if ($hasConfigChanged) {
                 $this->logger->info('Bedrock\Client - APC store host configs', array_keys($cachedHostConfigs));
                 apcu_store($apcuKey, $cachedHostConfigs);
             }
+
+            // Cached hosts outside this client's configuration must not become connection candidates, even when
+            // every allowed host is blacklisted or a caller supplies a preferred host.
+            $cachedHostConfigs = array_intersect_key($cachedHostConfigs, $hostConfigs);
         } else {
-            $cachedHostConfigs = array_merge($this->mainHostConfigs, $this->failoverHostConfigs);
+            $cachedHostConfigs = $hostConfigs;
         }
 
         // Get one main host and all the failovers, then remove any of them that we know already failed.
@@ -918,7 +919,8 @@ class Client implements LoggerAwareInterface
         $blacklistedUntil = time() + rand(1, $this->maxBlackListTimeout);
         if ($this->isApcuAvailable()) {
             $apcuKey = self::APCU_CACHE_PREFIX.$this->clusterName;
-            $hostConfigs = apcu_fetch($apcuKey);
+            $hostConfigs = apcu_fetch($apcuKey) ?: [];
+            $hostConfigs[$host] = $this->mainHostConfigs[$host] ?? $this->failoverHostConfigs[$host];
             $hostConfigs[$host]['blacklistedUntil'] = $blacklistedUntil;
             apcu_store($apcuKey, $hostConfigs);
         }

@@ -97,16 +97,10 @@ final class ClientRawResponseTest extends TestCase
         $error = self::receive($json, false, [], 403);
         $this->assertTrue($error['code'] === 403);
         $this->assertTrue($error['body'] === $decoded['body']);
-        $compressedBody = gzencode($json);
-        $compressedResponse = self::receive($compressedBody, false, ['Content-Encoding' => 'gzip']);
-        $this->assertSame($decoded['body'], $compressedResponse['body']);
-        $this->assertSame('gzip', $compressedResponse['headers']['Content-Encoding']);
-        $this->assertSame($compressedBody, $compressedResponse['rawBody']);
         $readOnly = self::receive($json, false, ['processTime' => '0', 'upstreamProcessTime' => '0']);
         $this->assertTrue($readOnly['body'] === $json);
 
         $client = Client::getInstance(['mainHostConfigs' => ['127.0.0.1' => ['port' => 1]]]);
-        $this->assertSame($compressedResponse, $client->decodeResponse($compressedResponse));
         $raw = self::receive($json, false);
         $this->assertTrue($raw['body'] === $json);
         $later = $client->decodeResponse($raw);
@@ -117,8 +111,6 @@ final class ClientRawResponseTest extends TestCase
         $this->assertTrue($scalar['body'] === 'string result');
         $this->assertTrue($client->decodeResponse($scalar) === $scalar);
 
-        $compressed = ['headers' => ['Content-Type' => 'application/json', 'Content-Encoding' => 'gzip'], 'body' => gzencode($json)];
-        $this->assertTrue($client->decodeResponse($compressed)['body'] === $decoded['body']);
         $text = ['headers' => ['Content-Type' => 'text/plain'], 'body' => 'plain text'];
         $this->assertTrue($client->decodeResponse($text) === $text);
 

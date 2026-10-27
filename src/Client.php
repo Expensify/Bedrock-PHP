@@ -822,7 +822,7 @@ class Client implements LoggerAwareInterface
      * Decode a raw JSON response using the normal decompression and JSON-repair handling.
      * Non-JSON responses and responses that are already decoded are returned unchanged.
      */
-    public function decodeResponse(array $response): array
+    private function decodeResponse(array $response): array
     {
         $headers = $response['headers'];
         $isJSON = !isset($headers['Content-Type']) || !strcasecmp($headers['Content-Type'], 'application/json');

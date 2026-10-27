@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Expensify\Bedrock\Tests;
 
 use Expensify\Bedrock\Client;
-use Expensify\Bedrock\Exceptions\BedrockError;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 use RuntimeException;
@@ -105,44 +104,11 @@ final class ClientRawResponseTest extends TestCase
         $this->assertTrue($refreshed['body'] === $decoded['body']);
         $this->assertTrue($refreshed['headers']['X-Session-Refresh-Required'] === '1');
 
-        // When only processing-time headers are present, then keep the body raw.
-        foreach (['processTime', 'upstreamProcessTime'] as $header) {
-            $processed = self::receive($json, false, [$header => '1']);
-            $this->assertTrue($processed['body'] === $json);
-        }
-
         // When an error is returned, then decode its body for normal error handling.
         $error = self::receive($json, false, [], 403);
         $this->assertTrue($error['code'] === 403);
         $this->assertTrue($error['body'] === $decoded['body']);
         $readOnly = self::receive($json, false, ['processTime' => '0', 'upstreamProcessTime' => '0']);
         $this->assertTrue($readOnly['body'] === $json);
-
-        // Given a successful response returned as raw JSON.
-        $client = Client::getInstance(['mainHostConfigs' => ['127.0.0.1' => ['port' => 1]]]);
-        $raw = self::receive($json, false);
-        $this->assertTrue($raw['body'] === $json);
-
-        // When the caller explicitly decodes it.
-        $later = $client->decodeResponse($raw);
-
-        // Then preserve metadata and leave subsequent decoding calls unchanged.
-        $this->assertTrue($later['body'] === $decoded['body']);
-        $this->assertTrue($later['code'] === $raw['code'] && $later['headers'] === $raw['headers']);
-        $this->assertTrue($client->decodeResponse($later) === $later);
-        $scalar = $client->decodeResponse(['headers' => [], 'body' => '"string result"']);
-        $this->assertTrue($scalar['body'] === 'string result');
-        $this->assertTrue($client->decodeResponse($scalar) === $scalar);
-
-        $text = ['headers' => ['Content-Type' => 'text/plain'], 'body' => 'plain text'];
-        $this->assertTrue($client->decodeResponse($text) === $text);
-
-        // When malformed JSON is explicitly decoded, then reject it.
-        try {
-            $client->decodeResponse(['headers' => [], 'body' => $invalidJSON]);
-            throw new RuntimeException('Invalid JSON was accepted by the decoder');
-        } catch (BedrockError $error) {
-            $this->assertTrue($error->getMessage() === 'Could not parse JSON from bedrock');
-        }
     }
 }

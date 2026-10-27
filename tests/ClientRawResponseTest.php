@@ -97,15 +97,16 @@ final class ClientRawResponseTest extends TestCase
         $error = self::receive($json, false, [], 403);
         $this->assertTrue($error['code'] === 403);
         $this->assertTrue($error['body'] === $decoded['body']);
-        $compressedResponse = self::receive(gzencode($json), false, ['Content-Encoding' => 'gzip']);
-        $this->assertTrue($compressedResponse['body'] === $json);
-        $this->assertTrue(!isset($compressedResponse['headers']['Content-Encoding']));
-        $this->assertTrue($compressedResponse['headers']['Content-Length'] === (string) strlen($json));
+        $compressedBody = gzencode($json);
+        $compressedResponse = self::receive($compressedBody, false, ['Content-Encoding' => 'gzip']);
+        $this->assertSame($decoded['body'], $compressedResponse['body']);
+        $this->assertSame('gzip', $compressedResponse['headers']['Content-Encoding']);
+        $this->assertSame($compressedBody, $compressedResponse['rawBody']);
         $readOnly = self::receive($json, false, ['processTime' => '0', 'upstreamProcessTime' => '0']);
         $this->assertTrue($readOnly['body'] === $json);
 
         $client = Client::getInstance(['mainHostConfigs' => ['127.0.0.1' => ['port' => 1]]]);
-        $this->assertTrue($client->decodeResponse($compressedResponse)['body'] === $decoded['body']);
+        $this->assertSame($compressedResponse, $client->decodeResponse($compressedResponse));
         $raw = self::receive($json, false);
         $this->assertTrue($raw['body'] === $json);
         $later = $client->decodeResponse($raw);

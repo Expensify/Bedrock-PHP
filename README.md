@@ -12,7 +12,7 @@ $response = $client->call('OpenApp', $headers, shouldDecodeResponse: false);
 $decodedResponse = $client->decodeResponse($response);
 ```
 
-Raw mode preserves the response metadata (`code`, `codeLine`, `headers`, and `size`) and leaves successful bodies as strings without JSON parsing or repair. Only responses outside the recognized success statuses 200 and 202, and responses with `X-Session-Refresh-Required`, are decoded automatically when `shouldDecodeResponse` is false. Processing-time headers do not affect decoding. Eligible gzip bodies are decompressed without JSON parsing; Content-Encoding is removed and Content-Length is updated to match the returned body, while size remains the wire size. Callers must distinguish a raw string body from a decoded body. `decodeResponse()` also supports explicit deferred decoding; non-JSON and already-decoded responses pass through unchanged. Raw bodies may contain credentials and must not be logged.
+Raw mode preserves the response metadata (`code`, `codeLine`, `headers`, and `size`) and leaves successful bodies as strings without JSON parsing or repair. Responses outside the recognized success statuses 200 and 202, responses with `X-Session-Refresh-Required`, and gzip responses use the normal decoder even when `shouldDecodeResponse` is false. Processing-time headers do not affect decoding. Callers must distinguish a raw string body from a decoded body. `decodeResponse()` also supports explicit deferred decoding; non-JSON and already-decoded responses pass through unchanged. Raw bodies may contain credentials and must not be logged.
 
 Run the focused socket-pair and decoder checks with PHP's sockets extension:
 

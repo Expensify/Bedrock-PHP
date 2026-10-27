@@ -54,6 +54,25 @@ final class ClientRawResponseTest extends TestCase
         }
     }
 
+    public function testAcceptedResponsesCanRemainRaw(): void
+    {
+        $empty = self::receive('', false, [], 202);
+        $this->assertSame(202, $empty['code']);
+        $this->assertSame('', $empty['body']);
+        $this->assertArrayNotHasKey('rawBody', $empty);
+
+        $json = '{"jobID":42}';
+        $accepted = self::receive($json, false, [], 202);
+        $this->assertSame($json, $accepted['body']);
+        $this->assertArrayNotHasKey('rawBody', $accepted);
+        $this->assertSame(['jobID' => 42], self::receive($json, true, [], 202)['body']);
+        $this->assertSame([], self::receive('', true, [], 202)['body']);
+
+        $refreshed = self::receive($json, false, ['X-Session-Refresh-Required' => '1'], 202);
+        $this->assertSame(202, $refreshed['code']);
+        $this->assertSame(['jobID' => 42], $refreshed['body']);
+    }
+
     public function testRawResponsesAndAutomaticFallbacks(): void
     {
         $invalidJSON = '{not valid JSON';

@@ -811,7 +811,7 @@ class Client implements LoggerAwareInterface
         ];
 
         // Refreshes and errors require the normal response decoder.
-        if ($shouldDecodeResponse || $result['code'] !== 200 || isset($responseHeaders['X-Session-Refresh-Required'])) {
+        if ($shouldDecodeResponse || !in_array($result['code'], [200, 202], true) || isset($responseHeaders['X-Session-Refresh-Required'])) {
             return $this->decodeResponse($result);
         }
 

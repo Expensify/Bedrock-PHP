@@ -7,6 +7,7 @@ use Expensify\Bedrock\Exceptions\BedrockError;
 use Expensify\Bedrock\Exceptions\Jobs\DoesNotExist;
 use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\RetryableException;
+use Expensify\Bedrock\JobOutcomeRetrier;
 use Expensify\Bedrock\Jobs;
 use Expensify\Bedrock\LocalDB;
 
@@ -131,6 +132,7 @@ try {
         throw new Exception('--maxLoad must be greater than zero');
     }
     $jobs = new Jobs($bedrock);
+    $jobOutcomeRetrier = new JobOutcomeRetrier($logger);
 
     // If --maxIterations is set, loop a finite number of times and then self
     // destruct.  This is to guard against memory leaks, as we assume there is
@@ -399,7 +401,7 @@ try {
                         // that we automatically pick up new versions over the
                         // worker without needing to restart the parent.
                         include_once $workerFilename;
-                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $job, $expectedData, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats, $jobStartTime) {
+                        $stats->benchmark('bedrockJob.finish.'.$job['name'], function () use ($workerName, $bedrock, $jobs, $jobOutcomeRetrier, $job, $expectedData, $extraParams, $logger, $localDB, $enableLoadHandler, $localJobID, $stats, $jobStartTime) {
                             $worker = new $workerName($bedrock, $job);
 
                             // Open the DB connection after the fork in the child process.
@@ -423,7 +425,7 @@ try {
                                 }
 
                                 try {
-                                    $jobs->finishJob((int) $job['jobID'], $worker->getData(), $expectedData);
+                                    $jobOutcomeRetrier->call('FinishJob', (int) $job['jobID'], fn () => $jobs->finishJob((int) $job['jobID'], $worker->getData(), $expectedData));
                                 } catch (DoesNotExist $e) {
                                     // Job does not exist, but we know it had to exist because we were running it, so
                                     // we assume this is happening because we retried the command in a different server
@@ -450,7 +452,7 @@ try {
                                     'exception' => $e,
                                 ]);
                                 try {
-                                    $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun(), null, $e->getIgnoreRepeat(), $expectedData);
+                                    $jobOutcomeRetrier->call('RetryJob', (int) $job['jobID'], fn () => $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun(), null, $e->getIgnoreRepeat(), $expectedData));
                                 } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
@@ -466,7 +468,7 @@ try {
                                 ]);
                                 // Worker had a fatal error -- mark as failed.
                                 try {
-                                    $jobs->failJob((int) $job['jobID'], $expectedData);
+                                    $jobOutcomeRetrier->call('FailJob', (int) $job['jobID'], fn () => $jobs->failJob((int) $job['jobID'], $expectedData));
                                 } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server

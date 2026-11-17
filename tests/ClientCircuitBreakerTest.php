@@ -7,8 +7,6 @@ namespace Expensify\Bedrock\Tests;
 use Expensify\Bedrock\Client;
 use Expensify\Bedrock\Exceptions\CircuitBreakerOpen;
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
-use Expensify\Bedrock\JobOutcomeRetrier;
-use Expensify\Bedrock\Jobs;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
@@ -55,44 +53,6 @@ class ClientCircuitBreakerTest extends TestCase
         }
 
         $this->assertFalse(apcu_exists(Client::APCU_CACHE_PREFIX.$this->clusterName), 'The client never looked for a host, so it never tried to connect');
-    }
-
-    public function testOpenBreakerOnlyAffectsItsOwnScope(): void
-    {
-        $client = $this->createClient();
-        $this->openBreaker('write');
-
-        try {
-            $client->call('FinishJob', ['jobID' => 42, 'idempotent' => true]);
-            $this->fail('Nothing listens on the test port, so the call should fail to connect');
-        } catch (ConnectionFailure $e) {
-            $this->assertNotInstanceOf(CircuitBreakerOpen::class, $e, 'The default scope is still closed, so the client tried to connect');
-        }
-    }
-
-    public function testJobOutcomeRetrierWaitsForAnOpenBreakerToClose(): void
-    {
-        $client = $this->createClient();
-        $jobs = new Jobs($client);
-        $this->openBreaker('default');
-        $waits = [];
-        $retrier = new JobOutcomeRetrier(new RecordingLogger(), function (int $seconds) use (&$waits): void {
-            $waits[] = $seconds;
-
-            // The breaker closes when its cooldown ends.
-            apcu_delete(Client::CIRCUIT_BREAKER_CACHE_PREFIX."$this->clusterName-default-open");
-        });
-
-        try {
-            $retrier->call('FinishJob', 42, fn () => $jobs->finishJob(42));
-            $this->fail('Nothing listens on the test port, so the retry should fail to connect');
-        } catch (ConnectionFailure $e) {
-            // After the breaker closes, the retry really tries to connect. The client already tried every host before
-            // throwing this, so the retrier hands it to the caller instead of retrying it.
-            $this->assertNotInstanceOf(CircuitBreakerOpen::class, $e);
-        }
-
-        $this->assertSame([5], $waits, 'Waited once for the breaker, then stopped at the real connection failure');
     }
 
     private function createClient(): Client

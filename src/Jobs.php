@@ -442,13 +442,15 @@ class Jobs extends Plugin
             try {
                 return $call();
             } catch (TimeoutError|CircuitBreakerOpen $e) {
+                // Jitter the wait so children that failed together do not all retry at once and collide again.
+                $delayMicros = $delay * 1000000 + random_int(0, $delay * 1000000);
                 $this->client->getLogger()->info("Bedrock did not run $method, retrying it", [
                     'jobID' => $jobID,
                     'retry' => $retry + 1,
-                    'delay' => $delay,
+                    'delay' => round($delayMicros / 1000000, 3),
                     'message' => $e->getMessage(),
                 ]);
-                sleep($delay);
+                usleep($delayMicros);
             }
         }
 

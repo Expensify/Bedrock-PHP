@@ -1,15 +1,10 @@
 name: Test Suite
 on:
-  push:
-    branches:
-    - "**/*"
-    - "!main"
+  pull_request:
+    types: [opened, synchronize]
 concurrency:
   group: "${{ github.ref }}"
   cancel-in-progress: true
-env:
-  TRAVIS_COMMIT: ${{ github.sha }}
-  TRAVIS_BRANCH: ${{ github.ref }}
 jobs:
   PHP_Unit:
     name: PHPUnit

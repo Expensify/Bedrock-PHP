@@ -425,8 +425,10 @@ class Jobs extends Plugin
     }
 
     /**
-     * Runs $call, and runs it again while Bedrock rejects it without running it. A 555 timeout means Bedrock rolled the
-     * call back, and an open circuit breaker means the request was never sent. Use only for idempotent job calls.
+     * Runs a Jobs command, and runs it again while Bedrock rejects it without running it. Retrying is safe because Jobs
+     * commands return 555 only before commit, and an open circuit breaker never sends the request. If a retry lands
+     * after an earlier attempt did commit, Bedrock rejects it with IllegalAction or DoesNotExist, which callers already
+     * handle. Use only for Jobs commands: commands with postProcess can return 555 after they commit.
      *
      * @param string   $method Name of the Bedrock command that $call runs, for logging
      * @param callable $call   Runs the FinishJob, RetryJob, or FailJob call
@@ -443,7 +445,7 @@ class Jobs extends Plugin
                 return $call();
             } catch (TimeoutError|CircuitBreakerOpen $e) {
                 // Jitter the wait so children that failed together do not all retry at once and collide again.
-                $delayMicros = $delay * 1000000 + random_int(0, $delay * 1000000);
+                $delayMicros = random_int($delay * 500000, $delay * 1500000);
                 $this->client->getLogger()->info("Bedrock did not run $method, retrying it", [
                     'jobID' => $jobID,
                     'retry' => $retry + 1,

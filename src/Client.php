@@ -3,6 +3,7 @@
 namespace Expensify\Bedrock;
 
 use Expensify\Bedrock\Exceptions\BedrockError;
+use Expensify\Bedrock\Exceptions\CircuitBreakerOpen;
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
 use Expensify\Bedrock\Exceptions\TimeoutError;
 use Expensify\Bedrock\Stats\NullStats;
@@ -357,7 +358,7 @@ class Client implements LoggerAwareInterface
         unset($headers['breakerScope']);
         if (!$this->circuitBreakerAllowsRequest($scope)) {
             $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName, 'scope' => $scope]);
-            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName ($scope)");
+            throw new CircuitBreakerOpen("Bedrock circuit breaker open for cluster $this->clusterName ($scope)");
         }
         try {
             $response = $this->doCall($method, $headers, $body, $shouldDecodeResponse);

@@ -3,11 +3,13 @@
 namespace Expensify\Bedrock;
 
 use Exception;
+use Expensify\Bedrock\Exceptions\CircuitBreakerOpen;
 use Expensify\Bedrock\Exceptions\Jobs\DoesNotExist;
 use Expensify\Bedrock\Exceptions\Jobs\GenericError;
 use Expensify\Bedrock\Exceptions\Jobs\IllegalAction;
 use Expensify\Bedrock\Exceptions\Jobs\MalformedAttribute;
 use Expensify\Bedrock\Exceptions\Jobs\SqlFailed;
+use Expensify\Bedrock\Exceptions\TimeoutError;
 use stdClass;
 
 /**
@@ -114,6 +116,12 @@ class Jobs extends Plugin
      * new jobs.
      */
     public const ADMIN_DOWN_FILE_LOCATION = '/var/tmp/ADMIN_DOWN';
+
+    /**
+     * Seconds to wait before each retry of a job-outcome call. The circuit breaker stays open for 10 seconds by
+     * default, so the later retries run after it closes.
+     */
+    public const OVERLOAD_RETRY_DELAYS = [5, 10, 15];
 
     /**
      * Calls the Jobs plugin.
@@ -414,6 +422,41 @@ class Jobs extends Plugin
                 'expectedData' => $expectedData,
             ]
         );
+    }
+
+    /**
+     * Runs a Jobs command, and runs it again while Bedrock rejects it without running it. Retrying is safe because Jobs
+     * commands return 555 only before commit, and an open circuit breaker never sends the request. If a retry lands
+     * after an earlier attempt did commit, Bedrock rejects it with IllegalAction or DoesNotExist, which callers already
+     * handle. Use only for Jobs commands: commands with postProcess can return 555 after they commit.
+     *
+     * @param string   $method Name of the Bedrock command that $call runs, for logging
+     * @param callable $call   Runs the FinishJob, RetryJob, or FailJob call
+     * @param int[]    $delays Seconds to wait before each retry
+     *
+     * @return mixed What $call returns
+     *
+     * @throws TimeoutError|CircuitBreakerOpen When Bedrock still rejects the call after the last retry
+     */
+    public function retryWhileOverloaded(string $method, int $jobID, callable $call, array $delays = self::OVERLOAD_RETRY_DELAYS)
+    {
+        foreach ($delays as $retry => $delay) {
+            try {
+                return $call();
+            } catch (TimeoutError|CircuitBreakerOpen $e) {
+                // Jitter the wait so children that failed together do not all retry at once and collide again.
+                $delayMicros = random_int($delay * 500000, $delay * 1500000);
+                $this->client->getLogger()->info("Bedrock did not run $method, retrying it", [
+                    'jobID' => $jobID,
+                    'retry' => $retry + 1,
+                    'delay' => round($delayMicros / 1000000, 3),
+                    'message' => $e->getMessage(),
+                ]);
+                usleep($delayMicros);
+            }
+        }
+
+        return $call();
     }
 
     /**

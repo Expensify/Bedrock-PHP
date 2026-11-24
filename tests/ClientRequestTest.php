@@ -31,7 +31,9 @@ final class ClientRequestTest extends TestCase
 
     public static function invalidNames(): iterable
     {
-        foreach (['', ' ', ':', "\r", "\n", "\r\n\r\n", "\0", "\t", "\x1F", "\x7F"] as $invalid) {
+        yield 'blank method' => [' ', []];
+        yield 'space in header' => ['Ping', ['test name' => 'value']];
+        foreach (['', ':', "\r", "\n", "\r\n\r\n", "\0", "\t", "\x1F", "\x7F"] as $invalid) {
             $name = $invalid === '' ? '' : "test{$invalid}name";
             yield 'method '.bin2hex($invalid) => [$name, []];
             yield 'header '.bin2hex($invalid) => ['Ping', ['valid' => true, $name => 'value']];
@@ -53,11 +55,12 @@ final class ClientRequestTest extends TestCase
 
     public function testIndexedHeadersAndBodyKeepTheirFraming(): void
     {
-        $this->client->call('Ping', ['amount[0]' => 15, 'X-Test' => "a:\nb"], 'body');
+        $method = 'GET /status/handlingCommands HTTP/1.1';
+        $this->client->call($method, ['amount[0]' => 15, 'X-Test' => "a:\nb"], 'body');
         $request = socket_read($this->peer, Client::PACKET_LENGTH);
         [$headers, $body] = explode(Client::HEADER_DELIMITER, $request, 2);
         $lines = explode(Client::HEADER_FIELD_SEPARATOR, $headers);
-        $this->assertSame('Ping', $lines[0]);
+        $this->assertSame($method, $lines[0]);
         $this->assertContains('amount[0]: 15', $lines);
         $this->assertContains('X-Test: a:\nb', $lines);
         $this->assertSame('Content-Length: 4', end($lines));

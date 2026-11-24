@@ -356,11 +356,12 @@ class Client implements LoggerAwareInterface
      */
     public function call($method, $headers = [], $body = '', bool $shouldDecodeResponse = true)
     {
-        if (!is_string($method) || !self::isValidRequestName($method)) {
+        // Bedrock's HTTP-style status methods have spaces within the request line.
+        if (!is_string($method) || !ctype_print($method) || trim($method) !== $method || str_contains($method, ':')) {
             throw new InvalidArgumentException('Invalid Bedrock method name');
         }
         foreach ($headers as $name => $value) {
-            if (!self::isValidRequestName((string) $name)) {
+            if (!ctype_graph((string) $name) || str_contains((string) $name, ':')) {
                 throw new InvalidArgumentException('Invalid Bedrock header name');
             }
         }
@@ -381,12 +382,6 @@ class Client implements LoggerAwareInterface
         $this->recordCircuitSuccess($scope);
 
         return $response;
-    }
-
-    private static function isValidRequestName(string $name): bool
-    {
-        // Names are unquoted protocol tokens; the colon separates a header name from its value.
-        return ctype_graph($name) && !str_contains($name, ':');
     }
 
     /**

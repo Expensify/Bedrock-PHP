@@ -18,10 +18,10 @@ A command that times out (`555 Timeout`) throws `TimeoutError`. By default the c
 A health check can instead treat a host that is too slow to answer as unavailable:
 
 ```php
-$client->call('GetRestrictedAuthToken', ['timeout' => 3000, 'idempotent' => true, 'blacklistOnTimeout' => true]);
+$client->call('GetRestrictedAuthToken', ['timeout' => 3000, 'idempotent' => true, 'shouldBlacklistHostOnTimeout' => true]);
 ```
 
-With `blacklistOnTimeout`, the client blacklists the host that timed out and, if the command is idempotent, retries it on another host. The header is not sent to the server.
+With `shouldBlacklistHostOnTimeout`, the client blacklists the host that timed out and, if the command is idempotent, retries it on another host. The header is not sent to the server.
 
 # Publishing Your Changes
 Merging a pull request into `main` publishes a new version. A workflow tags the

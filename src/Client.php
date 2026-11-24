@@ -375,7 +375,7 @@ class Client implements LoggerAwareInterface
      * Makes a direct call to Bedrock.
      *
      * A command timeout is not retried and does not blacklist the host, because the command would likely time out on
-     * every host. A caller that is checking host health can pass a 'blacklistOnTimeout' header to instead
+     * every host. A caller that is checking host health can pass a 'shouldBlacklistHostOnTimeout' header to instead
      * blacklist the host that timed out and, for an idempotent command, retry on another host.
      *
      * @param string $method  Request method
@@ -393,8 +393,8 @@ class Client implements LoggerAwareInterface
         $timeStart = microtime(true);
 
         // Consumed here so the server never sees it.
-        $shouldBlacklistOnTimeout = (bool) ($headers['blacklistOnTimeout'] ?? false);
-        unset($headers['blacklistOnTimeout']);
+        $shouldBlacklistHostOnTimeout = (bool) ($headers['shouldBlacklistHostOnTimeout'] ?? false);
+        unset($headers['shouldBlacklistHostOnTimeout']);
 
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
@@ -530,7 +530,7 @@ class Client implements LoggerAwareInterface
 
                 // Do not retry timeout errors because they are likely to timeout on all servers, unless the caller is
                 // checking host health and wants a host too slow to answer in time to stop receiving requests.
-                if ($isTimeout && !$shouldBlacklistOnTimeout) {
+                if ($isTimeout && !$shouldBlacklistHostOnTimeout) {
                     throw $e;
                 }
 

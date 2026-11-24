@@ -121,13 +121,13 @@ class ClientHostConfigsTest extends TestCase
         $this->assertInstanceOf(TimeoutError::class, $default['error'], 'A timeout surfaces without trying another host');
         $this->assertArrayNotHasKey('blacklistedUntil', apcu_fetch($this->cacheKey)['slow'], 'A timeout does not blacklist the host by default');
 
-        $requested = $this->callHostThatTimesOut(['blacklistOnTimeout' => true]);
+        $requested = $this->callHostThatTimesOut(['shouldBlacklistHostOnTimeout' => true]);
         $this->assertInstanceOf(TimeoutError::class, $requested['error'], 'A non-idempotent command is not resent after a timeout');
         $this->assertGreaterThanOrEqual(time(), apcu_fetch($this->cacheKey)['slow']['blacklistedUntil'], 'The host that timed out is blacklisted when requested');
-        $this->assertStringNotContainsString('blacklistOnTimeout', $requested['request'], 'The option is not sent to the server');
+        $this->assertStringNotContainsString('shouldBlacklistHostOnTimeout', $requested['request'], 'The option is not sent to the server');
 
         apcu_delete($this->cacheKey);
-        $retried = $this->callHostThatTimesOut(['blacklistOnTimeout' => true, 'idempotent' => true]);
+        $retried = $this->callHostThatTimesOut(['shouldBlacklistHostOnTimeout' => true, 'idempotent' => true]);
         $this->assertInstanceOf(ConnectionFailure::class, $retried['error'], 'An idempotent command is retried on the next host, which refuses the connection here');
         $this->assertGreaterThanOrEqual(time(), apcu_fetch($this->cacheKey)['slow']['blacklistedUntil'], 'The host that timed out stays blacklisted after the retry');
     }

@@ -374,6 +374,10 @@ class Client implements LoggerAwareInterface
     /**
      * Makes a direct call to Bedrock.
      *
+     * A command timeout is not retried and does not blacklist the host, because the command would likely time out on
+     * every host. A caller that is checking host health can pass a 'blacklistOnTimeout' header to instead blacklist
+     * the host that timed out and, for an idempotent command, retry on another host.
+     *
      * @param string $method  Request method
      * @param array  $headers Request headers (optional)
      * @param string $body    Request body (optional)
@@ -387,6 +391,10 @@ class Client implements LoggerAwareInterface
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
+
+        // Consumed here so the server never sees it.
+        $shouldBlacklistOnTimeout = (bool) ($headers['blacklistOnTimeout'] ?? false);
+        unset($headers['blacklistOnTimeout']);
 
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
@@ -516,8 +524,22 @@ class Client implements LoggerAwareInterface
                     $exception = $e;
                 }
             } catch (TimeoutError $e) {
-                // Do not retry timeout errors because they are likely to timeout on all servers
-                $exception = $e;
+                if ($shouldBlacklistOnTimeout) {
+                    // The caller is checking host health, so a host too slow to answer in time should stop receiving
+                    // requests. The command may have committed before timing out in postProcess, so only an
+                    // idempotent one is safe to resend.
+                    $requestAlreadySent = true;
+                    $this->markHostAsFailed($hostName);
+                    if ($numRetriesLeft && ($headers['idempotent'] ?? false)) {
+                        $this->logger->info('Bedrock\Client - Command timed out; blacklisting the host and retrying because the caller asked to', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+                    } else {
+                        $this->logger->info('Bedrock\Client - Command timed out; blacklisting the host because the caller asked to', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                        $exception = $e;
+                    }
+                } else {
+                    // Do not retry timeout errors because they are likely to timeout on all servers
+                    $exception = $e;
+                }
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $requestAlreadySent = true;

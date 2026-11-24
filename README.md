@@ -1,6 +1,10 @@
 # Bedrock-PHP
 This is a library to interact with [Bedrock](https://github.com/Expensify/Bedrock)
 
+# Request names
+
+`Client::call()` rejects empty method and header names, colons, and control characters with an `InvalidArgumentException` before sending any bytes. Header names cannot contain spaces. Indexed headers such as `amount[0]` and HTTP-style methods such as `GET /status/handlingCommands HTTP/1.1` are supported.
+
 # Raw Responses
 
 JSON response bodies are decoded by default. To leave eligible successful bodies as strings, disable decoding:

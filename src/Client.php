@@ -475,6 +475,7 @@ class Client implements LoggerAwareInterface
         $connectTime = null;
         $requestID = $headers['requestID'] ?? null;
         $attemptedHosts = [];
+        $isIdempotent = (bool) ($headers['idempotent'] ?? false);
         // True after an attempt failed without knowing whether its fully-sent request committed.
         $requestAlreadySent = false;
         while (!$response && count($hostConfigs)) {
@@ -523,38 +524,10 @@ class Client implements LoggerAwareInterface
                     $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     $exception = $e;
                 }
-            } catch (TimeoutError $e) {
-                if ($shouldBlacklistOnTimeout) {
-                    // The caller is checking host health, so a host too slow to answer in time should stop receiving
-                    // requests. The command may have committed before timing out in postProcess, so only an
-                    // idempotent one is safe to resend.
-                    $requestAlreadySent = true;
-                    $this->markHostAsFailed($hostName);
-                    if ($numRetriesLeft && ($headers['idempotent'] ?? false)) {
-                        $this->logger->info('Bedrock\Client - Command timed out; blacklisting the host and retrying because the caller asked to', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
-                    } else {
-                        $this->logger->info('Bedrock\Client - Command timed out; blacklisting the host because the caller asked to', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                        $exception = $e;
-                    }
-                } else {
-                    // Do not retry timeout errors because they are likely to timeout on all servers
-                    $exception = $e;
-                }
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $requestAlreadySent = true;
-                $this->markHostAsFailed($hostName);
-                /* @phan-suppress-next-line PhanTypeInvalidDimOffset for some reason phan says idempotent does not exist, but I have the ?? so it should not matter */
-                if (!($headers['idempotent'] ?? false)) {
-                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because command is not idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                    throw $e;
-                }
-                if ($numRetriesLeft) {
-                    $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
-                } else {
-                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                    $exception = $e;
-                }
+                $exception = $this->handleErrorAfterSending($e, $hostName, $shouldBlacklistOnTimeout, $isIdempotent, $numRetriesLeft);
             } finally {
                 // We remove the host we just used from the possible hosts to use, in case we are retrying
                 $hostConfigs = array_filter($hostConfigs, function ($possibleHost) use ($hostName) {
@@ -606,6 +579,37 @@ class Client implements LoggerAwareInterface
 
         // Done!
         return $response;
+    }
+
+    /**
+     * Handles an error from a host that received data from the request. The host is blacklisted and, because the
+     * server may already have processed the command, only an idempotent one is retried on another host.
+     *
+     * @return ?BedrockError The error to throw, or null to retry the command on another host
+     */
+    private function handleErrorAfterSending(BedrockError $e, string $hostName, bool $shouldBlacklistOnTimeout, bool $isIdempotent, int $numRetriesLeft): ?BedrockError
+    {
+        $isTimeout = $e instanceof TimeoutError;
+
+        // Do not retry timeout errors because they are likely to timeout on all servers, unless the caller is checking
+        // host health and wants a host too slow to answer in time to stop receiving requests.
+        if ($isTimeout && !$shouldBlacklistOnTimeout) {
+            return $e;
+        }
+
+        $failure = $isTimeout ? 'Command timed out and the caller asked to blacklist the host' : 'Failed to send the whole request or to receive it';
+        $this->markHostAsFailed($hostName);
+        if (!$isIdempotent) {
+            $this->logger->error("Bedrock\\Client - $failure; not retrying because command is not idempotent", ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+            return $e;
+        }
+        if (!$numRetriesLeft) {
+            $this->logger->error("Bedrock\\Client - $failure; not retrying because we are out of retries", ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+            return $e;
+        }
+
+        $this->logger->info("Bedrock\\Client - $failure; retrying because command is idempotent", ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+        return null;
     }
 
     /**

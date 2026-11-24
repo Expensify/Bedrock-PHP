@@ -527,7 +527,25 @@ class Client implements LoggerAwareInterface
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $requestAlreadySent = true;
-                $exception = $this->handleErrorAfterSending($e, $hostName, $shouldBlacklistOnTimeout, $isIdempotent, $numRetriesLeft);
+                $isTimeout = $e instanceof TimeoutError;
+
+                // Do not retry timeout errors because they are likely to timeout on all servers, unless the caller is
+                // checking host health and wants a host too slow to answer in time to stop receiving requests.
+                if ($isTimeout && !$shouldBlacklistOnTimeout) {
+                    $exception = $e;
+                } else {
+                    $failure = $isTimeout ? 'Command timed out and the caller asked to blacklist the host' : 'Failed to send the whole request or to receive it';
+                    $this->markHostAsFailed($hostName);
+                    if (!$isIdempotent) {
+                        $this->logger->error("Bedrock\\Client - $failure; not retrying because command is not idempotent", ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                        $exception = $e;
+                    } elseif ($numRetriesLeft) {
+                        $this->logger->info("Bedrock\\Client - $failure; retrying because command is idempotent", ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+                    } else {
+                        $this->logger->error("Bedrock\\Client - $failure; not retrying because we are out of retries", ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                        $exception = $e;
+                    }
+                }
             } finally {
                 // We remove the host we just used from the possible hosts to use, in case we are retrying
                 $hostConfigs = array_filter($hostConfigs, function ($possibleHost) use ($hostName) {
@@ -579,37 +597,6 @@ class Client implements LoggerAwareInterface
 
         // Done!
         return $response;
-    }
-
-    /**
-     * Handles an error from a host that received data from the request. The host is blacklisted and, because the
-     * server may already have processed the command, only an idempotent one is retried on another host.
-     *
-     * @return ?BedrockError The error to throw, or null to retry the command on another host
-     */
-    private function handleErrorAfterSending(BedrockError $e, string $hostName, bool $shouldBlacklistOnTimeout, bool $isIdempotent, int $numRetriesLeft): ?BedrockError
-    {
-        $isTimeout = $e instanceof TimeoutError;
-
-        // Do not retry timeout errors because they are likely to timeout on all servers, unless the caller is checking
-        // host health and wants a host too slow to answer in time to stop receiving requests.
-        if ($isTimeout && !$shouldBlacklistOnTimeout) {
-            return $e;
-        }
-
-        $failure = $isTimeout ? 'Command timed out and the caller asked to blacklist the host' : 'Failed to send the whole request or to receive it';
-        $this->markHostAsFailed($hostName);
-        if (!$isIdempotent) {
-            $this->logger->error("Bedrock\\Client - $failure; not retrying because command is not idempotent", ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-            return $e;
-        }
-        if (!$numRetriesLeft) {
-            $this->logger->error("Bedrock\\Client - $failure; not retrying because we are out of retries", ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-            return $e;
-        }
-
-        $this->logger->info("Bedrock\\Client - $failure; retrying because command is idempotent", ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
-        return null;
     }
 
     /**

@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Expensify\Bedrock\Tests;
 
 use Expensify\Bedrock\Client;
+use Expensify\Bedrock\Exceptions\TimeoutError;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
+use RuntimeException;
+use Throwable;
 
 class ClientHostConfigsTest extends TestCase
 {
@@ -109,5 +112,55 @@ class ClientHostConfigsTest extends TestCase
         $recordedHosts = apcu_fetch($this->cacheKey);
         $this->assertSame(5555, $recordedHosts['follower']['port'], 'Failure recording restores the actual endpoint after cache eviction');
         $this->assertGreaterThanOrEqual(time(), $recordedHosts['follower']['blacklistedUntil'], 'The restored endpoint remains blacklisted');
+    }
+
+    public function testCommandTimeoutsBlacklistTheHostOnlyWhenRequested(): void
+    {
+        $default = $this->callHostThatTimesOut(['idempotent' => true]);
+        $this->assertInstanceOf(TimeoutError::class, $default['error'], 'A timeout surfaces without trying another host');
+        $this->assertArrayNotHasKey('blacklistedUntil', apcu_fetch($this->cacheKey)['slow'], 'A timeout does not blacklist the host by default');
+
+        $requested = $this->callHostThatTimesOut(['shouldBlacklistHostOnTimeout' => true, 'idempotent' => true]);
+        $this->assertInstanceOf(TimeoutError::class, $requested['error'], 'A timeout surfaces without trying another host even when the host is blacklisted');
+        $this->assertGreaterThanOrEqual(time(), apcu_fetch($this->cacheKey)['slow']['blacklistedUntil'], 'The host that timed out is blacklisted when requested');
+        $this->assertStringNotContainsString('shouldBlacklistHostOnTimeout', $requested['request'], 'The option is not sent to the server');
+    }
+
+    /**
+     * Calls a host whose connected socket answers with a command timeout. The only other host refuses connections, so
+     * a retry would surface as a ConnectionFailure.
+     *
+     * @return array{error: ?Throwable, request: string}
+     */
+    private function callHostThatTimesOut(array $headers): array
+    {
+        if (!socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $sockets)) {
+            throw new RuntimeException('Could not create the test socket pair');
+        }
+        $client = Client::getInstance([
+            'clusterName' => $this->clusterName,
+            'mainHostConfigs' => ['slow' => ['port' => 4444]],
+            'failoverHostConfigs' => ['127.0.0.1' => ['port' => 1]],
+        ]);
+        (new ReflectionProperty(Client::class, 'lastHost'))->setValue($client, 'slow');
+        $socket = new ReflectionProperty(Client::class, 'socket');
+        $socket->setValue($client, $sockets[0]);
+        socket_write($sockets[1], "555 Timeout peeking command\r\nContent-Length: 0\r\n\r\n");
+        $error = null;
+        try {
+            $client->call('Get', $headers);
+        } catch (Throwable $e) {
+            $error = $e;
+        } finally {
+            // Blacklisting a host closes its socket, so only a socket the client still holds needs closing here.
+            if ($socket->getValue($client) === $sockets[0]) {
+                socket_close($sockets[0]);
+            }
+            $socket->setValue($client, null);
+            $request = (string) socket_read($sockets[1], 65536);
+            socket_close($sockets[1]);
+        }
+
+        return ['error' => $error, 'request' => $request];
     }
 }

@@ -3,10 +3,12 @@
 namespace Expensify\Bedrock;
 
 use Expensify\Bedrock\Exceptions\BedrockError;
+use Expensify\Bedrock\Exceptions\CircuitBreakerOpen;
 use Expensify\Bedrock\Exceptions\ConnectionFailure;
 use Expensify\Bedrock\Exceptions\TimeoutError;
 use Expensify\Bedrock\Stats\NullStats;
 use Expensify\Bedrock\Stats\StatsInterface;
+use InvalidArgumentException;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -349,15 +351,27 @@ class Client implements LoggerAwareInterface
      * @param bool   $shouldDecodeResponse Decode JSON bodies. Refreshes, errors, and gzip still decode when false.
      *
      * @return array Response metadata and a decoded body, or the untouched body string when decoding is disabled
+     *
+     * @throws InvalidArgumentException If the method or a header name cannot be sent as a Bedrock request name
      */
     public function call($method, $headers = [], $body = '', bool $shouldDecodeResponse = true)
     {
+        // Bedrock's HTTP-style status methods have spaces within the request line.
+        if (!is_string($method) || !ctype_print($method) || trim($method) !== $method || str_contains($method, ':')) {
+            throw new InvalidArgumentException('Invalid Bedrock method name');
+        }
+        foreach ($headers as $name => $value) {
+            if (!ctype_graph((string) $name) || str_contains((string) $name, ':')) {
+                throw new InvalidArgumentException('Invalid Bedrock header name');
+            }
+        }
+
         // Consumed here the way doCall consumes 'host': the breaker needs it, the server never sees it.
         $scope = $headers['breakerScope'] ?? 'default';
         unset($headers['breakerScope']);
         if (!$this->circuitBreakerAllowsRequest($scope)) {
             $this->logger->info('Bedrock\Client - Circuit breaker open, failing fast', ['clusterName' => $this->clusterName, 'scope' => $scope]);
-            throw new ConnectionFailure("Bedrock circuit breaker open for cluster $this->clusterName ($scope)");
+            throw new CircuitBreakerOpen("Bedrock circuit breaker open for cluster $this->clusterName ($scope)");
         }
         try {
             $response = $this->doCall($method, $headers, $body, $shouldDecodeResponse);
@@ -374,7 +388,8 @@ class Client implements LoggerAwareInterface
      * Makes a direct call to Bedrock.
      *
      * @param string $method  Request method
-     * @param array  $headers Request headers (optional)
+     * @param array  $headers Request headers (optional). A 'shouldBlacklistHostOnTimeout' header (default false) makes
+     *                        a command timeout blacklist the host that timed out; it is not sent to the server.
      * @param string $body    Request body (optional)
      *
      * @return array JSON response, or null on error
@@ -386,6 +401,9 @@ class Client implements LoggerAwareInterface
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
+
+        $shouldBlacklistHostOnTimeout = (bool) ($headers['shouldBlacklistHostOnTimeout'] ?? false);
+        unset($headers['shouldBlacklistHostOnTimeout']);
 
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
@@ -516,6 +534,9 @@ class Client implements LoggerAwareInterface
                 }
             } catch (TimeoutError $e) {
                 // Do not retry timeout errors because they are likely to timeout on all servers
+                if ($shouldBlacklistHostOnTimeout) {
+                    $this->markHostAsFailed($hostName);
+                }
                 $exception = $e;
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command

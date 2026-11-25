@@ -423,7 +423,7 @@ try {
                                 }
 
                                 try {
-                                    $jobs->finishJob((int) $job['jobID'], $worker->getData(), $expectedData);
+                                    $jobs->retryWhileOverloaded('FinishJob', (int) $job['jobID'], fn () => $jobs->finishJob((int) $job['jobID'], $worker->getData(), $expectedData));
                                 } catch (DoesNotExist $e) {
                                     // Job does not exist, but we know it had to exist because we were running it, so
                                     // we assume this is happening because we retried the command in a different server
@@ -450,7 +450,7 @@ try {
                                     'exception' => $e,
                                 ]);
                                 try {
-                                    $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun(), null, $e->getIgnoreRepeat(), $expectedData);
+                                    $jobs->retryWhileOverloaded('RetryJob', (int) $job['jobID'], fn () => $jobs->retryJob((int) $job['jobID'], $e->getDelay(), $worker->getData(), $e->getName(), $e->getNextRun(), null, $e->getIgnoreRepeat(), $expectedData));
                                 } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server
@@ -466,7 +466,7 @@ try {
                                 ]);
                                 // Worker had a fatal error -- mark as failed.
                                 try {
-                                    $jobs->failJob((int) $job['jobID'], $expectedData);
+                                    $jobs->retryWhileOverloaded('FailJob', (int) $job['jobID'], fn () => $jobs->failJob((int) $job['jobID'], $expectedData));
                                 } catch (IllegalAction|DoesNotExist $e) {
                                     // IllegalAction is returned when we try to finish a job that's not RUNNING, this
                                     // can happen if we retried the command in a different server

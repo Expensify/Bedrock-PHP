@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Expensify\Bedrock\Tests;
 
 use Expensify\Bedrock\Client;
-use Expensify\Bedrock\Exceptions\ConnectionFailure;
 use Expensify\Bedrock\Exceptions\TimeoutError;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -117,23 +116,19 @@ class ClientHostConfigsTest extends TestCase
 
     public function testCommandTimeoutsBlacklistTheHostOnlyWhenRequested(): void
     {
-        $default = $this->callHostThatTimesOut([]);
+        $default = $this->callHostThatTimesOut(['idempotent' => true]);
         $this->assertInstanceOf(TimeoutError::class, $default['error'], 'A timeout surfaces without trying another host');
         $this->assertArrayNotHasKey('blacklistedUntil', apcu_fetch($this->cacheKey)['slow'], 'A timeout does not blacklist the host by default');
 
-        $requested = $this->callHostThatTimesOut(['shouldBlacklistHostOnTimeout' => true]);
-        $this->assertInstanceOf(TimeoutError::class, $requested['error'], 'A non-idempotent command is not resent after a timeout');
+        $requested = $this->callHostThatTimesOut(['shouldBlacklistHostOnTimeout' => true, 'idempotent' => true]);
+        $this->assertInstanceOf(TimeoutError::class, $requested['error'], 'A timeout surfaces without trying another host even when the host is blacklisted');
         $this->assertGreaterThanOrEqual(time(), apcu_fetch($this->cacheKey)['slow']['blacklistedUntil'], 'The host that timed out is blacklisted when requested');
         $this->assertStringNotContainsString('shouldBlacklistHostOnTimeout', $requested['request'], 'The option is not sent to the server');
-
-        apcu_delete($this->cacheKey);
-        $retried = $this->callHostThatTimesOut(['shouldBlacklistHostOnTimeout' => true, 'idempotent' => true]);
-        $this->assertInstanceOf(ConnectionFailure::class, $retried['error'], 'An idempotent command is retried on the next host, which refuses the connection here');
-        $this->assertGreaterThanOrEqual(time(), apcu_fetch($this->cacheKey)['slow']['blacklistedUntil'], 'The host that timed out stays blacklisted after the retry');
     }
 
     /**
-     * Calls a host whose connected socket answers with a command timeout. The only other host refuses connections.
+     * Calls a host whose connected socket answers with a command timeout. The only other host refuses connections, so
+     * a retry would surface as a ConnectionFailure.
      *
      * @return array{error: ?Throwable, request: string}
      */

@@ -388,7 +388,8 @@ class Client implements LoggerAwareInterface
      * Makes a direct call to Bedrock.
      *
      * @param string $method  Request method
-     * @param array  $headers Request headers (optional)
+     * @param array  $headers Request headers (optional). A 'shouldBlacklistHostOnTimeout' header (default false) makes
+     *                        a command timeout blacklist the host that timed out; it is not sent to the server.
      * @param string $body    Request body (optional)
      *
      * @return array JSON response, or null on error
@@ -400,6 +401,9 @@ class Client implements LoggerAwareInterface
     {
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
+
+        $shouldBlacklistHostOnTimeout = (bool) ($headers['shouldBlacklistHostOnTimeout'] ?? false);
+        unset($headers['shouldBlacklistHostOnTimeout']);
 
         // Include the last CommitCount, if we have one
         if ($this->commitCount) {
@@ -530,6 +534,9 @@ class Client implements LoggerAwareInterface
                 }
             } catch (TimeoutError $e) {
                 // Do not retry timeout errors because they are likely to timeout on all servers
+                if ($shouldBlacklistHostOnTimeout) {
+                    $this->markHostAsFailed($hostName);
+                }
                 $exception = $e;
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command

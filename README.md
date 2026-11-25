@@ -21,7 +21,7 @@ A health check can instead treat a host that is too slow to answer as unavailabl
 $client->call('GetRestrictedAuthToken', ['timeout' => 3000, 'idempotent' => true, 'shouldBlacklistHostOnTimeout' => true]);
 ```
 
-With `shouldBlacklistHostOnTimeout`, the client blacklists the host that timed out and, if the command is idempotent, retries it on another host. The header is not sent to the server.
+With `shouldBlacklistHostOnTimeout` (default false), the client blacklists the host that timed out and still throws `TimeoutError`, so the caller's next request goes to another host. The header is not sent to the server.
 
 # Publishing Your Changes
 Merging a pull request into `main` publishes a new version. A workflow tags the

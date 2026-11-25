@@ -374,12 +374,9 @@ class Client implements LoggerAwareInterface
     /**
      * Makes a direct call to Bedrock.
      *
-     * A command timeout is not retried and does not blacklist the host, because the command would likely time out on
-     * every host. A caller that is checking host health can pass a 'shouldBlacklistHostOnTimeout' header to instead
-     * blacklist the host that timed out and, for an idempotent command, retry on another host.
-     *
      * @param string $method  Request method
-     * @param array  $headers Request headers (optional)
+     * @param array  $headers Request headers (optional). A 'shouldBlacklistHostOnTimeout' header (default false) makes
+     *                        a command timeout blacklist the host that timed out; it is not sent to the server.
      * @param string $body    Request body (optional)
      *
      * @return array JSON response, or null on error
@@ -392,7 +389,6 @@ class Client implements LoggerAwareInterface
         // Start timing the entire end-to-end
         $timeStart = microtime(true);
 
-        // Consumed here so the server never sees it.
         $shouldBlacklistHostOnTimeout = (bool) ($headers['shouldBlacklistHostOnTimeout'] ?? false);
         unset($headers['shouldBlacklistHostOnTimeout']);
 
@@ -475,10 +471,10 @@ class Client implements LoggerAwareInterface
         $connectTime = null;
         $requestID = $headers['requestID'] ?? null;
         $attemptedHosts = [];
-        $isIdempotent = (bool) ($headers['idempotent'] ?? false);
         // True after an attempt failed without knowing whether its fully-sent request committed.
         $requestAlreadySent = false;
         while (!$response && count($hostConfigs)) {
+            $exception = null;
             reset($hostConfigs);
             $numRetriesLeft = count($hostConfigs) - 1;
 
@@ -517,40 +513,42 @@ class Client implements LoggerAwareInterface
                 // The error happened during connection (or before we sent any data, or in a case where we know the
                 // command was never processed) so we can retry it safely.
                 $this->markHostAsFailed($hostName);
-                if (!$numRetriesLeft) {
+                if ($numRetriesLeft) {
+                    $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+                } else {
                     $this->logger->error('Bedrock\Client - Failed to connect or send the request; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                    throw $e;
+                    $exception = $e;
                 }
-
-                $this->logger->info('Bedrock\Client - Failed to connect or send the request; retrying', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+            } catch (TimeoutError $e) {
+                // Do not retry timeout errors because they are likely to timeout on all servers
+                if ($shouldBlacklistHostOnTimeout) {
+                    $this->markHostAsFailed($hostName);
+                }
+                $exception = $e;
             } catch (BedrockError $e) {
                 // This error happen after sending some data to the server, so we only can retry it if it is an idempotent command
                 $requestAlreadySent = true;
-                $isTimeout = $e instanceof TimeoutError;
-
-                // Do not retry timeout errors because they are likely to timeout on all servers, unless the caller is
-                // checking host health and wants a host too slow to answer in time to stop receiving requests.
-                if ($isTimeout && !$shouldBlacklistHostOnTimeout) {
-                    throw $e;
-                }
-
-                $failure = $isTimeout ? 'Command timed out and the caller asked to blacklist the host' : 'Failed to send the whole request or to receive it';
                 $this->markHostAsFailed($hostName);
-                if (!$isIdempotent) {
-                    $this->logger->error("Bedrock\\Client - $failure; not retrying because command is not idempotent", ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                /* @phan-suppress-next-line PhanTypeInvalidDimOffset for some reason phan says idempotent does not exist, but I have the ?? so it should not matter */
+                if (!($headers['idempotent'] ?? false)) {
+                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because command is not idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
                     throw $e;
                 }
-                if (!$numRetriesLeft) {
-                    $this->logger->error("Bedrock\\Client - $failure; not retrying because we are out of retries", ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
-                    throw $e;
+                if ($numRetriesLeft) {
+                    $this->logger->info('Bedrock\Client - Failed to send the whole request or to receive it; retrying because command is idempotent', ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
+                } else {
+                    $this->logger->error('Bedrock\Client - Failed to send the whole request or to receive it; not retrying because we are out of retries', ['host' => $hostName, 'message' => $e->getMessage(), 'exception' => $e]);
+                    $exception = $e;
                 }
-
-                $this->logger->info("Bedrock\\Client - $failure; retrying because command is idempotent", ['host' => $hostName, 'message' => $e->getMessage(), 'retriesLeft' => $numRetriesLeft, 'exception' => $e]);
             } finally {
                 // We remove the host we just used from the possible hosts to use, in case we are retrying
                 $hostConfigs = array_filter($hostConfigs, function ($possibleHost) use ($hostName) {
                     return $possibleHost !== $hostName;
                 }, ARRAY_FILTER_USE_KEY);
+            }
+
+            if ($exception) {
+                throw $exception;
             }
         }
 

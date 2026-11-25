@@ -8,6 +8,7 @@ use Expensify\Bedrock\Exceptions\ConnectionFailure;
 use Expensify\Bedrock\Exceptions\TimeoutError;
 use Expensify\Bedrock\Stats\NullStats;
 use Expensify\Bedrock\Stats\StatsInterface;
+use InvalidArgumentException;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -350,9 +351,21 @@ class Client implements LoggerAwareInterface
      * @param bool   $shouldDecodeResponse Decode JSON bodies. Refreshes, errors, and gzip still decode when false.
      *
      * @return array Response metadata and a decoded body, or the untouched body string when decoding is disabled
+     *
+     * @throws InvalidArgumentException If the method or a header name cannot be sent as a Bedrock request name
      */
     public function call($method, $headers = [], $body = '', bool $shouldDecodeResponse = true)
     {
+        // Bedrock's HTTP-style status methods have spaces within the request line.
+        if (!is_string($method) || !ctype_print($method) || trim($method) !== $method || str_contains($method, ':')) {
+            throw new InvalidArgumentException('Invalid Bedrock method name');
+        }
+        foreach ($headers as $name => $value) {
+            if (!ctype_graph((string) $name) || str_contains((string) $name, ':')) {
+                throw new InvalidArgumentException('Invalid Bedrock header name');
+            }
+        }
+
         // Consumed here the way doCall consumes 'host': the breaker needs it, the server never sees it.
         $scope = $headers['breakerScope'] ?? 'default';
         unset($headers['breakerScope']);
